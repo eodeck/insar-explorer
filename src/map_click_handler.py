@@ -5,6 +5,7 @@ from qgis.gui import QgsHighlight
 from qgis.core import QgsProject, QgsCoordinateTransform, QgsCoordinateReferenceSystem
 from qgis.PyQt.QtGui import QCursor
 
+from .bootstrap import ensure_time_series_services
 from .qt_compat import RED, WAIT_CURSOR, YELLOW
 
 import numpy as np
@@ -270,7 +271,13 @@ class TSClickHandler(MapClickHandler):
     # TODO: separate PointClickHandler from TSClickHandler
     def __init__(self, plugin, msg_signal=None):
         super().__init__(plugin, msg_signal=msg_signal)
-        self.plot_ts = pts.PlotTs(self.ui)
+        services = ensure_time_series_services(plugin)
+        self.plot_ts = pts.PlotTs(
+            self.ui,
+            settings_model=services.settings_model,
+            user_preferences=services.user_preferences,
+            project_state_repository=services.project_state_repository,
+        )
         self.raster_layer = raster_layer_utils.RasterTimeseries()
         self.selected_field_name = None
 

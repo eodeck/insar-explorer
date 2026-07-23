@@ -1,5 +1,4 @@
 import calendar
-import os
 import inspect
 from contextlib import contextmanager
 from copy import deepcopy
@@ -18,7 +17,8 @@ from .time_series.settings.model import AxisManualRange, ResidualStyleSettings
 from .time_series.y_axis_range import (
     resolve_manual_y_range, resolve_y_axis_display_range,
 )
-from .time_series.settings.persistence import TimeSeriesSettingsPersistence, build_legacy_plot_params
+from .time_series.settings.persistence import build_legacy_plot_params
+from .time_series.persistence import NullProjectStateRepository
 from .time_series.fit_style_controller import FitStyle
 from .time_series.store import TimeSeriesStore
 from .models.time_series import (
@@ -162,7 +162,11 @@ class _GraphicsRenderTransaction:
 
 class PlotTs():
 
-    def __init__(self, ui, settings_model=None):
+    def __init__(
+        self, ui, settings_model=None, user_preferences=None,
+        project_state_repository=None,
+    ):
+        """Create the renderer from injected runtime and persistence dependencies."""
         self.ui = ui
         self.ax = None
         self.dates = None
@@ -173,9 +177,6 @@ class PlotTs():
         self.min_plot_values = None
         self.max_plot_values = None
         self.residuals_values = None
-        script_path = os.path.abspath(__file__)
-        json_file = "config.json"
-        self.config_file = os.path.join(os.path.dirname(script_path), 'config', json_file)
         self._series_store = TimeSeriesStore()
         self._graphics_by_series_id: Dict[UUID, TimeSeriesGraphics] = {}
         self.default_style = None
@@ -186,9 +187,17 @@ class PlotTs():
         self.hold_on_flag = False
         self.random_marker_color_flag = False
         self.parms = {}
-        self.settings_persistence = TimeSeriesSettingsPersistence(self.config_file)
-        self.settings_model = settings_model or self.settings_persistence.load()
-        self.style_config = self.settings_persistence.style_config
+        if settings_model is None or user_preferences is None:
+            raise ValueError(
+                "PlotTs requires composed settings_model and user_preferences"
+            )
+        self.user_preferences = user_preferences
+        # Transitional alias for external callers; the concrete type is not assumed.
+        self.settings_persistence = user_preferences
+        self.project_state_repository = (
+            project_state_repository or NullProjectStateRepository()
+        )
+        self.settings_model = settings_model
         self._settings_unsubscribe = self.settings_model.subscribe(self._onSettingsChanged)
         self.refreshCompatibilityViews()
         self.coords = None
@@ -349,7 +358,7 @@ class PlotTs():
         after model, snapshot, and UI synchronization is complete.
 
         ``parms`` and ``default_style`` are derived compatibility views only; persistence
-        is loaded once by ``TimeSeriesSettingsPersistence`` during model initialization.
+        is loaded once by ``the injected user-preferences repository`` during model initialization.
         """
         self.parms = build_legacy_plot_params(self.settings_model)
         self.default_style = DefaultTimeSeriesStyle.fromParams(self.parms)

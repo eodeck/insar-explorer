@@ -1,8 +1,8 @@
-"""Compatibility persistence entry point for time-series default styles."""
-
-from .style_config import TimeSeriesStyleConfig
+"""Deprecated compatibility helper backed by the user-preferences abstraction."""
 
 
-def persist_default_time_series_style(config_file, style):
-    """Persist a complete series style through the plugin-owned config adapter."""
-    TimeSeriesStyleConfig(config_file).save_default_style(style)
+def persist_default_time_series_style(repository, style):
+    """Persist a legacy style through an injected user-preferences repository."""
+    from .settings.model import SeriesStyleSettings
+
+    repository.save_series_defaults(SeriesStyleSettings.from_params(style.params))
