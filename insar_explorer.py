@@ -56,6 +56,7 @@ class InsarExplorer:
 
         # initialize plugin directory
         self.plugin_dir = os.path.dirname(__file__)
+        self._reported_time_series_diagnostics = set()
         self.time_series_services = create_time_series_services(
             self.plugin_dir, diagnostic=self.report_time_series_diagnostic
         )
@@ -88,7 +89,11 @@ class InsarExplorer:
         self.gui_controller = None
 
     def report_time_series_diagnostic(self, message, exception=None):
-        """Report a recoverable time-series bootstrap warning through QGIS."""
+        """Report each recoverable persistence warning once per startup."""
+        key = (message, type(exception).__name__ if exception else None)
+        if key in self._reported_time_series_diagnostics:
+            return
+        self._reported_time_series_diagnostics.add(key)
         self.iface.messageBar().pushWarning("InSAR Explorer", message)
         if exception is not None:
             print(f"InSAR Explorer: {message} ({exception})")

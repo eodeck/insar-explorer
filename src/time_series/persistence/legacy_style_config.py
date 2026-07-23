@@ -1,6 +1,7 @@
-"""Private legacy style-schema helper for the config.json compatibility adapter.
+"""Read-only legacy style-schema helper used during first-run migration.
 
-This module is infrastructure-only and will be retired with the Phase 08 migration.
+The bundled configuration is immutable application data.  This helper performs
+normalization only and never writes to the legacy JSON source.
 """
 
 from collections.abc import Mapping
@@ -40,7 +41,7 @@ from ..style_schema import (
 
 
 class TimeSeriesStyleConfig:
-    """Translate between the Settings JSON metadata schema and ``TimeSeriesStyle``."""
+    """Read typed styles from the retired Settings JSON metadata schema."""
 
     BLOCK_KEY = "timeseries settings"
     PLOT_KEY = "time series plot"
@@ -67,27 +68,6 @@ class TimeSeriesStyleConfig:
         params.setdefault(self.PLOT_KEY, {}).update(self.load_style_values())
         return TimeSeriesStyle.fromParams(params)
 
-    def save_default_style(self, style):
-        """Persist style values while preserving unrelated settings and metadata."""
-        plot_values = style.params.get(self.PLOT_KEY, {})
-        settings = JsonSettings(self.config_file)
-        block = settings.load(block_key=self.BLOCK_KEY)
-        plot = block.get(self.PLOT_KEY)
-        if not isinstance(plot, dict):
-            raise KeyError("Missing timeseries settings/time series plot configuration block")
-
-        for key in PERSISTED_STYLE_KEYS:
-            if key not in plot_values:
-                continue
-            entry = plot.get(key)
-            if not isinstance(entry, dict):
-                raise KeyError(f"Missing time-series plot style setting: {key}")
-            entry["value"] = self.normalize_property(key, plot_values[key])
-
-        settings.save(self.BLOCK_KEY, block)
-
-
-
     def load_ensemble_style_values(self):
         """Load and normalize persisted Ensemble defaults from existing plot keys."""
         settings = JsonSettings(self.config_file)
@@ -99,32 +79,15 @@ class TimeSeriesStyleConfig:
             value = entry.get("value", entry.get("default")) if isinstance(entry, dict) else None
             values[key] = EnsembleStyleController._normalize(key, value)
 
-        style_entry = plot.get(ENSEMBLE_MEMBER_LINE_STYLE)
-        if isinstance(style_entry, dict):
-            current_style = style_entry.get("value", style_entry.get("default"))
-            if current_style != ENSEMBLE_MEMBER_LINE_SOLID_STYLE:
-                style_entry["value"] = ENSEMBLE_MEMBER_LINE_SOLID_STYLE
-                settings.save(self.BLOCK_KEY, block)
+        # The historical UI only supports solid member lines.  Normalize the
+        # in-memory migration value without mutating bundled application data.
+        if ENSEMBLE_MEMBER_LINE_STYLE in values:
+            values[ENSEMBLE_MEMBER_LINE_STYLE] = ENSEMBLE_MEMBER_LINE_SOLID_STYLE
         return values
 
     def load_default_ensemble_style(self):
         """Return normalized persisted Ensemble defaults."""
         return EnsembleStyle.fromParams({self.PLOT_KEY: self.load_ensemble_style_values()})
-
-    def save_default_ensemble_style(self, ensemble_style):
-        """Persist Ensemble defaults while retaining unrelated config metadata."""
-        values = self._style_values(ensemble_style)
-        settings = JsonSettings(self.config_file)
-        block = settings.load(block_key=self.BLOCK_KEY)
-        plot = block.get(self.PLOT_KEY)
-        if not isinstance(plot, dict):
-            raise KeyError("Missing timeseries settings/time series plot configuration block")
-        for key in ENSEMBLE_STYLE_KEYS:
-            entry = plot.get(key)
-            if not isinstance(entry, dict):
-                raise KeyError(f"Missing ensemble style setting: {key}")
-            entry["value"] = EnsembleStyleController._normalize(key, values.get(key))
-        settings.save(self.BLOCK_KEY, block)
 
     def load_fit_style_values(self):
         """Load and normalize persisted fit-line defaults."""
@@ -142,22 +105,6 @@ class TimeSeriesStyleConfig:
         """Return normalized persisted fit-line defaults."""
         return FitStyle.fromParams({"model fit": self.load_fit_style_values()})
 
-    def save_default_fit_style(self, fit_style):
-        """Persist fit-line defaults while preserving settings metadata."""
-        values = self._style_values(fit_style)
-        settings = JsonSettings(self.config_file)
-        block = settings.load(block_key=self.BLOCK_KEY)
-        fit = block.get("model fit")
-        if not isinstance(fit, dict):
-            raise KeyError("Missing timeseries settings/model fit configuration block")
-        for key in FIT_STYLE_KEYS:
-            entry = fit.get(key)
-            if not isinstance(entry, dict):
-                raise KeyError(f"Missing model-fit style setting: {key}")
-            entry["value"] = self.normalize_fit_property(key, values.get(key))
-        settings.save(self.BLOCK_KEY, block)
-
-
     def load_residual_style_values(self):
         """Load and normalize persisted residual-series defaults."""
         settings = JsonSettings(self.config_file)
@@ -172,22 +119,6 @@ class TimeSeriesStyleConfig:
 
     def load_default_residual_style(self):
         return ResidualStyle.fromParams({"residual plot": self.load_residual_style_values()})
-
-    def save_default_residual_style(self, residual_style):
-        values = self._style_values(residual_style)
-        settings = JsonSettings(self.config_file)
-        block = settings.load(block_key=self.BLOCK_KEY)
-        residual = block.get("residual plot")
-        if not isinstance(residual, dict):
-            raise KeyError("Missing timeseries settings/residual plot configuration block")
-        for key in RESIDUAL_STYLE_KEYS:
-            entry = residual.get(key)
-            if not isinstance(entry, dict):
-                if key == "marker edge color":
-                    continue
-                raise KeyError(f"Missing residual style setting: {key}")
-            entry["value"] = self.normalize_residual_property(key, values.get(key))
-        settings.save(self.BLOCK_KEY, block)
 
     @staticmethod
     def _style_values(style):

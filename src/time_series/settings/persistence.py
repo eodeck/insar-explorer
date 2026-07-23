@@ -4,10 +4,10 @@ Persistence implementations live in :mod:`time_series.persistence`.
 """
 
 from copy import deepcopy
-from ..persistence.legacy_json import LegacyJsonUserPreferencesRepository
+from ..persistence.qsettings import QSettingsUserPreferencesRepository
 
-# Transitional alias for downstream imports. New application code uses the protocol.
-TimeSeriesSettingsPersistence = LegacyJsonUserPreferencesRepository
+# Transitional forwarding alias for downstream imports. New code uses the protocol.
+TimeSeriesSettingsPersistence = QSettingsUserPreferencesRepository
 
 def build_legacy_plot_params(model, existing=None):
     """Build the temporary legacy ``PlotTs.parms`` view from runtime settings.

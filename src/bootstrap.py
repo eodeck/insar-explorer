@@ -4,17 +4,21 @@ from dataclasses import dataclass
 import os
 
 from .time_series.persistence import (
-    NullProjectStateRepository, build_runtime_settings,
+    NullProjectStateRepository,
+    ProjectStateRepository,
+    UserPreferencesRepository,
+    build_runtime_settings,
 )
+from .time_series.settings.model import TimeSeriesSettingsModel
 
 
 @dataclass(frozen=True)
 class TimeSeriesServices:
     """Composed time-series dependencies supplied to application objects."""
 
-    user_preferences: object
-    project_state_repository: object
-    settings_model: object
+    user_preferences: UserPreferencesRepository
+    project_state_repository: ProjectStateRepository
+    settings_model: TimeSeriesSettingsModel
 
 
 def create_time_series_services(plugin_dir, diagnostic=None):

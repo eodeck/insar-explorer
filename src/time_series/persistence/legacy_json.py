@@ -1,7 +1,8 @@
-"""Legacy config.json adapter retained for the Phase 08 migration window.
+"""Read-only adapter for one-time migration from bundled ``config.json``.
 
-This is the only plugin-owned infrastructure layer that understands JsonSettings,
-legacy metadata entries, JSON block names, or the bundled configuration schema.
+This is the only plugin-owned infrastructure layer that understands
+``JsonSettings``, legacy metadata entries, JSON block names, or the bundled
+configuration schema.  It deliberately exposes no save operations.
 """
 
 from copy import deepcopy
@@ -19,11 +20,11 @@ from ..settings.model import (
     SeriesStyleSettings,
 )
 from .factory_defaults import factory_user_preferences
-from .interfaces import PreferencesPersistenceError, TimeSeriesUserPreferences
+from .interfaces import TimeSeriesUserPreferences
 
 
 class LegacyJsonUserPreferencesRepository:
-    """Temporary compatibility adapter for the bundled config.json schema."""
+    """Read normalized legacy preferences for one-time migration only."""
 
     BLOCK_KEY = "timeseries settings"
 
@@ -182,121 +183,6 @@ class LegacyJsonUserPreferencesRepository:
                 include_attribution=self._include_attribution(export),
             ),
         )
-
-    def _save_value(self, section_name, key, value):
-        """Update one metadata value while preserving every unrelated entry."""
-        json_settings = JsonSettings(self.config_file)
-        block = self._load_block()
-        section = block.setdefault(section_name, {})
-        if not isinstance(section, dict):
-            section = {}
-            block[section_name] = section
-        entry = section.setdefault(key, {})
-        if not isinstance(entry, dict):
-            entry = {}
-            section[key] = entry
-        entry["value"] = value
-        try:
-            json_settings.save(self.BLOCK_KEY, block)
-        except Exception as exc:
-            raise PreferencesPersistenceError("Unable to save time-series preferences.") from exc
-
-    def _save_style(self, operation):
-        """Translate legacy style-backend failures into the repository contract."""
-        try:
-            operation()
-        except Exception as exc:
-            raise PreferencesPersistenceError(
-                "Unable to save time-series preferences."
-            ) from exc
-
-    def save_series_defaults(self, settings):
-        """Persist primary-series defaults through the existing adapter."""
-        self._save_style(lambda: self.style_config.save_default_style(settings.to_time_series_style()))
-
-    def save_fit_defaults(self, settings):
-        """Persist fit defaults through the existing adapter."""
-        self._save_style(lambda: self.style_config.save_default_fit_style(settings))
-
-    def save_residual_defaults(self, settings):
-        """Persist residual defaults through the existing adapter."""
-        self._save_style(lambda: self.style_config.save_default_residual_style(settings))
-
-    def save_ensemble_defaults(self, settings):
-        """Persist ensemble defaults through the existing adapter."""
-        self._save_style(lambda: self.style_config.save_default_ensemble_style(settings))
-
-    def load_replica_defaults(self):
-        """Return the currently persisted Replica defaults."""
-        return self.load().replica_defaults
-
-    def save_replica_defaults(self, settings):
-        """Persist Replica defaults while retaining session activation/interval."""
-        values = {
-            "replica pair count": self._normalize_pair_count(settings.pair_count),
-            "replica color 1": normalize_color(settings.color_1, "#ff7f0e"),
-            "replica color 2": normalize_color(settings.color_2, "#2ca02c"),
-            "replica alpha": normalize_alpha(settings.opacity, 0.8),
-            "replica marker": normalize_marker(settings.marker, "o"),
-            "replica marker size": normalize_number(settings.marker_size, MARKER_SIZE_RANGE, 5.0),
-        }
-        for key, value in values.items():
-            self._save_value("time series plot", key, value)
-
-    def save_appearance(self, settings):
-        """Persist typed appearance values through scoped metadata writes."""
-        values = {
-            ("time series plot", "title"): settings.time_series_title,
-            ("time series plot", "xlabel"): settings.time_series_x_label,
-            ("time series plot", "ylabel"): settings.time_series_y_label,
-            ("time series plot", "font size"): settings.font_size,
-            ("time series plot", "grid"): settings.grid_mode,
-            ("time series plot", "background color"): settings.plot_background,
-            ("time series plot", "date format"): settings.date_format,
-            ("residual plot", "title"): settings.residual_title,
-            ("residual plot", "grid"): settings.grid_mode,
-            ("residual plot", "xlabel"): settings.residual_x_label,
-            ("residual plot", "ylabel"): settings.residual_y_label,
-            ("figure", "background color"): settings.canvas_background,
-        }
-        for (section, key), value in values.items():
-            self._save_value(section, key, value)
-
-    def save_export(self, settings):
-        """Persist typed export defaults and remove the obsolete credit field."""
-        json_settings = JsonSettings(self.config_file)
-        block = self._load_block()
-        export = block.setdefault("export", {})
-        if not isinstance(export, dict):
-            export = {}
-            block["export"] = export
-        export.pop("credit", None)
-        export["dpi"] = self._updated_entry(export.get("dpi"), settings.dpi)
-        export["aspect ratio"] = self._updated_entry(
-            export.get("aspect ratio"), settings.aspect_ratio
-        )
-        attribution = self._updated_entry(
-            export.get("include attribution"), settings.include_attribution
-        )
-        attribution.update({
-            "type": "bool",
-            "default": True,
-            "advanced": False,
-            "text": "Include attribution",
-            "icon": ":/plugins/insar-explorer/icon.svg",
-        })
-        export["include attribution"] = attribution
-        try:
-            json_settings.save(self.BLOCK_KEY, block)
-        except Exception as exc:
-            raise PreferencesPersistenceError("Unable to save time-series preferences.") from exc
-
-    @staticmethod
-    def _updated_entry(entry, value):
-        """Return one defensive metadata entry with its current value replaced."""
-        entry = dict(entry) if isinstance(entry, dict) else {}
-        entry["value"] = value
-        return entry
 
 
 def build_legacy_plot_params(model, existing=None):
