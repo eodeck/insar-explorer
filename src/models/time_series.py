@@ -5,10 +5,27 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from enum import Enum
-from typing import Any, List, Optional
+from typing import Any, List, Mapping, Optional
 from uuid import UUID, uuid4
 
 import numpy as np
+
+try:
+    from ..time_series.settings.model import (
+        EnsembleStyleSettings,
+        FitStyleSettings,
+        ReplicaStyleSettings,
+        ResidualStyleSettings,
+        SeriesStyleSettings,
+    )
+except ImportError:  # plain-Python test/import compatibility
+    from time_series.settings.model import (
+        EnsembleStyleSettings,
+        FitStyleSettings,
+        ReplicaStyleSettings,
+        ResidualStyleSettings,
+        SeriesStyleSettings,
+    )
 
 
 def randomTimeSeriesColor() -> str:
@@ -115,8 +132,55 @@ class TimeSeriesData:
 
 
 @dataclass(frozen=True)
+class TimeSeriesPresentation:
+    """All renderer-independent presentation state owned by one series."""
+
+    series: SeriesStyleSettings = field(default_factory=SeriesStyleSettings)
+    ensemble: EnsembleStyleSettings = field(default_factory=EnsembleStyleSettings)
+    fit: FitStyleSettings = field(default_factory=FitStyleSettings)
+    residual: ResidualStyleSettings = field(default_factory=ResidualStyleSettings)
+    replica: ReplicaStyleSettings = field(default_factory=ReplicaStyleSettings)
+    label: Optional[str] = None
+    visible: bool = True
+    # Reserved metadata for a later layering feature; the Phase 6 renderer
+    # does not currently expose or apply per-series z-order editing.
+    z_order: Optional[int] = None
+
+
+def presentation_from_legacy_params(
+    params: Optional[Mapping[str, Any]], *, label: Optional[str] = None,
+    visible: bool = True, z_order: Optional[int] = None,
+) -> TimeSeriesPresentation:
+    """Build typed per-series presentation from legacy plot parameters."""
+    copied = deepcopy(dict(params)) if isinstance(params, Mapping) else {}
+    return TimeSeriesPresentation(
+        series=SeriesStyleSettings.from_params(copied),
+        ensemble=EnsembleStyleSettings.fromParams(copied),
+        fit=FitStyleSettings.fromParams(copied),
+        residual=ResidualStyleSettings.fromParams(copied),
+        replica=ReplicaStyleSettings.fromParams(copied),
+        label=label,
+        visible=bool(visible),
+        z_order=z_order,
+    )
+
+
+def presentation_to_legacy_params(presentation: TimeSeriesPresentation) -> dict[str, Any]:
+    """Build a defensive legacy parameter dictionary for compatibility consumers."""
+    plot = {}
+    plot.update(presentation.series.as_params())
+    plot.update(presentation.ensemble.asParams())
+    plot.update(presentation.replica.asParams())
+    return {
+        "time series plot": deepcopy(plot),
+        "model fit": deepcopy(presentation.fit.asParams()),
+        "residual plot": deepcopy(presentation.residual.asParams()),
+    }
+
+
+@dataclass(frozen=True)
 class TimeSeriesStyle:
-    """Display metadata and copied settings for one plotted series."""
+    """Defensive compatibility projection of typed per-series presentation."""
 
     params: dict
     label: Optional[str] = None
@@ -125,7 +189,7 @@ class TimeSeriesStyle:
 
     @classmethod
     def fromParams(cls, params: Optional[dict], **kwargs: Any) -> "TimeSeriesStyle":
-        """Create per-series style metadata without global overlay settings."""
+        """Create copied legacy style metadata for compatibility consumers."""
         copied_params = deepcopy(params) if params is not None else {}
         copied_params.get("time series plot", {}).pop("replica pair count", None)
         return cls(params=copied_params, **kwargs)
@@ -133,28 +197,37 @@ class TimeSeriesStyle:
 
 @dataclass
 class DefaultTimeSeriesStyle:
-    """Mutable source of defaults used only when creating new time-series snapshots."""
+    """Mutable source of typed defaults used only for newly created records."""
 
     def __init__(self, style: TimeSeriesStyle):
-        self._style = TimeSeriesStyle.fromParams(style.params)
+        self._presentation = presentation_from_legacy_params(
+            style.params, label=style.label, visible=style.visible, z_order=style.z_order
+        )
 
     @classmethod
     def fromParams(cls, params: Optional[dict]) -> "DefaultTimeSeriesStyle":
-        """Create a default-style source from copied plot parameters."""
         return cls(TimeSeriesStyle.fromParams(params))
 
+    def snapshotPresentation(self) -> TimeSeriesPresentation:
+        """Return an immutable presentation snapshot for a newly created record."""
+        return replace(self._presentation)
+
     def snapshotStyle(self) -> TimeSeriesStyle:
-        """Return an independent style copy for a newly-created series."""
-        return TimeSeriesStyle.fromParams(self._style.params)
+        """Return a defensive compatibility projection."""
+        presentation = self.snapshotPresentation()
+        return TimeSeriesStyle(
+            presentation_to_legacy_params(presentation), presentation.label,
+            presentation.visible, presentation.z_order,
+        )
 
     def replaceFromSeries(self, style: TimeSeriesStyle) -> None:
-        """Replace defaults with a defensive copy of a series style."""
-        self._style = TimeSeriesStyle.fromParams(style.params)
+        self._presentation = presentation_from_legacy_params(
+            style.params, label=style.label, visible=style.visible, z_order=style.z_order
+        )
 
     @property
     def params(self) -> dict:
-        """Return a defensive copy of the current default parameters."""
-        return deepcopy(self._style.params)
+        return presentation_to_legacy_params(self._presentation)
 
 
 @dataclass
@@ -179,7 +252,7 @@ class TimeSeriesRecord:
     """Renderer-independent stored state for one time series."""
 
     data: TimeSeriesData
-    style: TimeSeriesStyle
+    presentation: TimeSeriesPresentation
     analysis: TimeSeriesAnalysis = field(default_factory=TimeSeriesAnalysis)
     id: UUID = field(default_factory=uuid4)
     target: Optional[SpatialSelection] = None
@@ -189,6 +262,16 @@ class TimeSeriesRecord:
         """Normalize legacy selection values while preserving immutable ownership."""
         object.__setattr__(self, "target", SpatialSelection.from_legacy(self.target))
         object.__setattr__(self, "reference", SpatialSelection.from_legacy(self.reference))
+
+    @property
+    def style(self) -> TimeSeriesStyle:
+        """Return a defensive legacy style projection of authoritative presentation."""
+        return TimeSeriesStyle(
+            presentation_to_legacy_params(self.presentation),
+            label=self.presentation.label,
+            visible=self.presentation.visible,
+            z_order=self.presentation.z_order,
+        )
 
 
 # Transitional compatibility alias; remove after downstream APIs use record terminology.

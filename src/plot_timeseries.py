@@ -33,6 +33,8 @@ from .models.time_series import (
     TimeSeriesSnapshot,
     DefaultTimeSeriesStyle,
     TimeSeriesStyle,
+    TimeSeriesPresentation,
+    presentation_from_legacy_params,
     buildTimeSeriesData,
     randomTimeSeriesColor,
 )
@@ -379,7 +381,7 @@ class PlotTs():
         current = self.current_series()
         record = self._buildTimeSeriesRecord(
             data=data,
-            style=current.style if current is not None else self.default_style.snapshotStyle(),
+            presentation=current.presentation if current is not None else self.default_style.snapshotPresentation(),
             coords=self.coords,
             ref_coords=self.ref_coords,
             record_id=current.id if current is not None else None,
@@ -439,8 +441,21 @@ class PlotTs():
         self.rerender_record(replace(current, analysis=analysis))
         return True
 
+    def updateActiveReplicaState(self, *, configuration, presentation) -> bool:
+        """Replace active Replica calculation and visual state in one rerender."""
+        current = self.current_series()
+        if current is None:
+            return False
+        updated = replace(
+            current,
+            analysis=replace(current.analysis, replica=configuration),
+            presentation=replace(current.presentation, replica=presentation),
+        )
+        self.rerender_record(updated)
+        return True
+
     def _buildTimeSeriesRecord(
-        self, *, data: TimeSeriesData, style: TimeSeriesStyle,
+        self, *, data: TimeSeriesData, presentation: TimeSeriesPresentation,
         coords=_UNSET, ref_coords=_UNSET, record_id=None, source=None,
         analysis=_UNSET, fit=_UNSET, replica=_UNSET,
     ) -> TimeSeriesRecord:
@@ -462,7 +477,7 @@ class PlotTs():
         if replica is not _UNSET:
             base_analysis = replace(base_analysis, replica=replica)
         kwargs = {
-            "data": data, "style": style, "analysis": base_analysis,
+            "data": data, "presentation": presentation, "analysis": base_analysis,
             "target": target, "reference": reference,
         }
         if record_id is not None:
@@ -603,41 +618,45 @@ class PlotTs():
             ts_values = source_data.ts_values if ts_values is None else ts_values
             ref_values = source_data.ref_values if ref_values is None else ref_values
             random_marker_color_flag = False
-            style = TimeSeriesStyle.fromParams(
-                source_snapshot.style.params,
-                label=source_snapshot.style.label,
-                visible=source_snapshot.style.visible,
-                z_order=source_snapshot.style.z_order,
-            )
+            presentation = source_snapshot.presentation
         else:
             random_marker_color_flag = self.random_marker_color_flag
-            style = self.default_style.snapshotStyle()
+            presentation = self.default_style.snapshotPresentation()
             if not self.hold_on_flag:
                 self._discardAllSeriesState()
 
         if dates is None and self.dates is None:
             return
 
-        # build and validate before changing the existing record or its graphics.
+        # Build the complete immutable record before selecting the axes layout.
+        # In particular, a genuine new record's residual intent must determine
+        # whether the residual axis exists before any graphics are attached.
         series = self._buildTimeSeriesData(
             dates=dates, ts_values=ts_values, ref_values=ref_values
         )
         if not series.hasFinitePlotValues():
             return
 
-        self.initializeAxes()
-
         if random_marker_color_flag:
             rand_color = randomTimeSeriesColor()
-            style.params['time series plot']['marker color'] = rand_color
-            style.params['time series plot']['line color'] = rand_color
+            presentation = replace(
+                presentation,
+                series=replace(
+                    presentation.series,
+                    marker_color=rand_color,
+                    line_color=rand_color,
+                ),
+            )
 
         record_analysis = _UNSET if update or analysis is None else analysis
         record = self._buildTimeSeriesRecord(
-            data=series, style=style, coords=coords, ref_coords=ref_coords,
+            data=series, presentation=presentation, coords=coords, ref_coords=ref_coords,
             record_id=source_snapshot.id if source_snapshot is not None else None,
             source=source_snapshot, analysis=record_analysis,
         )
+        fit = record.analysis.fit
+        self.plot_residuals_flag = bool(fit.enabled and fit.show_residuals)
+        self.initializeAxes()
         if update:
             self.rerender_record(
                 record, plot_multiple=plot_multiple,
@@ -719,6 +738,10 @@ class PlotTs():
         rendered_record = record if residuals is None else replace(
             record, data=record.data.withResiduals(residuals)
         )
+        # Presentation visibility is authoritative. Apply it to every newly
+        # created graphics bundle before registry/store commit so no render or
+        # rerender path can temporarily publish the wrong visibility state.
+        self._set_graphics_visible(graphics, rendered_record.presentation.visible)
         return graphics, rendered_record, transaction
 
     def render_record(
@@ -771,12 +794,10 @@ class PlotTs():
         old_graphics = self._graphics_by_series_id.get(record.id)
         if old_graphics is None:
             raise KeyError(f"time-series graphics not found: {record.id}")
-        visible = self._graphics_visible(old_graphics)
         new_graphics, rendered_record, transaction = self._build_record_graphics(
             record, plot_multiple=plot_multiple,
             report_statistics=report_statistics,
         )
-        self._set_graphics_visible(new_graphics, visible)
         store_replaced = False
         try:
             if not self._series_store.replace(rendered_record):
@@ -857,11 +878,27 @@ class PlotTs():
                 setter(bool(visible))
 
     def set_record_visible(self, record_id: UUID, visible: bool) -> bool:
-        """Show or hide every graphics component owned by one rendered UUID."""
-        graphics = self._graphics_by_series_id.get(record_id)
-        if graphics is None:
+        """Persist and apply visibility for one stored time-series record."""
+        record = self._series_store.get(record_id)
+        if record is None:
             return False
-        self._set_graphics_visible(graphics, visible)
+
+        visible = bool(visible)
+        if record.presentation.visible != visible:
+            updated = replace(
+                record,
+                presentation=replace(record.presentation, visible=visible),
+            )
+            if not self._series_store.replace(updated):
+                raise KeyError(f"time-series record not found: {record_id}")
+            record = updated
+
+        graphics = self._graphics_by_series_id.get(record_id)
+        if graphics is not None:
+            self._set_graphics_visible(graphics, visible)
+
+        if self._series_store.active_id() == record_id:
+            self._set_current_series(record)
         return True
 
     @staticmethod
@@ -880,27 +917,28 @@ class PlotTs():
     ) -> Tuple[TimeSeriesGraphics, Optional[np.ndarray]]:
         """Render numeric and analysis graphics from one explicit record."""
         series = record.data
-        style = record.style
+        presentation = record.presentation
         analysis = record.analysis
         items = TimeSeriesGraphics()
         main_y_data = []
-        parms = style.params['time series plot']
-        marker = parms['marker']
-        marker_size = parms['marker size']
-        marker_color = parms['marker color']
-        marker_alpha = parms['marker alpha']
-        edge_color = parms['marker edge color']
-        line_style = parms['line style']
-        line_color = parms['line color']
-        line_alpha = parms['line alpha']
-        line_width = parms['line width']
+        series_style = presentation.series
+        ensemble_style = presentation.ensemble
+        marker = series_style.marker
+        marker_size = series_style.marker_size
+        marker_color = series_style.marker_color
+        marker_alpha = series_style.marker_opacity
+        edge_color = series_style.marker_edge_color
+        line_style = series_style.line_style
+        line_color = series_style.line_color
+        line_alpha = series_style.line_opacity
+        line_width = series_style.line_width
         x = self._datesToX(series.dates)
 
         if plot_multiple and series.min_plot_values is not None:
             lower_bound = series.min_plot_values
             upper_bound = series.max_plot_values
-            series_fill_color = parms['series fill color']
-            series_fill_alpha = parms['series fill alpha']
+            series_fill_color = ensemble_style.fill_color
+            series_fill_alpha = ensemble_style.fill_alpha
             if series_fill_alpha > 0:
                 lower_line = pg.PlotCurveItem(x, lower_bound, pen=None)
                 upper_line = pg.PlotCurveItem(x, upper_bound, pen=None)
@@ -916,9 +954,9 @@ class PlotTs():
 
         if series.plot_multiple_values is not None:
             series_line_style = '-'
-            series_line_color = parms['series line color']
-            series_line_alpha = parms['series line alpha']
-            series_line_width = parms['series line width']
+            series_line_color = ensemble_style.member_line_color
+            series_line_alpha = ensemble_style.member_line_alpha
+            series_line_width = ensemble_style.member_line_width
             if series_line_width > 0 and series_line_alpha > 0:
                 for i in range(series.plot_multiple_values.shape[1]):
                     item = pg.PlotDataItem(
@@ -948,7 +986,7 @@ class PlotTs():
 
         if analysis.replica.enabled:
             items.replicate_up, items.replicate_dn = self.plotReplicas(
-                series, style, analysis.replica, transaction=transaction
+                series, presentation.replica, analysis.replica, transaction=transaction
             )
         else:
             items.replicate_up, items.replicate_dn = [None], [None]
@@ -956,14 +994,13 @@ class PlotTs():
         main_y_data.extend(self._last_replica_y_data)
         self._last_replica_y_data = []
         items.main_y_data = main_y_data
-        self.decoratePlot(parms=parms)
+        self.decoratePlot(parms=self.parms.get("time series plot", {}))
         items.fit_plot, residuals_values = self.fitModel(
-            series, style, analysis.fit, items, report_statistics=report_statistics,
+            series, presentation, analysis.fit, items, report_statistics=report_statistics,
             transaction=transaction
         )
 
-        parms_figure = style.params['figure']
-        self.decorateFigure(parms=parms_figure)
+        self.decorateFigure(parms=self.parms.get("figure", {}))
         return items, residuals_values
 
     def removeLastPlot(self, n=1, update=False):
@@ -991,11 +1028,11 @@ class PlotTs():
         return True
 
     def plotReplicas(
-        self, series: TimeSeriesData, style: TimeSeriesStyle,
+        self, series: TimeSeriesData, replica_style,
         replica_config: ReplicaConfiguration, transaction=None,
     ):
-        """Render Replica overlays using record-owned calculation configuration."""
-        replica = self.settings_model.replica
+        """Render Replica overlays from record-owned visual and calculation state."""
+        replica = replica_style
         x = self._datesToX(series.dates)
         marker_color_1 = replica.color_1  # replica up
         marker_color_2 = replica.color_2  # replica down
@@ -1044,7 +1081,7 @@ class PlotTs():
         return replicate_up_list, replicate_dn_list
 
     def fitModel(
-        self, series: TimeSeriesData, style: TimeSeriesStyle,
+        self, series: TimeSeriesData, presentation: TimeSeriesPresentation,
         fit_config: FitConfiguration, graphics=None, *,
         report_statistics=False, transaction=None
     ):
@@ -1055,11 +1092,10 @@ class PlotTs():
         if not fit_config.enabled or not fit_config.model:
             return None, None
 
-        parms = style.params['model fit']
-        fit_style = FitStyle.fromParams(style.params)
+        fit_style = presentation.fit
         fit_line_type = fit_style.line_style
         fit_line_color = fit_style.line_color
-        fit_line_alpha = parms['line alpha']
+        fit_line_alpha = fit_style.line_alpha
         fit_line_width = fit_style.line_width
         fit_seasonal = fit_config.seasonal
         fit_model = fit_config.model
@@ -1100,7 +1136,7 @@ class PlotTs():
 
         residuals_values = observed_values - fitted_values
         self.plotResiduals(
-            series, style, fit_config, graphics, residuals_values, transaction=transaction
+            series, presentation, fit_config, graphics, residuals_values, transaction=transaction
         )
         if report_statistics and self.fit_success_callback is not None:
             self.fit_success_callback(
@@ -1108,17 +1144,12 @@ class PlotTs():
             )
         return fit_plot, residuals_values
 
-    def _normalizedResidualStyle(self, style: TimeSeriesStyle):
-        """Return snapshot-owned residual appearance with runtime-default fallbacks."""
-        values = self.settings_model.residual_current.asParams()
-        snapshot_params = style.params if isinstance(style.params, dict) else {}
-        snapshot_residual = snapshot_params.get("residual plot", {})
-        if isinstance(snapshot_residual, dict):
-            values.update(snapshot_residual)
-        return ResidualStyleSettings.fromParams({"residual plot": values})
+    def _normalizedResidualStyle(self, presentation: TimeSeriesPresentation):
+        """Return the record-owned residual appearance."""
+        return presentation.residual
 
     def plotResiduals(
-        self, series: TimeSeriesData, style: TimeSeriesStyle,
+        self, series: TimeSeriesData, presentation: TimeSeriesPresentation,
         fit_config: FitConfiguration, items=None, residuals_values=None, transaction=None,
     ):
         if items is None:
@@ -1126,7 +1157,7 @@ class PlotTs():
         if residuals_values is None:
             residuals_values = series.residuals_values
         if fit_config.show_residuals and fit_config.enabled and self.ax_residuals is not None and residuals_values is not None:
-            residual_style = self._normalizedResidualStyle(style)
+            residual_style = self._normalizedResidualStyle(presentation)
             marker = residual_style.marker
             marker_size = residual_style.marker_size
             marker_color = residual_style.marker_color
@@ -1902,7 +1933,7 @@ class PlotTs():
                 dates=self.dates, ts_values=self.ts_values, ref_values=self.ref_values
             )
             record = self._buildTimeSeriesRecord(
-                data=data, style=self.default_style.snapshotStyle(),
+                data=data, presentation=self.default_style.snapshotPresentation(),
                 coords=self.coords, ref_coords=self.ref_coords,
             )
         series = record.data

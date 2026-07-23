@@ -9,6 +9,7 @@ from .style_schema import PERSISTED_STYLE_KEYS
 from ..models.time_series import (
     TimeSeriesSnapshot,
     TimeSeriesStyle,
+    presentation_from_legacy_params,
     randomTimeSeriesColor,
 )
 
@@ -56,7 +57,10 @@ class TimeSeriesStyleController:
                 visible=snapshot.style.visible,
                 z_order=snapshot.style.z_order,
             )
-            changed.append(replace(snapshot, style=updated_style))
+            changed.append(replace(snapshot, presentation=presentation_from_legacy_params(
+                updated_style.params, label=updated_style.label,
+                visible=updated_style.visible, z_order=updated_style.z_order,
+            )))
         return changed
 
     @staticmethod
@@ -106,7 +110,10 @@ class TimeSeriesStyleController:
                 visible=snapshot.style.visible,
                 z_order=snapshot.style.z_order,
             )
-            changed.append(replace(snapshot, style=updated_style))
+            changed.append(replace(snapshot, presentation=presentation_from_legacy_params(
+                updated_style.params, label=updated_style.label,
+                visible=updated_style.visible, z_order=updated_style.z_order,
+            )))
         return changed
 
     def applyStyleValues(self, snapshots, changed_style_values):
@@ -123,7 +130,10 @@ class TimeSeriesStyleController:
                 visible=snapshot.style.visible,
                 z_order=snapshot.style.z_order,
             )
-            changed.append(replace(snapshot, style=updated_style))
+            changed.append(replace(snapshot, presentation=presentation_from_legacy_params(
+                updated_style.params, label=updated_style.label,
+                visible=updated_style.visible, z_order=updated_style.z_order,
+            )))
         return changed
 
     def applySettingsChanges(self, snapshots, runtime_params, changed_style_values):
@@ -153,7 +163,10 @@ class TimeSeriesStyleController:
                 visible=snapshot.style.visible,
                 z_order=snapshot.style.z_order,
             )
-            changed.append(replace(snapshot, style=updated_style))
+            changed.append(replace(snapshot, presentation=presentation_from_legacy_params(
+                updated_style.params, label=updated_style.label,
+                visible=updated_style.visible, z_order=updated_style.z_order,
+            )))
         return changed
 
     def randomizeColor(self, snapshots: Iterable[TimeSeriesSnapshot]):
@@ -171,5 +184,8 @@ class TimeSeriesStyleController:
                 visible=snapshot.style.visible,
                 z_order=snapshot.style.z_order,
             )
-            changed.append(replace(snapshot, style=updated_style))
+            changed.append(replace(snapshot, presentation=presentation_from_legacy_params(
+                updated_style.params, label=updated_style.label,
+                visible=updated_style.visible, z_order=updated_style.z_order,
+            )))
         return changed

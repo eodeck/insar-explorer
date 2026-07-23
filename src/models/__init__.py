@@ -12,6 +12,9 @@ from .time_series import (
     TimeSeriesSnapshot,
     DefaultTimeSeriesStyle,
     TimeSeriesStyle,
+    TimeSeriesPresentation,
+    presentation_from_legacy_params,
+    presentation_to_legacy_params,
     buildTimeSeriesData,
 )
 
@@ -27,5 +30,8 @@ __all__ = [
     "TimeSeriesSnapshot",
     "DefaultTimeSeriesStyle",
     "TimeSeriesStyle",
+    "TimeSeriesPresentation",
+    "presentation_from_legacy_params",
+    "presentation_to_legacy_params",
     "buildTimeSeriesData",
 ]

@@ -14,7 +14,6 @@ from ..style_schema import (
     normalize_fit_line_style, normalize_line_style, normalize_marker,
     normalize_number, normalize_residual_line_style, normalize_residual_marker,
 )
-from ...models.time_series import TimeSeriesStyle
 from .change_set import SettingsChangeSet
 
 
@@ -58,6 +57,8 @@ class SeriesStyleSettings:
 
     def to_time_series_style(self, base_params=None):
         """Create an independent legacy style for compatibility consumers."""
+        from ...models.time_series import TimeSeriesStyle
+
         params = deepcopy(base_params) if isinstance(base_params, dict) else {}
         params.setdefault("time series plot", {}).update(self.as_params())
         return TimeSeriesStyle.fromParams(params)
@@ -157,6 +158,46 @@ class EnsembleStyleSettings:
                 "series line alpha": self.member_line_alpha,
                 "series fill color": self.fill_color,
                 "series fill alpha": self.fill_alpha}
+
+
+@dataclass(frozen=True)
+class ReplicaStyleSettings:
+    """Per-series visual settings for Replica markers."""
+
+    color_1: str = "#ff7f0e"
+    color_2: str = "#2ca02c"
+    opacity: float = 0.8
+    marker: str = "o"
+    marker_size: float = 5.0
+
+    def __post_init__(self):
+        object.__setattr__(self, "color_1", normalize_color(self.color_1, "#ff7f0e"))
+        object.__setattr__(self, "color_2", normalize_color(self.color_2, "#2ca02c"))
+        object.__setattr__(self, "opacity", normalize_alpha(self.opacity, 0.8))
+        object.__setattr__(self, "marker", normalize_marker(self.marker, "o"))
+        object.__setattr__(self, "marker_size", normalize_number(self.marker_size, MARKER_SIZE_RANGE, 5.0))
+
+    @classmethod
+    def fromParams(cls, params):
+        """Build visual Replica settings from legacy plot parameters."""
+        values = params.get("time series plot", {}) if isinstance(params, dict) else {}
+        return cls(
+            color_1=values.get("replica color 1", values.get("replicate color 1", "#ff7f0e")),
+            color_2=values.get("replica color 2", values.get("replicate color 2", "#2ca02c")),
+            opacity=values.get("replica alpha", values.get("replicate alpha", 0.8)),
+            marker=values.get("replica marker", values.get("replicate marker", "o")),
+            marker_size=values.get("replica marker size", values.get("replicate marker size", 5.0)),
+        )
+
+    def asParams(self):
+        """Return visual values using legacy time-series plot keys."""
+        return {
+            "replica color 1": self.color_1,
+            "replica color 2": self.color_2,
+            "replica alpha": self.opacity,
+            "replica marker": self.marker,
+            "replica marker size": self.marker_size,
+        }
 
 
 @dataclass(frozen=True)

@@ -37,7 +37,7 @@ from .time_series.style_controller import TimeSeriesStyleController
 from .time_series.style_schema import percent_to_alpha
 from .time_series.settings.model import (
     AppearanceSettings, AxisManualRange, EnsembleStyleSettings, ExportSettings,
-    FitStyleSettings, ReplicaSettings, ResidualStyleSettings, SeriesStyleSettings,
+    FitStyleSettings, ReplicaSettings, ReplicaStyleSettings, ResidualStyleSettings, SeriesStyleSettings,
     XAxisSettings,
 )
 from .time_series.settings.persistence import build_legacy_plot_params
@@ -1822,13 +1822,17 @@ class GuiController(QObject):
             )
 
     def _activeReplicaSettingsSnapshot(self):
-        """Combine active calculation state with application-wide presentation."""
-        presentation = self.time_series_settings.replica
-        return replace(
-            presentation,
+        """Combine active record calculation and visual state for popup projection."""
+        plot = self.choose_point_click_handler.plot_ts
+        current = plot.current_series()
+        visual = (current.presentation.replica
+                  if current is not None else self.time_series_settings.replica)
+        return ReplicaSettings(
             enabled=self.time_series_replica_enabled,
             interval_mm=self.time_series_replica_interval_mm,
             pair_count=self.time_series_replica_pair_count,
+            color_1=visual.color_1, color_2=visual.color_2,
+            opacity=visual.opacity, marker=visual.marker, marker_size=visual.marker_size,
         )
 
     def syncReplicaPopup(self):
@@ -1892,8 +1896,14 @@ class GuiController(QObject):
             enabled=applied.enabled, interval_mm=applied.interval_mm,
             pair_count=applied.pair_count,
         )
-        if plot.current_series() is not None:
-            plot.updateActiveAnalysis(replica=replica_config)
+        replica_style = ReplicaStyleSettings(
+            color_1=applied.color_1, color_2=applied.color_2,
+            opacity=applied.opacity, marker=applied.marker,
+            marker_size=applied.marker_size,
+        )
+        if plot.updateActiveReplicaState(
+            configuration=replica_config, presentation=replica_style
+        ):
             rerender = False
         self._syncTimeSeriesReplicaControls()
         if rerender and self._applicableReplicaTargets():
