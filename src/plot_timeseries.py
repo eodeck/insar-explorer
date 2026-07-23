@@ -4,7 +4,8 @@ from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import replace
 from datetime import datetime, timedelta, time, timezone
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
+from uuid import UUID
 
 import numpy as np
 from ..external import pyqtgraph as pg
@@ -21,6 +22,7 @@ from .time_series.fit_style_controller import FitStyle
 from .models.time_series import (
     TimeSeriesData,
     TimeSeriesGraphics,
+    TimeSeriesRecord,
     TimeSeriesSnapshot,
     DefaultTimeSeriesStyle,
     TimeSeriesStyle,
@@ -132,7 +134,8 @@ class PlotTs():
         script_path = os.path.abspath(__file__)
         json_file = "config.json"
         self.config_file = os.path.join(os.path.dirname(script_path), 'config', json_file)
-        self.series_history: List[TimeSeriesSnapshot] = []
+        self.series_history: List[TimeSeriesRecord] = []
+        self._graphics_by_series_id: Dict[UUID, TimeSeriesGraphics] = {}
         self.default_style = None
         self.fit_models = []
         self.fit_seasonal_flag = False
@@ -307,11 +310,15 @@ class PlotTs():
         self.refreshCompatibilityViews()
 
     def clear(self):
-        if not self.hold_on_flag:
+        """Clear all stored series and renderer-owned graphics."""
+        if self.hold_on_flag:
+            for record in list(self.series_history):
+                self._remove_snapshot_graphics(record)
+        else:
             self._clearPlotWidget()
-        self._draw()
-        self.series_history = []
+        self._discardAllSeriesState()
         self._set_current_series(None)
+        self._draw()
 
     def preparePlotValues(self):
         """Recompute plot values from the active arrays for compatibility callers."""
@@ -370,35 +377,65 @@ class PlotTs():
         self.ref_coords = series.ref_coords
 
     def initializeAxes(self):
-        """
-        Initialize the pyqtgraph plot items.
-        :param update: bool
-            If True, clear the latest plot.
-        """
-        if not self.hold_on_flag:
-            self.series_history = []
-            self._clearPlotWidget()
-
-            if self.plot_residuals_flag:
-                self.ax = self._addPlot(row=0)
-                self.ax_residuals = self._addPlot(row=1)
-                self.ax_residuals.setXLink(self.ax)
-            else:
-                self.ax = self._addPlot(row=0)
-                self.ax_residuals = None
+        """Initialize the pyqtgraph plot items for the requested layout."""
+        layout_matches = (
+            self.ax is not None
+            and ((self.plot_residuals_flag and self.ax_residuals is not None)
+                 or (not self.plot_residuals_flag and self.ax_residuals is None))
+        )
+        if layout_matches:
             return
 
+        if not self.hold_on_flag:
+            self._clearPlotWidget()
+            self._discardAllSeriesState()
+            self._createAxesForCurrentLayout()
+            return
+
+        self._rebuild_axes_and_rerender_history()
+
+    def _createAxesForCurrentLayout(self) -> None:
+        """Create axes matching the current residual-layout flag."""
+        self.ax = self._addPlot(row=0)
         if self.plot_residuals_flag:
-            if self.ax is None or self.ax_residuals is None:
-                self._clearPlotWidget()
-                self.ax = self._addPlot(row=0)
-                self.ax_residuals = self._addPlot(row=1)
-                self.ax_residuals.setXLink(self.ax)
+            self.ax_residuals = self._addPlot(row=1)
+            self.ax_residuals.setXLink(self.ax)
         else:
-            if self.ax is None or self.ax_residuals is not None:
-                self._clearPlotWidget()
-                self.ax = self._addPlot(row=0)
-                self.ax_residuals = None
+            self.ax_residuals = None
+
+    def _rebuild_axes_and_rerender_history(self) -> None:
+        """Recreate axes and re-render retained records with stable identity."""
+        retained_records = list(self.series_history)
+        self._clearPlotWidget()
+        self._graphics_by_series_id.clear()
+        self._createAxesForCurrentLayout()
+
+        rebuilt_records = []
+        try:
+            for record in retained_records:
+                graphics, residuals = self._render_time_series(
+                    record.data, record.style
+                )
+                rebuilt_record = record
+                if residuals is not None:
+                    rebuilt_record = replace(
+                        record, data=record.data.withResiduals(residuals)
+                    )
+                rebuilt_records.append(rebuilt_record)
+                self._register_series_graphics(rebuilt_record, graphics)
+        except Exception:
+            # Clearing the widget destroys any partially created canvas items.
+            # Records and registry are then discarded together so callers never
+            # observe a partially rebuilt retained-series state.
+            self._clearPlotWidget()
+            self._discardAllSeriesState()
+            self._createAxesForCurrentLayout()
+            raise
+
+        self.series_history[:] = rebuilt_records
+        if rebuilt_records:
+            self._set_current_series(rebuilt_records[-1].data)
+        self._rebuildYDataRanges()
 
     def plotTs(self, *, dates=None, ts_values=None, ref_values=None, plot_multiple=True, coords=None, ref_coords=None,
                update=False, report_statistics=False):
@@ -428,39 +465,34 @@ class PlotTs():
         # update: flag indicating if the plot should be updated or a new one created
 
         self.updateSettings()
+        source_snapshot = self.current_series() if update else None
 
         if update:
-            source_snapshot = self._remove_rendered_snapshot_for_update()
             if source_snapshot is None:
                 return
             source_data = source_snapshot.data
-            if dates is None:
-                dates = source_data.dates
-            if ts_values is None:
-                ts_values = source_data.ts_values
-            if ref_values is None:
-                ref_values = source_data.ref_values
-            if coords is None:
-                coords = source_data.coords
-            if ref_coords is None:
-                ref_coords = source_data.ref_coords
+            dates = source_data.dates if dates is None else dates
+            ts_values = source_data.ts_values if ts_values is None else ts_values
+            ref_values = source_data.ref_values if ref_values is None else ref_values
+            coords = source_data.coords if coords is None else coords
+            ref_coords = source_data.ref_coords if ref_coords is None else ref_coords
             random_marker_color_flag = False
-            style = TimeSeriesStyle.fromParams(source_snapshot.style.params)
+            style = TimeSeriesStyle.fromParams(
+                source_snapshot.style.params,
+                label=source_snapshot.style.label,
+                visible=source_snapshot.style.visible,
+                z_order=source_snapshot.style.z_order,
+            )
         else:
             random_marker_color_flag = self.random_marker_color_flag
             style = self.default_style.snapshotStyle()
-
-        self.initializeAxes()
-
-        # coords
-        if ts_values is not None:
-            self.coords = coords
-        if ref_values is not None:
-            self.ref_coords = ref_coords
+            if not self.hold_on_flag:
+                self._discardAllSeriesState()
 
         if dates is None and self.dates is None:
             return
 
+        # build and validate before changing the existing record or its graphics.
         series = self._buildTimeSeriesData(
             dates=dates,
             ts_values=ts_values,
@@ -468,27 +500,84 @@ class PlotTs():
             coords=coords if coords is not None else self.coords,
             ref_coords=ref_coords if ref_coords is not None else self.ref_coords,
         )
-        self._set_current_series(series)
-
-        if self.dates is None:
-            return
-
         if not series.hasFinitePlotValues():
             return
+
+        self.initializeAxes()
 
         if random_marker_color_flag:
             rand_color = randomTimeSeriesColor()
             style.params['time series plot']['marker color'] = rand_color
             style.params['time series plot']['line color'] = rand_color
-        items, residuals_values = self._render_time_series(
-            series, style, plot_multiple=plot_multiple, report_statistics=report_statistics
+
+        if update:
+            graphics, residuals_values = self._render_time_series(
+                series, style, plot_multiple=plot_multiple,
+                report_statistics=report_statistics,
+            )
+            if residuals_values is not None:
+                series = series.withResiduals(residuals_values)
+            replacement = replace(source_snapshot, data=series, style=style)
+            self._commit_rendered_record_replacement(
+                source_snapshot, replacement, graphics
+            )
+        else:
+            self._render_and_store_series(
+                series, style, plot_multiple=plot_multiple,
+                report_statistics=report_statistics,
+                replacement=not self.hold_on_flag,
+            )
+        self._draw()
+
+    def _commit_rendered_record_replacement(
+        self,
+        previous: TimeSeriesRecord,
+        replacement: TimeSeriesRecord,
+        graphics: TimeSeriesGraphics,
+    ) -> None:
+        """Atomically swap one rendered record after replacement rendering succeeds."""
+        if previous.id != replacement.id:
+            raise ValueError("replacement record must preserve the original UUID")
+        index = next(
+            (i for i, record in enumerate(self.series_history) if record.id == previous.id),
+            None,
         )
+        self._remove_snapshot_graphics(previous)
+        if index is None:
+            self.series_history.append(replacement)
+        else:
+            self.series_history[index] = replacement
+        self._register_series_graphics(replacement, graphics)
+        self._set_current_series(self.current_series().data)
+        self._rebuildYDataRanges()
+
+    def _render_and_store_series(
+        self, series: TimeSeriesData, style: TimeSeriesStyle, *,
+        plot_multiple: bool = True, report_statistics: bool = False,
+        replacement: bool = False,
+    ) -> TimeSeriesRecord:
+        """Render and atomically register one record, cleaning failed replacements."""
+        try:
+            items, residuals_values = self._render_time_series(
+                series, style, plot_multiple=plot_multiple,
+                report_statistics=report_statistics
+            )
+        except Exception:
+            if replacement:
+                # A renderer can fail after creating some canvas items. Destroy
+                # the canvas and authoritative state together, recreate an empty
+                # layout, and preserve the original exception for existing error
+                # handling.
+                self._clearPlotWidget()
+                self._discardAllSeriesState()
+                self._createAxesForCurrentLayout()
+            raise
         if residuals_values is not None:
             series = series.withResiduals(residuals_values)
             self._set_current_series(series)
-        snapshot = TimeSeriesSnapshot(data=series, style=style, graphics=items)
-        self.add_series(snapshot)
-        self._draw()
+        record = TimeSeriesRecord(data=series, style=style)
+        self._add_rendered_series(record, items)
+        return record
 
     @staticmethod
     def _alphaOrDefault(value, default):
@@ -1217,12 +1306,41 @@ class PlotTs():
             axis.setTicks([])
 
     def _clearPlotWidget(self):
+        """Destroy plot axes and canvas items without deciding record lifetime."""
         self.ui.plot_widget.clear()
         self.ui.plot_widget.plot_items = []
         self.ax = None
         self.ax_residuals = None
         self._y_data_ranges = {}
         self._last_replica_y_data = []
+
+    def _discardAllSeriesState(self) -> None:
+        """Remove rendered graphics and discard all stored series state."""
+        for record in list(self.series_history):
+            self._remove_snapshot_graphics(record)
+        self.series_history.clear()
+        self._graphics_by_series_id.clear()
+        self._set_current_series(None)
+        self._y_data_ranges = {}
+        self._last_replica_y_data = []
+
+    def _graphics_for_series(
+        self, series: TimeSeriesRecord
+    ) -> Optional[TimeSeriesGraphics]:
+        """Return runtime graphics registered for a stored series."""
+        return self._graphics_by_series_id.get(series.id)
+
+    def _register_series_graphics(
+        self, series: TimeSeriesRecord, graphics: TimeSeriesGraphics
+    ) -> None:
+        """Register or replace runtime graphics for a stored series."""
+        self._graphics_by_series_id[series.id] = graphics
+
+    def _pop_series_graphics(
+        self, series: TimeSeriesRecord
+    ) -> Optional[TimeSeriesGraphics]:
+        """Remove and return runtime graphics registered for a stored series."""
+        return self._graphics_by_series_id.pop(series.id, None)
 
     def _draw(self):
         self.ui.plot_widget.update()
@@ -1270,9 +1388,11 @@ class PlotTs():
         self._draw()
         return snapshot
 
-    def _remove_snapshot_graphics(self, snapshot):
-        """Remove all plot items owned by a stored time-series snapshot."""
-        graphics = snapshot.graphics
+    def _remove_snapshot_graphics(self, snapshot: TimeSeriesRecord) -> None:
+        """Remove and unregister all plot items owned by a stored time series."""
+        graphics = self._pop_series_graphics(snapshot)
+        if graphics is None:
+            return
         for item in (graphics.scatter, graphics.line, graphics.fit_plot):
             self._removeItem(self.ax, item)
         for item in (graphics.residual_scatter, graphics.residual_line):
@@ -1285,10 +1405,16 @@ class PlotTs():
     def _rebuildYDataRanges(self):
         self._y_data_ranges = {}
         for snapshot in self.series_history:
-            self.updateYlim(ax=self.ax, y_data=snapshot.graphics.main_y_data)
+            graphics = self._graphics_for_series(snapshot)
+            if graphics is not None:
+                self.updateYlim(ax=self.ax, y_data=graphics.main_y_data)
         if self.ax_residuals is not None:
             for snapshot in self.series_history:
-                self.updateYlim(ax=self.ax_residuals, y_data=snapshot.graphics.residual_y_data)
+                graphics = self._graphics_for_series(snapshot)
+                if graphics is not None:
+                    self.updateYlim(
+                        ax=self.ax_residuals, y_data=graphics.residual_y_data
+                    )
 
     def _applyDateFormat(self, ax=None, parms={}):
         if ax is None:
@@ -1358,25 +1484,46 @@ class PlotTs():
     def _brush(self, color=None, alpha=1.0):
         return pg.mkBrush(self._color(color, alpha))
 
+    def replace_series_records(self, records) -> None:
+        """Replace stored records by UUID while preserving order and graphics keys."""
+        replacements = {record.id: record for record in records}
+        if not replacements:
+            return
+        for index, current in enumerate(self.series_history):
+            replacement = replacements.get(current.id)
+            if replacement is not None:
+                self.series_history[index] = replacement
+        current = self.current_series()
+        self._set_current_series(current.data if current is not None else None)
+
     def rerenderTimeSeriesSnapshots(
         self, snapshots: List[TimeSeriesSnapshot], *, draw: bool = True
     ) -> None:
-        """Re-render selected snapshots while preserving the user's viewport.
+        """Transactionally replace and re-render selected snapshots by UUID.
 
         TODO(runtime-settings): remove this compatibility redraw path after plot
         layers support scoped in-place updates. ``draw=False`` allows callers to
         compose graphics and axis-policy changes into one visual transaction.
         """
+        replacements = {snapshot.id: snapshot for snapshot in snapshots}
         with self.preserveViewport():
-            selected_ids = {id(snapshot) for snapshot in snapshots}
-            for snapshot in self.series_history:
-                if id(snapshot) not in selected_ids:
+            for index, current in enumerate(list(self.series_history)):
+                requested = replacements.get(current.id)
+                if requested is None:
                     continue
-                self._remove_snapshot_graphics(snapshot)
-                graphics, residuals = self._render_time_series(snapshot.data, snapshot.style)
-                snapshot.graphics = graphics
+                graphics, residuals = self._render_time_series(
+                    requested.data, requested.style
+                )
+                replacement = requested
                 if residuals is not None:
-                    snapshot.data = snapshot.data.withResiduals(residuals)
+                    replacement = replace(
+                        requested, data=requested.data.withResiduals(residuals)
+                    )
+                self._remove_snapshot_graphics(current)
+                self.series_history[index] = replacement
+                self._register_series_graphics(replacement, graphics)
+            current = self.current_series()
+            self._set_current_series(current.data if current is not None else None)
             self._rebuildYDataRanges()
         if draw:
             self._draw()
@@ -1411,8 +1558,19 @@ class PlotTs():
             self.refreshCompatibilityViews()
         return self.default_style.snapshotStyle()
 
+    def _add_rendered_series(
+        self, snapshot: TimeSeriesRecord, graphics: TimeSeriesGraphics
+    ) -> None:
+        """Store a rendered record and roll back if graphics registration fails."""
+        self.add_series(snapshot)
+        try:
+            self._register_series_graphics(snapshot, graphics)
+        except Exception:
+            self.remove_series_by_id(snapshot.id)
+            raise
+
     def add_series(self, snapshot: TimeSeriesSnapshot) -> None:
-        """Store a plotted time-series snapshot."""
+        """Store a time-series record; callers remain responsible for graphics."""
         self.series_history.append(snapshot)
 
     def current_series(self) -> Optional[TimeSeriesSnapshot]:
@@ -1422,10 +1580,17 @@ class PlotTs():
         return None
 
     def remove_series(self, index: int = -1) -> Optional[TimeSeriesSnapshot]:
-        """Remove and return a plotted time-series snapshot."""
+        """Remove and return a record without changing registered graphics."""
         if not self.series_history:
             return None
         return self.series_history.pop(index)
+
+    def remove_series_by_id(self, series_id: UUID) -> Optional[TimeSeriesSnapshot]:
+        """Remove and return the record with the supplied stable identity."""
+        for index, snapshot in enumerate(self.series_history):
+            if snapshot.id == series_id:
+                return self.series_history.pop(index)
+        return None
 
     def _dateStrings(self):
         date_strings = []

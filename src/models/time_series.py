@@ -5,6 +5,7 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from typing import Any, List, Optional
+from uuid import UUID, uuid4
 
 import numpy as np
 
@@ -122,13 +123,17 @@ class TimeSeriesGraphics:
     residual_y_data: List[Any] = field(default_factory=list)
 
 
-@dataclass
-class TimeSeriesSnapshot:
-    """Complete stored state for one plotted time series."""
+@dataclass(frozen=True)
+class TimeSeriesRecord:
+    """Renderer-independent stored state for one time series."""
 
     data: TimeSeriesData
     style: TimeSeriesStyle
-    graphics: TimeSeriesGraphics = field(default_factory=TimeSeriesGraphics)
+    id: UUID = field(default_factory=uuid4)
+
+
+# Transitional compatibility alias; remove after downstream APIs use record terminology.
+TimeSeriesSnapshot = TimeSeriesRecord
 
 
 def _normalizeValueMatrix(

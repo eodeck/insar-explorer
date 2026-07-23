@@ -3,6 +3,7 @@
 from .time_series import (
     TimeSeriesData,
     TimeSeriesGraphics,
+    TimeSeriesRecord,
     TimeSeriesSnapshot,
     DefaultTimeSeriesStyle,
     TimeSeriesStyle,
@@ -12,6 +13,7 @@ from .time_series import (
 __all__ = [
     "TimeSeriesData",
     "TimeSeriesGraphics",
+    "TimeSeriesRecord",
     "TimeSeriesSnapshot",
     "DefaultTimeSeriesStyle",
     "TimeSeriesStyle",

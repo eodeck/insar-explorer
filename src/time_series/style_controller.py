@@ -1,6 +1,7 @@
 """Selection-oriented time-series style mutation service."""
 
 from copy import deepcopy
+from dataclasses import replace
 from typing import Iterable
 
 from .fit_style_controller import FIT_STYLE_KEYS
@@ -49,13 +50,13 @@ class TimeSeriesStyleController:
         for snapshot in snapshots:
             params = deepcopy(snapshot.style.params)
             params.setdefault("time series plot", {})[key] = value
-            snapshot.style = TimeSeriesStyle.fromParams(
+            updated_style = TimeSeriesStyle.fromParams(
                 params,
                 label=snapshot.style.label,
                 visible=snapshot.style.visible,
                 z_order=snapshot.style.z_order,
             )
-            changed.append(snapshot)
+            changed.append(replace(snapshot, style=updated_style))
         return changed
 
     @staticmethod
@@ -99,13 +100,13 @@ class TimeSeriesStyleController:
                 plot = params.setdefault(section, {})
                 for key, value in section_values.items():
                     plot[key] = deepcopy(value)
-            snapshot.style = TimeSeriesStyle.fromParams(
+            updated_style = TimeSeriesStyle.fromParams(
                 params,
                 label=snapshot.style.label,
                 visible=snapshot.style.visible,
                 z_order=snapshot.style.z_order,
             )
-            changed.append(snapshot)
+            changed.append(replace(snapshot, style=updated_style))
         return changed
 
     def applyStyleValues(self, snapshots, changed_style_values):
@@ -116,13 +117,13 @@ class TimeSeriesStyleController:
             plot = params.setdefault("time series plot", {})
             for key, value in changed_style_values.items():
                 plot[key] = deepcopy(value)
-            snapshot.style = TimeSeriesStyle.fromParams(
+            updated_style = TimeSeriesStyle.fromParams(
                 params,
                 label=snapshot.style.label,
                 visible=snapshot.style.visible,
                 z_order=snapshot.style.z_order,
             )
-            changed.append(snapshot)
+            changed.append(replace(snapshot, style=updated_style))
         return changed
 
     def applySettingsChanges(self, snapshots, runtime_params, changed_style_values):
@@ -146,13 +147,13 @@ class TimeSeriesStyleController:
                         plot[key] = deepcopy(value)
                 for key, value in changed_style_values.items():
                     plot[key] = deepcopy(value)
-            snapshot.style = TimeSeriesStyle.fromParams(
+            updated_style = TimeSeriesStyle.fromParams(
                 params,
                 label=snapshot.style.label,
                 visible=snapshot.style.visible,
                 z_order=snapshot.style.z_order,
             )
-            changed.append(snapshot)
+            changed.append(replace(snapshot, style=updated_style))
         return changed
 
     def randomizeColor(self, snapshots: Iterable[TimeSeriesSnapshot]):
@@ -164,11 +165,11 @@ class TimeSeriesStyleController:
             plot = params.setdefault("time series plot", {})
             plot["marker color"] = color
             plot["line color"] = color
-            snapshot.style = TimeSeriesStyle.fromParams(
+            updated_style = TimeSeriesStyle.fromParams(
                 params,
                 label=snapshot.style.label,
                 visible=snapshot.style.visible,
                 z_order=snapshot.style.z_order,
             )
-            changed.append(snapshot)
+            changed.append(replace(snapshot, style=updated_style))
         return changed

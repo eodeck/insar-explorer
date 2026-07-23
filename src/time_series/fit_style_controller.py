@@ -1,7 +1,7 @@
 """Fit-line style model and selection-oriented mutation service."""
 
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Iterable
 
 from ..models.time_series import TimeSeriesSnapshot, TimeSeriesStyle
@@ -71,13 +71,13 @@ class FitStyleController:
         for snapshot in snapshots:
             params = deepcopy(snapshot.style.params)
             params.setdefault("model fit", {})[key] = self._normalize(key, value)
-            snapshot.style = TimeSeriesStyle.fromParams(
+            updated_style = TimeSeriesStyle.fromParams(
                 params,
                 label=snapshot.style.label,
                 visible=snapshot.style.visible,
                 z_order=snapshot.style.z_order,
             )
-            changed.append(snapshot)
+            changed.append(replace(snapshot, style=updated_style))
         return changed
 
     def applyValues(self, snapshots: Iterable[TimeSeriesSnapshot], values):
@@ -89,13 +89,13 @@ class FitStyleController:
             for key in FIT_STYLE_KEYS:
                 if key in values:
                     fit[key] = self._normalize(key, values[key])
-            snapshot.style = TimeSeriesStyle.fromParams(
+            updated_style = TimeSeriesStyle.fromParams(
                 params,
                 label=snapshot.style.label,
                 visible=snapshot.style.visible,
                 z_order=snapshot.style.z_order,
             )
-            changed.append(snapshot)
+            changed.append(replace(snapshot, style=updated_style))
         return changed
 
     @staticmethod
