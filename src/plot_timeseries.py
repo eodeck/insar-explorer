@@ -22,6 +22,9 @@ from .time_series.settings.persistence import TimeSeriesSettingsPersistence, bui
 from .time_series.fit_style_controller import FitStyle
 from .time_series.store import TimeSeriesStore
 from .models.time_series import (
+    FitConfiguration,
+    ReplicaConfiguration,
+    TimeSeriesAnalysis,
     TimeSeriesData,
     TimeSeriesGraphics,
     TimeSeriesRecord,
@@ -195,7 +198,9 @@ class PlotTs():
         self.axis_state_sync_callback = None
         self.fit_failure_callback = None
         self.fit_success_callback = None
+        self.analysis_state_sync_callback = None
         self._last_axis_ranges = {}
+        self._new_record_analysis = self._snapshotAnalysisDefaults()
 
 
     @contextmanager
@@ -245,20 +250,24 @@ class PlotTs():
 
     @property
     def replicate_flag(self):
-        """Compatibility view backed by runtime Replica settings."""
-        return self.settings_model.replica.enabled
+        """Compatibility view of the active record or new-record default."""
+        current = self.current_series()
+        return current.analysis.replica.enabled if current is not None else self.settings_model.replica.enabled
 
     @replicate_flag.setter
     def replicate_flag(self, value):
+        """Set the Replica enabled default used only for future records."""
         self.settings_model.update_property("replica", "enabled", bool(value))
 
     @property
     def replicate_value(self):
-        """Compatibility view backed by runtime Replica interval."""
-        return self.settings_model.replica.interval_mm
+        """Compatibility view of the active record or new-record default."""
+        current = self.current_series()
+        return current.analysis.replica.interval_mm if current is not None else self.settings_model.replica.interval_mm
 
     @replicate_value.setter
     def replicate_value(self, value):
+        """Set the Replica interval default used only for future records."""
         self.settings_model.update_property("replica", "interval_mm", float(value))
 
     @property
@@ -392,11 +401,50 @@ class PlotTs():
             dates=dates, ts_values=ts_values, ref_values=ref_values
         )
 
+    def _snapshotAnalysisDefaults(self) -> TimeSeriesAnalysis:
+        """Copy persisted/session defaults without consulting the active record."""
+        model = self.fit_models[0] if len(self.fit_models) == 1 else None
+        fit = FitConfiguration(
+            enabled=bool(model), model=model, seasonal=bool(self.fit_seasonal_flag),
+            show_residuals=bool(self.plot_residuals_flag and model),
+        )
+        runtime_replica = self.settings_model.replica
+        replica = ReplicaConfiguration(
+            enabled=bool(runtime_replica.enabled),
+            interval_mm=float(runtime_replica.interval_mm),
+            pair_count=self._validateReplicaPairCount(runtime_replica.pair_count),
+        )
+        return TimeSeriesAnalysis(fit=fit, replica=replica)
+
+    def setNewRecordAnalysis(self, analysis: TimeSeriesAnalysis) -> None:
+        """Set the explicit immutable analysis snapshot for genuine new records."""
+        if not isinstance(analysis, TimeSeriesAnalysis):
+            raise TypeError("analysis must be a TimeSeriesAnalysis")
+        self._new_record_analysis = analysis
+
+    def analysisForNewRecord(self) -> TimeSeriesAnalysis:
+        """Return the controller-captured analysis used by the next new record."""
+        return self._new_record_analysis
+
+    def updateActiveAnalysis(self, *, fit=_UNSET, replica=_UNSET) -> bool:
+        """Transactionally replace analysis configuration for the active record."""
+        current = self.current_series()
+        if current is None:
+            return False
+        analysis = current.analysis
+        if fit is not _UNSET:
+            analysis = replace(analysis, fit=fit)
+        if replica is not _UNSET:
+            analysis = replace(analysis, replica=replica)
+        self.rerender_record(replace(current, analysis=analysis))
+        return True
+
     def _buildTimeSeriesRecord(
         self, *, data: TimeSeriesData, style: TimeSeriesStyle,
         coords=_UNSET, ref_coords=_UNSET, record_id=None, source=None,
+        analysis=_UNSET, fit=_UNSET, replica=_UNSET,
     ) -> TimeSeriesRecord:
-        """Build one normalized record while distinguishing omitted and cleared selections."""
+        """Build one normalized record with explicit immutable analysis ownership."""
         if source is not None and record_id is not None and source.id != record_id:
             raise ValueError("source record UUID does not match requested record UUID")
         target = source.target if source is not None and coords is _UNSET else SpatialSelection.from_legacy(
@@ -405,8 +453,17 @@ class PlotTs():
         reference = source.reference if source is not None and ref_coords is _UNSET else SpatialSelection.from_legacy(
             None if ref_coords is _UNSET else ref_coords
         )
+        if analysis is _UNSET:
+            base_analysis = source.analysis if source is not None else self.analysisForNewRecord()
+        else:
+            base_analysis = analysis
+        if fit is not _UNSET:
+            base_analysis = replace(base_analysis, fit=fit)
+        if replica is not _UNSET:
+            base_analysis = replace(base_analysis, replica=replica)
         kwargs = {
-            "data": data, "style": style, "target": target, "reference": reference,
+            "data": data, "style": style, "analysis": base_analysis,
+            "target": target, "reference": reference,
         }
         if record_id is not None:
             kwargs["id"] = record_id
@@ -427,6 +484,9 @@ class PlotTs():
             self.residuals_values = None
             self.coords = None
             self.ref_coords = None
+            self.fit_models = []
+            self.fit_seasonal_flag = False
+            self.plot_residuals_flag = False
             return
         series = record.data
         self.dates = series.dates
@@ -439,6 +499,12 @@ class PlotTs():
         self.residuals_values = series.residuals_values
         self.coords = record.target.value if record.target is not None else None
         self.ref_coords = record.reference.value if record.reference is not None else None
+        fit = record.analysis.fit
+        self.fit_models = [fit.model] if fit.enabled and fit.model else []
+        self.fit_seasonal_flag = fit.seasonal
+        self.plot_residuals_flag = fit.show_residuals and fit.enabled
+        if self.analysis_state_sync_callback is not None:
+            self.analysis_state_sync_callback(record)
 
     def initializeAxes(self):
         """Initialize plot items while preserving any stored records."""
@@ -497,21 +563,22 @@ class PlotTs():
         active = self.current_series()
         self._set_current_series(active)
         self._rebuildYDataRanges()
+        self.applyYAxisPolicy()
 
     def plotTs(self, *, dates=None, ts_values=None, ref_values=None, plot_multiple=True, coords=_UNSET, ref_coords=_UNSET,
-               update=False, report_statistics=False):
+               update=False, analysis=_UNSET, report_statistics=False):
         """Render under the nested-safe axis guard and normalize first-plot state."""
         initial_plot = self.ax is None
         with self.axisViewUpdateGuard():
             result = self._plotTsGuarded(
                 dates=dates, ts_values=ts_values, ref_values=ref_values,
                 plot_multiple=plot_multiple, coords=coords, ref_coords=ref_coords,
-                update=update, report_statistics=report_statistics,
+                update=update, analysis=analysis, report_statistics=report_statistics,
             )
         if initial_plot and self.ax is not None:
             x_state = replace(self.settings_model.x_axis, custom_view=False)
             y_state = replace(
-                self.settings_model.y_axis, policy="from_data",
+                self.settings_model.y_axis,
                 series_custom_view=False, residual_custom_view=False,
             )
             with self.settings_model.batch_update():
@@ -522,7 +589,7 @@ class PlotTs():
         return result
 
     def _plotTsGuarded(self, *, dates=None, ts_values=None, ref_values=None, plot_multiple=True, coords=_UNSET, ref_coords=_UNSET,
-               update=False, report_statistics=False):
+               update=False, analysis=_UNSET, report_statistics=False):
         # update: flag indicating if the plot should be updated or a new one created
 
         self.updateSettings()
@@ -565,10 +632,11 @@ class PlotTs():
             style.params['time series plot']['marker color'] = rand_color
             style.params['time series plot']['line color'] = rand_color
 
+        record_analysis = _UNSET if update or analysis is None else analysis
         record = self._buildTimeSeriesRecord(
             data=series, style=style, coords=coords, ref_coords=ref_coords,
             record_id=source_snapshot.id if source_snapshot is not None else None,
-            source=source_snapshot,
+            source=source_snapshot, analysis=record_analysis,
         )
         if update:
             self.rerender_record(
@@ -581,6 +649,7 @@ class PlotTs():
                 report_statistics=report_statistics,
                 replacement=not self.hold_on_flag,
             )
+        self.applyYAxisPolicy()
         self._draw()
 
     def _commit_rendered_record_replacement(
@@ -637,13 +706,13 @@ class PlotTs():
             )
             if "transaction" in parameters or accepts_keywords:
                 graphics, residuals = render(
-                    record.data, record.style,
+                    record,
                     plot_multiple=plot_multiple,
                     report_statistics=report_statistics,
                     transaction=transaction,
                 )
             else:
-                graphics, residuals = render(record.data, record.style)
+                graphics, residuals = render(record)
         except Exception:
             transaction.rollback()
             raise
@@ -726,6 +795,7 @@ class PlotTs():
         active = self.current_series()
         self._set_current_series(active)
         self._rebuildYDataRanges()
+        self.applyYAxisPolicy()
         return new_graphics
 
     @staticmethod
@@ -805,9 +875,13 @@ class PlotTs():
             return float(default)
 
     def _render_time_series(
-        self, series: TimeSeriesData, style: TimeSeriesStyle, *,
+        self, record: TimeSeriesRecord, *,
         plot_multiple=True, report_statistics=False, transaction=None
     ) -> Tuple[TimeSeriesGraphics, Optional[np.ndarray]]:
+        """Render numeric and analysis graphics from one explicit record."""
+        series = record.data
+        style = record.style
+        analysis = record.analysis
         items = TimeSeriesGraphics()
         main_y_data = []
         parms = style.params['time series plot']
@@ -872,8 +946,10 @@ class PlotTs():
                 pen=self._pen(line_color, line_width, line_alpha, line_style))
             transaction.add_item(self.ax, items.line)
 
-        if self.replicate_flag:
-            items.replicate_up, items.replicate_dn = self.plotReplicas(series, style, transaction=transaction)
+        if analysis.replica.enabled:
+            items.replicate_up, items.replicate_dn = self.plotReplicas(
+                series, style, analysis.replica, transaction=transaction
+            )
         else:
             items.replicate_up, items.replicate_dn = [None], [None]
 
@@ -882,7 +958,7 @@ class PlotTs():
         items.main_y_data = main_y_data
         self.decoratePlot(parms=parms)
         items.fit_plot, residuals_values = self.fitModel(
-            series, style, items, report_statistics=report_statistics,
+            series, style, analysis.fit, items, report_statistics=report_statistics,
             transaction=transaction
         )
 
@@ -914,12 +990,11 @@ class PlotTs():
         self._draw()
         return True
 
-    def plotReplicas(self, series: TimeSeriesData, style: TimeSeriesStyle, transaction=None):
-        """Render global Replica overlays from the authoritative runtime model.
-
-        ``style`` remains in the signature for compatibility with older callers, but
-        Replica appearance is intentionally not required in snapshot-owned payloads.
-        """
+    def plotReplicas(
+        self, series: TimeSeriesData, style: TimeSeriesStyle,
+        replica_config: ReplicaConfiguration, transaction=None,
+    ):
+        """Render Replica overlays using record-owned calculation configuration."""
         replica = self.settings_model.replica
         x = self._datesToX(series.dates)
         marker_color_1 = replica.color_1  # replica up
@@ -927,14 +1002,14 @@ class PlotTs():
         marker_alpha = replica.opacity
         marker_size_replica = replica.marker_size
         marker_replica = replica.marker
-        replica_pair_count = self._validateReplicaPairCount(replica.pair_count)
+        replica_pair_count = self._validateReplicaPairCount(replica_config.pair_count)
         self._last_replica_y_data = []
 
         # Plot symmetric positive/negative replica pairs around the source series.
         replicate_up_list = []
         replicate_dn_list = []
         for i in range(replica_pair_count):
-            replicate_value = self.replicate_value * (i + 1)
+            replicate_value = replica_config.interval_mm * (i + 1)
 
             if i % 2 == 0:
                 marker_replica_color = marker_color_1
@@ -969,14 +1044,15 @@ class PlotTs():
         return replicate_up_list, replicate_dn_list
 
     def fitModel(
-        self, series: TimeSeriesData, style: TimeSeriesStyle, graphics=None, *,
+        self, series: TimeSeriesData, style: TimeSeriesStyle,
+        fit_config: FitConfiguration, graphics=None, *,
         report_statistics=False, transaction=None
     ):
         if series.plot_values is None:
             return None, None
         if series.dates is None:
             return None, None
-        if not self.fit_models:
+        if not fit_config.enabled or not fit_config.model:
             return None, None
 
         parms = style.params['model fit']
@@ -985,55 +1061,51 @@ class PlotTs():
         fit_line_color = fit_style.line_color
         fit_line_alpha = parms['line alpha']
         fit_line_width = fit_style.line_width
-        fit_seasonal = self.fit_seasonal_flag
-        if len(self.fit_models) != 1:
-            return None, None
-        else:
-            fit_model = self.fit_models[0]
-            try:
-                model_values, model_x, model_y = (
-                    FittingModels(series.dates, series.plot_values, model=fit_model).fit(
-                        seasonal=fit_seasonal
-                    )
+        fit_seasonal = fit_config.seasonal
+        fit_model = fit_config.model
+        try:
+            model_values, model_x, model_y = (
+                FittingModels(series.dates, series.plot_values, model=fit_model).fit(
+                    seasonal=fit_seasonal
                 )
-            except ModelFitError as error:
-                if self.fit_failure_callback is not None:
-                    self.fit_failure_callback(error, seasonal=fit_seasonal)
-                return None, None
-            fit_plot = None
-            if fit_line_type and fit_line_width > 0 and fit_line_alpha > 0:
-                fit_plot = pg.PlotDataItem(
-                    self._datesToX(model_x),
-                    model_y,
-                    pen=self._pen(fit_line_color, fit_line_width, fit_line_alpha, fit_line_type)
-                )
-                transaction.add_item(self.ax, fit_plot)
-            observed_values = np.asarray(series.plot_values, dtype=np.float64)
-            fitted_values = np.asarray(model_values, dtype=np.float64)
-            finite_mask = np.isfinite(observed_values) & np.isfinite(fitted_values)
-            try:
-                statistics = calculateFitStatistics(
-                    observed_values[finite_mask], fitted_values[finite_mask]
-                )
-            except ValueError:
-                error = ModelFitError(
-                    fit_model,
-                    f"{fit_model} fit returned invalid statistics.",
-                    finite_observation_count=int(np.count_nonzero(finite_mask)),
-                )
-                if self.fit_failure_callback is not None:
-                    self.fit_failure_callback(error, seasonal=fit_seasonal)
-                return None, None
-
-            residuals_values = observed_values - fitted_values
-            self.plotResiduals(
-                series, style, graphics, residuals_values, transaction=transaction
             )
-            if report_statistics and self.fit_success_callback is not None:
-                self.fit_success_callback(
-                    fit_model, statistics, seasonal=fit_seasonal
-                )
+        except ModelFitError as error:
+            if self.fit_failure_callback is not None:
+                self.fit_failure_callback(error, seasonal=fit_seasonal)
+            return None, None
+        fit_plot = None
+        if fit_line_type and fit_line_width > 0 and fit_line_alpha > 0:
+            fit_plot = pg.PlotDataItem(
+                self._datesToX(model_x),
+                model_y,
+                pen=self._pen(fit_line_color, fit_line_width, fit_line_alpha, fit_line_type)
+            )
+            transaction.add_item(self.ax, fit_plot)
+        observed_values = np.asarray(series.plot_values, dtype=np.float64)
+        fitted_values = np.asarray(model_values, dtype=np.float64)
+        finite_mask = np.isfinite(observed_values) & np.isfinite(fitted_values)
+        try:
+            statistics = calculateFitStatistics(
+                observed_values[finite_mask], fitted_values[finite_mask]
+            )
+        except ValueError:
+            error = ModelFitError(
+                fit_model,
+                f"{fit_model} fit returned invalid statistics.",
+                finite_observation_count=int(np.count_nonzero(finite_mask)),
+            )
+            if self.fit_failure_callback is not None:
+                self.fit_failure_callback(error, seasonal=fit_seasonal)
+            return None, None
 
+        residuals_values = observed_values - fitted_values
+        self.plotResiduals(
+            series, style, fit_config, graphics, residuals_values, transaction=transaction
+        )
+        if report_statistics and self.fit_success_callback is not None:
+            self.fit_success_callback(
+                fit_model, statistics, seasonal=fit_seasonal
+            )
         return fit_plot, residuals_values
 
     def _normalizedResidualStyle(self, style: TimeSeriesStyle):
@@ -1045,12 +1117,15 @@ class PlotTs():
             values.update(snapshot_residual)
         return ResidualStyleSettings.fromParams({"residual plot": values})
 
-    def plotResiduals(self, series: TimeSeriesData, style: TimeSeriesStyle, items=None, residuals_values=None, transaction=None):
+    def plotResiduals(
+        self, series: TimeSeriesData, style: TimeSeriesStyle,
+        fit_config: FitConfiguration, items=None, residuals_values=None, transaction=None,
+    ):
         if items is None:
             items = TimeSeriesGraphics()
         if residuals_values is None:
             residuals_values = series.residuals_values
-        if self.plot_residuals_flag and self.ax_residuals is not None and residuals_values is not None:
+        if fit_config.show_residuals and fit_config.enabled and self.ax_residuals is not None and residuals_values is not None:
             residual_style = self._normalizedResidualStyle(style)
             marker = residual_style.marker
             marker_size = residual_style.marker_size
@@ -1316,6 +1391,14 @@ class PlotTs():
         with self.axisViewUpdateGuard():
             ax.setYRange(ymin, ymax, padding=padding)
         return True
+
+    def applyYAxisPolicy(self) -> None:
+        """Apply committed canvas Y policies after all graphics/layout changes."""
+        with self.axisViewUpdateGuard():
+            if self.ax is not None:
+                self.setYlims(ax=self.ax, parms=self.parms.get("time series plot", {}))
+            if self.ax_residuals is not None:
+                self.setYlims(ax=self.ax_residuals, parms=self.parms.get("residual plot", {}))
 
     def resetYAxisFromData(self, ax=None):
         """Restore one local Y axis using its canonical From Data display range."""

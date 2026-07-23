@@ -50,6 +50,33 @@ class SpatialSelection:
 
 
 @dataclass(frozen=True)
+class FitConfiguration:
+    """Per-series fit and residual calculation configuration."""
+
+    enabled: bool = False
+    model: Optional[str] = None
+    seasonal: bool = False
+    show_residuals: bool = False
+
+
+@dataclass(frozen=True)
+class ReplicaConfiguration:
+    """Per-series replica-generation configuration."""
+
+    enabled: bool = False
+    interval_mm: float = 0.0
+    pair_count: int = 0
+
+
+@dataclass(frozen=True)
+class TimeSeriesAnalysis:
+    """All analysis behavior owned by one time-series record."""
+
+    fit: FitConfiguration = field(default_factory=FitConfiguration)
+    replica: ReplicaConfiguration = field(default_factory=ReplicaConfiguration)
+
+
+@dataclass(frozen=True)
 class TimeSeriesData:
     """Numeric properties for one time series, independent of spatial provenance."""
 
@@ -153,6 +180,7 @@ class TimeSeriesRecord:
 
     data: TimeSeriesData
     style: TimeSeriesStyle
+    analysis: TimeSeriesAnalysis = field(default_factory=TimeSeriesAnalysis)
     id: UUID = field(default_factory=uuid4)
     target: Optional[SpatialSelection] = None
     reference: Optional[SpatialSelection] = None

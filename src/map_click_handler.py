@@ -109,6 +109,13 @@ class MapClickHandler:
         self.highlight = None
         self.reference_highlight = None
         self.map_reference_clicked_value = 0
+        self.new_record_analysis_provider = None
+
+    def _analysisForNewRecord(self):
+        """Capture controller-facing analysis immediately before new record creation."""
+        if self.new_record_analysis_provider is None:
+            return None
+        return self.new_record_analysis_provider()
 
     def identifyClickedFeatureID(self, point: QgsPointXY, layer: QgsMapLayer = None) -> int:
         """
@@ -316,10 +323,11 @@ class TSClickHandler(MapClickHandler):
                 ref_coords = crds
 
             dates = date_values[:, 0]
+            analysis = self._analysisForNewRecord() if not ref else None
             self.plot_ts.plotTs(
                 dates=dates, ts_values=ts_values, ref_values=ref_values,
                 coords=coords, ref_coords=ref_coords, update=ref,
-                report_statistics=True,
+                analysis=analysis, report_statistics=True,
             )
 
     def choosePointClickedRaster(self, *, point: QgsPointXY, layer: QgsMapLayer = None, ref=False):
@@ -354,10 +362,11 @@ class TSClickHandler(MapClickHandler):
             ref_coords = crds
 
         dates = date_values[:, 0]
+        analysis = self._analysisForNewRecord() if not ref else None
         self.plot_ts.plotTs(
             dates=dates, ts_values=ts_values, ref_values=ref_values,
             coords=coords, ref_coords=ref_coords, update=ref,
-            report_statistics=True,
+            analysis=analysis, report_statistics=True,
         )
 
     def resetReferencePoint(self):
@@ -463,10 +472,11 @@ class PolygonClickHandler(MapClickHandler):
                     clicked_values = vector_layer_utils.getFeatureFieldValue(attributes, self.selected_field_name)
                     self.map_reference_clicked_value = np.mean(clicked_values)
 
+            analysis = self._analysisForNewRecord() if not ref else None
             self.plot_ts.plotTs(
                 dates=dates, ts_values=ts_values, ref_values=ref_values,
                 coords=coords, ref_coords=ref_coords, plot_multiple=True,
-                update=ref, report_statistics=True,
+                update=ref, analysis=analysis, report_statistics=True,
             )
 
 

@@ -1,6 +1,9 @@
 """Domain models for InSAR Explorer."""
 
 from .time_series import (
+    FitConfiguration,
+    ReplicaConfiguration,
+    TimeSeriesAnalysis,
     TimeSeriesData,
     TimeSeriesGraphics,
     TimeSeriesRecord,
@@ -13,6 +16,9 @@ from .time_series import (
 )
 
 __all__ = [
+    "FitConfiguration",
+    "ReplicaConfiguration",
+    "TimeSeriesAnalysis",
     "TimeSeriesData",
     "TimeSeriesGraphics",
     "TimeSeriesRecord",
