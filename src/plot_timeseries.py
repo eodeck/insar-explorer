@@ -1,8 +1,9 @@
 import calendar
 import os
+import inspect
 from contextlib import contextmanager
 from copy import deepcopy
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, time, timezone
 from typing import Dict, List, Optional, Tuple
 from uuid import UUID
@@ -117,6 +118,36 @@ class FormattedDateAxisItem(pg.DateAxisItem):
             return []
         nominal_spacing = interval * 365.2425 * 24 * 60 * 60
         return [(nominal_spacing, ticks)]
+
+
+
+@dataclass
+class _GraphicsRenderTransaction:
+    """Track canvas attachments so a failed render can remove them completely."""
+
+    plotter: object
+
+    def __post_init__(self):
+        self._attachments = []
+        self._committed = False
+
+    def add_item(self, axis, item):
+        """Attach one item and remember its owning axis for rollback."""
+        axis.addItem(item)
+        self._attachments.append((axis, item))
+        return item
+
+    def rollback(self):
+        """Remove every item attached by this attempt in reverse order."""
+        if self._committed:
+            return
+        for axis, item in reversed(self._attachments):
+            self.plotter._removeItem(axis, item)
+        self._attachments.clear()
+
+    def commit(self):
+        """Mark the tracked attachments as authoritative."""
+        self._committed = True
 
 
 class PlotTs():
@@ -420,16 +451,10 @@ class PlotTs():
         rebuilt_records = []
         try:
             for record in retained_records:
-                graphics, residuals = self._render_time_series(
-                    record.data, record.style
-                )
-                rebuilt_record = record
-                if residuals is not None:
-                    rebuilt_record = replace(
-                        record, data=record.data.withResiduals(residuals)
-                    )
+                graphics, rebuilt_record, transaction = self._build_record_graphics(record)
                 rebuilt_records.append(rebuilt_record)
                 self._register_series_graphics(rebuilt_record, graphics)
+                transaction.commit()
         except Exception:
             # Clearing the widget destroys any partially created canvas items.
             # Records and registry are then discarded together so callers never
@@ -520,15 +545,11 @@ class PlotTs():
             style.params['time series plot']['line color'] = rand_color
 
         if update:
-            graphics, residuals_values = self._render_time_series(
-                series, style, plot_multiple=plot_multiple,
-                report_statistics=report_statistics,
-            )
-            if residuals_values is not None:
-                series = series.withResiduals(residuals_values)
             replacement = replace(source_snapshot, data=series, style=style)
-            self._commit_rendered_record_replacement(
-                source_snapshot, replacement, graphics
+            self.rerender_record(
+                replacement,
+                plot_multiple=plot_multiple,
+                report_statistics=report_statistics,
             )
         else:
             self._render_and_store_series(
@@ -542,19 +563,15 @@ class PlotTs():
         self,
         previous: TimeSeriesRecord,
         replacement: TimeSeriesRecord,
-        graphics: TimeSeriesGraphics,
-    ) -> None:
-        """Atomically swap one rendered record after replacement rendering succeeds."""
+        graphics: TimeSeriesGraphics = None,
+    ) -> TimeSeriesGraphics:
+        """Compatibility adapter for the canonical UUID rerender transaction."""
         if previous.id != replacement.id:
             raise ValueError("replacement record must preserve the original UUID")
-        if self._series_store.index_of(previous.id) is None:
+        current = self._series_store.get(previous.id)
+        if current is None:
             raise KeyError(f"time-series record not found: {previous.id}")
-        self._remove_snapshot_graphics(previous)
-        if not self._series_store.replace(replacement):
-            raise KeyError(f"time-series record not found: {replacement.id}")
-        self._register_series_graphics(replacement, graphics)
-        self._set_current_series(self.current_series().data)
-        self._rebuildYDataRanges()
+        return self.rerender_record(replacement)
 
     def _render_and_store_series(
         self, series: TimeSeriesData, style: TimeSeriesStyle, *,
@@ -562,27 +579,197 @@ class PlotTs():
         replacement: bool = False,
     ) -> TimeSeriesRecord:
         """Render and atomically register one record, cleaning failed replacements."""
+        record = TimeSeriesRecord(data=series, style=style)
         try:
-            items, residuals_values = self._render_time_series(
-                series, style, plot_multiple=plot_multiple,
-                report_statistics=report_statistics
+            self.render_record(
+                record,
+                plot_multiple=plot_multiple,
+                report_statistics=report_statistics,
+                add_to_store=True,
             )
         except Exception:
             if replacement:
-                # A renderer can fail after creating some canvas items. Destroy
-                # the canvas and authoritative state together, recreate an empty
-                # layout, and preserve the original exception for existing error
-                # handling.
                 self._clearPlotWidget()
                 self._discardAllSeriesState()
                 self._createAxesForCurrentLayout()
             raise
-        if residuals_values is not None:
-            series = series.withResiduals(residuals_values)
-            self._set_current_series(series)
-        record = TimeSeriesRecord(data=series, style=style)
-        self._add_rendered_series(record, items)
-        return record
+        rendered_record = self._series_store.get(record.id)
+        if rendered_record is None:
+            raise RuntimeError(f"rendered record was not stored: {record.id}")
+        self._set_current_series(rendered_record.data)
+        return rendered_record
+
+    def _build_record_graphics(
+        self, record: TimeSeriesRecord, *, plot_multiple: bool = True,
+        report_statistics: bool = False,
+    ) -> Tuple[TimeSeriesGraphics, TimeSeriesRecord, _GraphicsRenderTransaction]:
+        """Build complete graphics with tracked attachment and guaranteed rollback."""
+        transaction = _GraphicsRenderTransaction(self)
+        try:
+            render = self._render_time_series
+            parameters = inspect.signature(render).parameters
+            accepts_keywords = any(
+                parameter.kind is inspect.Parameter.VAR_KEYWORD
+                for parameter in parameters.values()
+            )
+            if "transaction" in parameters or accepts_keywords:
+                graphics, residuals = render(
+                    record.data, record.style,
+                    plot_multiple=plot_multiple,
+                    report_statistics=report_statistics,
+                    transaction=transaction,
+                )
+            else:
+                graphics, residuals = render(record.data, record.style)
+        except Exception:
+            transaction.rollback()
+            raise
+        rendered_record = record if residuals is None else replace(
+            record, data=record.data.withResiduals(residuals)
+        )
+        return graphics, rendered_record, transaction
+
+    def render_record(
+        self, record: TimeSeriesRecord, *, plot_multiple: bool = True,
+        report_statistics: bool = False, add_to_store: bool = False,
+    ) -> TimeSeriesGraphics:
+        """Transactionally render and register one explicit record by UUID."""
+        if record.id in self._graphics_by_series_id:
+            raise ValueError(f"time-series record is already rendered: {record.id}")
+        existing = self._series_store.get(record.id)
+        if add_to_store and existing is not None:
+            raise ValueError(f"time-series record already exists: {record.id}")
+        if not add_to_store and existing is None:
+            raise KeyError(f"time-series record not found: {record.id}")
+
+        graphics, rendered_record, transaction = self._build_record_graphics(
+            record, plot_multiple=plot_multiple,
+            report_statistics=report_statistics,
+        )
+        store_changed = False
+        try:
+            if add_to_store:
+                self._series_store.add(rendered_record, make_active=True)
+                store_changed = True
+            elif rendered_record is not record:
+                if not self._series_store.replace(rendered_record):
+                    raise KeyError(f"time-series record not found: {record.id}")
+                store_changed = True
+            self._register_series_graphics(rendered_record, graphics)
+        except Exception:
+            self._graphics_by_series_id.pop(record.id, None)
+            if add_to_store and store_changed:
+                self._series_store.remove(record.id)
+            elif store_changed and existing is not None:
+                self._series_store.replace(existing)
+            transaction.rollback()
+            raise
+        transaction.commit()
+        self._rebuildYDataRanges()
+        return graphics
+
+    def rerender_record(
+        self, record: TimeSeriesRecord, *, plot_multiple: bool = True,
+        report_statistics: bool = False,
+    ) -> TimeSeriesGraphics:
+        """Replace one rendered UUID while preserving old canvas state on failure."""
+        current = self._series_store.get(record.id)
+        if current is None:
+            raise KeyError(f"time-series record not found: {record.id}")
+        old_graphics = self._graphics_by_series_id.get(record.id)
+        if old_graphics is None:
+            raise KeyError(f"time-series graphics not found: {record.id}")
+        visible = self._graphics_visible(old_graphics)
+        new_graphics, rendered_record, transaction = self._build_record_graphics(
+            record, plot_multiple=plot_multiple,
+            report_statistics=report_statistics,
+        )
+        self._set_graphics_visible(new_graphics, visible)
+        store_replaced = False
+        try:
+            if not self._series_store.replace(rendered_record):
+                raise KeyError(f"time-series record not found: {record.id}")
+            store_replaced = True
+            self._graphics_by_series_id[record.id] = new_graphics
+        except Exception:
+            self._graphics_by_series_id[record.id] = old_graphics
+            transaction.rollback()
+            if store_replaced:
+                self._series_store.replace(current)
+            raise
+
+        transaction.commit()
+        self._detach_graphics(old_graphics)
+        active = self.current_series()
+        self._set_current_series(active.data if active is not None else None)
+        self._rebuildYDataRanges()
+        return new_graphics
+
+    @staticmethod
+    def _graphics_items(graphics: TimeSeriesGraphics):
+        """Yield every renderer-owned item in one graphics bundle."""
+        for item in (
+            graphics.scatter, graphics.line, graphics.fit_plot,
+            graphics.residual_scatter, graphics.residual_line,
+        ):
+            if item is not None:
+                yield item
+        for group in (
+            graphics.plot_multiple_fill, graphics.plot_multiple_lines,
+            graphics.replicate_up, graphics.replicate_dn,
+        ):
+            for item in group or ():
+                if item is not None:
+                    yield item
+
+    def _main_graphics_item_ids(self, graphics):
+        return {
+            id(item) for item in (
+                graphics.scatter, graphics.line, graphics.fit_plot,
+                *(graphics.plot_multiple_fill or ()),
+                *(graphics.plot_multiple_lines or ()),
+                *(graphics.replicate_up or ()), *(graphics.replicate_dn or ()),
+            ) if item is not None
+        }
+
+    def _detach_graphics(self, graphics: TimeSeriesGraphics) -> None:
+        """Detach all items in a graphics bundle without changing the registry."""
+        main_ids = self._main_graphics_item_ids(graphics)
+        for item in self._graphics_items(graphics):
+            self._removeItem(self.ax if id(item) in main_ids else self.ax_residuals, item)
+
+    def remove_rendered_record(
+        self, record_id: UUID
+    ) -> Optional[TimeSeriesGraphics]:
+        """Idempotently remove all canvas graphics for one UUID only."""
+        graphics = self._graphics_by_series_id.pop(record_id, None)
+        if graphics is None:
+            return None
+        self._detach_graphics(graphics)
+        return graphics
+
+    @staticmethod
+    def _graphics_visible(graphics: TimeSeriesGraphics) -> bool:
+        for item in PlotTs._graphics_items(graphics):
+            getter = getattr(item, "isVisible", None)
+            if getter is not None:
+                return bool(getter())
+        return True
+
+    @staticmethod
+    def _set_graphics_visible(graphics: TimeSeriesGraphics, visible: bool) -> None:
+        for item in PlotTs._graphics_items(graphics):
+            setter = getattr(item, "setVisible", None)
+            if setter is not None:
+                setter(bool(visible))
+
+    def set_record_visible(self, record_id: UUID, visible: bool) -> bool:
+        """Show or hide every graphics component owned by one rendered UUID."""
+        graphics = self._graphics_by_series_id.get(record_id)
+        if graphics is None:
+            return False
+        self._set_graphics_visible(graphics, visible)
+        return True
 
     @staticmethod
     def _alphaOrDefault(value, default):
@@ -596,7 +783,7 @@ class PlotTs():
 
     def _render_time_series(
         self, series: TimeSeriesData, style: TimeSeriesStyle, *,
-        plot_multiple=True, report_statistics=False
+        plot_multiple=True, report_statistics=False, transaction=None
     ) -> Tuple[TimeSeriesGraphics, Optional[np.ndarray]]:
         items = TimeSeriesGraphics()
         main_y_data = []
@@ -624,9 +811,9 @@ class PlotTs():
                     lower_line, upper_line,
                     brush=self._brush(series_fill_color, series_fill_alpha)
                 )
-                self.ax.addItem(lower_line)
-                self.ax.addItem(upper_line)
-                self.ax.addItem(fill)
+                transaction.add_item(self.ax, lower_line)
+                transaction.add_item(self.ax, upper_line)
+                transaction.add_item(self.ax, fill)
                 items.plot_multiple_fill = [lower_line, upper_line, fill]
             main_y_data.extend([lower_bound, upper_bound])
 
@@ -637,10 +824,11 @@ class PlotTs():
             series_line_width = parms['series line width']
             if series_line_width > 0 and series_line_alpha > 0:
                 for i in range(series.plot_multiple_values.shape[1]):
-                    item = self.ax.plot(
+                    item = pg.PlotDataItem(
                         x, series.plot_multiple_values[:, i],
                         pen=self._pen(series_line_color, series_line_width, series_line_alpha, series_line_style)
                     )
+                    transaction.add_item(self.ax, item)
                     items.plot_multiple_lines.append(item)
             for i in range(series.plot_multiple_values.shape[1]):
                 main_y_data.append(series.plot_multiple_values[:, i])
@@ -650,29 +838,29 @@ class PlotTs():
                                                size=marker_size,
                                                pen=self._pen(edge_color, 0.2, marker_alpha),
                                                brush=self._brush(marker_color, marker_alpha))
-            self.ax.addItem(items.scatter)
+            transaction.add_item(self.ax, items.scatter)
 
         main_y_data.append(series.plot_values)
 
         if line_style and line_width > 0 and line_alpha > 0:
-            items.line = self.ax.plot(
+            items.line = pg.PlotDataItem(
                 x,
                 series.plot_values,
                 pen=self._pen(line_color, line_width, line_alpha, line_style))
+            transaction.add_item(self.ax, items.line)
 
         if self.replicate_flag:
-            items.replicate_up, items.replicate_dn = self.plotReplicas(series, style)
+            items.replicate_up, items.replicate_dn = self.plotReplicas(series, style, transaction=transaction)
         else:
             items.replicate_up, items.replicate_dn = [None], [None]
 
         main_y_data.extend(self._last_replica_y_data)
         self._last_replica_y_data = []
         items.main_y_data = main_y_data
-        self.updateYlim(ax=self.ax, y_data=main_y_data)
-
         self.decoratePlot(parms=parms)
         items.fit_plot, residuals_values = self.fitModel(
-            series, style, items, report_statistics=report_statistics
+            series, style, items, report_statistics=report_statistics,
+            transaction=transaction
         )
 
         parms_figure = style.params['figure']
@@ -703,7 +891,7 @@ class PlotTs():
         self._draw()
         return True
 
-    def plotReplicas(self, series: TimeSeriesData, style: TimeSeriesStyle):
+    def plotReplicas(self, series: TimeSeriesData, style: TimeSeriesStyle, transaction=None):
         """Render global Replica overlays from the authoritative runtime model.
 
         ``style`` remains in the signature for compatibility with older callers, but
@@ -738,7 +926,7 @@ class PlotTs():
                 pen=None,
                 brush=self._brush(marker_replica_color, marker_alpha)
             )
-            self.ax.addItem(replicate_up)
+            transaction.add_item(self.ax, replicate_up)
             replicate_up_list.append(replicate_up)
             self._last_replica_y_data.append(series.plot_values + replicate_value)
 
@@ -751,7 +939,7 @@ class PlotTs():
                 pen=None,
                 brush=self._brush(down_color, marker_alpha),
             )
-            self.ax.addItem(replicate_dn)
+            transaction.add_item(self.ax, replicate_dn)
             replicate_dn_list.append(replicate_dn)
             self._last_replica_y_data.append(series.plot_values - replicate_value)
 
@@ -759,7 +947,7 @@ class PlotTs():
 
     def fitModel(
         self, series: TimeSeriesData, style: TimeSeriesStyle, graphics=None, *,
-        report_statistics=False
+        report_statistics=False, transaction=None
     ):
         if series.plot_values is None:
             return None, None
@@ -791,11 +979,12 @@ class PlotTs():
                 return None, None
             fit_plot = None
             if fit_line_type and fit_line_width > 0 and fit_line_alpha > 0:
-                fit_plot = self.ax.plot(
+                fit_plot = pg.PlotDataItem(
                     self._datesToX(model_x),
                     model_y,
                     pen=self._pen(fit_line_color, fit_line_width, fit_line_alpha, fit_line_type)
                 )
+                transaction.add_item(self.ax, fit_plot)
             observed_values = np.asarray(series.plot_values, dtype=np.float64)
             fitted_values = np.asarray(model_values, dtype=np.float64)
             finite_mask = np.isfinite(observed_values) & np.isfinite(fitted_values)
@@ -814,7 +1003,9 @@ class PlotTs():
                 return None, None
 
             residuals_values = observed_values - fitted_values
-            self.plotResiduals(series, style, graphics, residuals_values)
+            self.plotResiduals(
+                series, style, graphics, residuals_values, transaction=transaction
+            )
             if report_statistics and self.fit_success_callback is not None:
                 self.fit_success_callback(
                     fit_model, statistics, seasonal=fit_seasonal
@@ -831,7 +1022,7 @@ class PlotTs():
             values.update(snapshot_residual)
         return ResidualStyleSettings.fromParams({"residual plot": values})
 
-    def plotResiduals(self, series: TimeSeriesData, style: TimeSeriesStyle, items=None, residuals_values=None):
+    def plotResiduals(self, series: TimeSeriesData, style: TimeSeriesStyle, items=None, residuals_values=None, transaction=None):
         if items is None:
             items = TimeSeriesGraphics()
         if residuals_values is None:
@@ -861,15 +1052,15 @@ class PlotTs():
                     pen=self._pen(edge_color, 0.2, marker_alpha),
                     brush=self._brush(marker_color, marker_alpha)
                 )
-                self.ax_residuals.addItem(items.residual_scatter)
+                transaction.add_item(self.ax_residuals, items.residual_scatter)
             if line_style and line_width > 0 and line_alpha > 0:
-                items.residual_line = self.ax_residuals.plot(
+                items.residual_line = pg.PlotDataItem(
                     x,
                     residuals_values,
                     pen=self._pen(line_color, line_width, line_alpha, line_style)
                 )
+                transaction.add_item(self.ax_residuals, items.residual_line)
             items.residual_y_data = [residuals_values]
-            self.updateYlim(ax=self.ax_residuals, y_data=items.residual_y_data)
             self.decoratePlot(ax=self.ax_residuals, parms=parms)
 
 
@@ -1398,18 +1589,8 @@ class PlotTs():
         return snapshot
 
     def _remove_snapshot_graphics(self, snapshot: TimeSeriesRecord) -> None:
-        """Remove and unregister all plot items owned by a stored time series."""
-        graphics = self._pop_series_graphics(snapshot)
-        if graphics is None:
-            return
-        for item in (graphics.scatter, graphics.line, graphics.fit_plot):
-            self._removeItem(self.ax, item)
-        for item in (graphics.residual_scatter, graphics.residual_line):
-            self._removeItem(self.ax_residuals, item)
-        for item_list in (graphics.plot_multiple_fill, graphics.plot_multiple_lines,
-                          graphics.replicate_up, graphics.replicate_dn):
-            for item in item_list or []:
-                self._removeItem(self.ax, item)
+        """Compatibility wrapper for UUID-based rendered-record removal."""
+        self.remove_rendered_record(snapshot.id)
 
     def _rebuildYDataRanges(self):
         self._y_data_ranges = {}
@@ -1505,35 +1686,10 @@ class PlotTs():
     def rerenderTimeSeriesSnapshots(
         self, snapshots: List[TimeSeriesSnapshot], *, draw: bool = True
     ) -> None:
-        """Transactionally replace and re-render selected snapshots by UUID.
-
-        TODO(runtime-settings): remove this compatibility redraw path after plot
-        layers support scoped in-place updates. ``draw=False`` allows callers to
-        compose graphics and axis-policy changes into one visual transaction.
-        """
-        replacements = {snapshot.id: snapshot for snapshot in snapshots}
+        """Rerender selected records by UUID without reordering store records."""
         with self.preserveViewport():
-            for current in self._series_store.records():
-                requested = replacements.get(current.id)
-                if requested is None:
-                    continue
-                graphics, residuals = self._render_time_series(
-                    requested.data, requested.style
-                )
-                replacement = requested
-                if residuals is not None:
-                    replacement = replace(
-                        requested, data=requested.data.withResiduals(residuals)
-                    )
-                self._remove_snapshot_graphics(current)
-                if not self._series_store.replace(replacement):
-                    raise KeyError(
-                        f"time-series record not found: {replacement.id}"
-                    )
-                self._register_series_graphics(replacement, graphics)
-            current = self.current_series()
-            self._set_current_series(current.data if current is not None else None)
-            self._rebuildYDataRanges()
+            for snapshot in snapshots:
+                self.rerender_record(snapshot)
         if draw:
             self._draw()
 
