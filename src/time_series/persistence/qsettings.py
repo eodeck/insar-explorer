@@ -13,13 +13,15 @@ from ..settings.model import (
     AppearanceSettings,
     EnsembleStyleSettings,
     ExportSettings,
+    FitAnalysisDefaults,
     FitStyleSettings,
+    ReplicaAnalysisDefaults,
     ReplicaSettings,
     ResidualStyleSettings,
     SeriesStyleSettings,
 )
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 DEFAULT_PREFIX = "insar_explorer/time_series"
 
 
@@ -105,6 +107,13 @@ KEY_SPECS = (
     ("replica_defaults", "opacity", "replica/opacity", "float", (0, 1)),
     ("replica_defaults", "marker", "replica/marker", "str", None),
     ("replica_defaults", "marker_size", "replica/marker_size", "float", (0, 100)),
+    ("fit_analysis_defaults", "enabled", "analysis_defaults/fit/enabled", "bool", None),
+    ("fit_analysis_defaults", "model", "analysis_defaults/fit/model", "choice", ("poly-1", "poly-2", "poly-3", "exp", "log")),
+    ("fit_analysis_defaults", "seasonal", "analysis_defaults/fit/seasonal", "bool", None),
+    ("fit_analysis_defaults", "show_residuals", "analysis_defaults/fit/show_residuals", "bool", None),
+    ("replica_analysis_defaults", "enabled", "analysis_defaults/replica/enabled", "bool", None),
+    ("replica_analysis_defaults", "pair_count", "analysis_defaults/replica/pair_count", "int", (1, 10)),
+    ("replica_analysis_defaults", "interval_mm", "analysis_defaults/replica/interval_mm", "float", (0.1, 10000)),
     ("appearance", "time_series_title", "appearance/time_series_title", "str", None),
     ("appearance", "residual_title", "appearance/residual_title", "str", None),
     ("appearance", "time_series_x_label", "appearance/time_series_x_label", "str", None),
@@ -127,6 +136,8 @@ _SCOPE_TYPES = {
     "fit_defaults": FitStyleSettings,
     "residual_defaults": ResidualStyleSettings,
     "replica_defaults": ReplicaSettings,
+    "fit_analysis_defaults": FitAnalysisDefaults,
+    "replica_analysis_defaults": ReplicaAnalysisDefaults,
     "appearance": AppearanceSettings,
     "export": ExportSettings,
 }
@@ -294,6 +305,12 @@ class QSettingsUserPreferencesRepository:
 
     def save_replica_defaults(self, settings: ReplicaSettings) -> None:
         self.save_scope("replica_defaults", settings)
+
+    def save_fit_analysis_defaults(self, settings: FitAnalysisDefaults) -> None:
+        self.save_scope("fit_analysis_defaults", settings)
+
+    def save_replica_analysis_defaults(self, settings: ReplicaAnalysisDefaults) -> None:
+        self.save_scope("replica_analysis_defaults", settings)
 
     def save_appearance(self, settings: AppearanceSettings) -> None:
         self.save_scope("appearance", settings)

@@ -414,16 +414,18 @@ class PlotTs():
 
     def _snapshotAnalysisDefaults(self) -> TimeSeriesAnalysis:
         """Copy persisted/session defaults without consulting the active record."""
-        model = self.fit_models[0] if len(self.fit_models) == 1 else None
+        fit_defaults = self.settings_model.fit_analysis_defaults
         fit = FitConfiguration(
-            enabled=bool(model), model=model, seasonal=bool(self.fit_seasonal_flag),
-            show_residuals=bool(self.plot_residuals_flag and model),
+            enabled=fit_defaults.enabled,
+            model=fit_defaults.model,
+            seasonal=fit_defaults.seasonal,
+            show_residuals=fit_defaults.show_residuals,
         )
-        runtime_replica = self.settings_model.replica
+        replica_defaults = self.settings_model.replica_analysis_defaults
         replica = ReplicaConfiguration(
-            enabled=bool(runtime_replica.enabled),
-            interval_mm=float(runtime_replica.interval_mm),
-            pair_count=self._validateReplicaPairCount(runtime_replica.pair_count),
+            enabled=replica_defaults.enabled,
+            interval_mm=replica_defaults.interval_mm,
+            pair_count=self._validateReplicaPairCount(replica_defaults.pair_count),
         )
         return TimeSeriesAnalysis(fit=fit, replica=replica)
 

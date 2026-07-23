@@ -6,8 +6,9 @@ from uuid import UUID
 
 from ...models.time_series import TimeSeriesRecord
 from ..settings.model import (
-    AppearanceSettings, EnsembleStyleSettings, ExportSettings, FitStyleSettings,
-    ReplicaSettings, ResidualStyleSettings, SeriesStyleSettings,
+    AppearanceSettings, EnsembleStyleSettings, ExportSettings, FitAnalysisDefaults,
+    FitStyleSettings, ReplicaAnalysisDefaults, ReplicaSettings, ResidualStyleSettings,
+    SeriesStyleSettings,
 )
 
 
@@ -20,6 +21,8 @@ class TimeSeriesUserPreferences:
     fit_defaults: FitStyleSettings = field(default_factory=FitStyleSettings)
     residual_defaults: ResidualStyleSettings = field(default_factory=ResidualStyleSettings)
     replica_defaults: ReplicaSettings = field(default_factory=ReplicaSettings)
+    fit_analysis_defaults: FitAnalysisDefaults = field(default_factory=FitAnalysisDefaults)
+    replica_analysis_defaults: ReplicaAnalysisDefaults = field(default_factory=ReplicaAnalysisDefaults)
     appearance: AppearanceSettings = field(default_factory=AppearanceSettings)
     export: ExportSettings = field(default_factory=ExportSettings)
 
@@ -46,6 +49,8 @@ class UserPreferencesRepository(Protocol):
     def save_fit_defaults(self, settings: FitStyleSettings) -> None: ...
     def save_residual_defaults(self, settings: ResidualStyleSettings) -> None: ...
     def save_replica_defaults(self, settings: ReplicaSettings) -> None: ...
+    def save_fit_analysis_defaults(self, settings: FitAnalysisDefaults) -> None: ...
+    def save_replica_analysis_defaults(self, settings: ReplicaAnalysisDefaults) -> None: ...
     def save_appearance(self, settings: AppearanceSettings) -> None: ...
     def save_export(self, settings: ExportSettings) -> None: ...
 

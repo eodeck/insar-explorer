@@ -226,6 +226,42 @@ class ReplicaSettings:
 
 
 @dataclass(frozen=True)
+class FitAnalysisDefaults:
+    """User defaults copied into fit configuration for future records only."""
+
+    enabled: bool = False
+    model: str = "poly-1"
+    seasonal: bool = False
+    show_residuals: bool = False
+
+    def __post_init__(self):
+        from ..fit_state import DEFAULT_FIT_MODEL, FIT_MODELS
+
+        object.__setattr__(self, "enabled", bool(self.enabled))
+        object.__setattr__(
+            self, "model", self.model if self.model in FIT_MODELS else DEFAULT_FIT_MODEL
+        )
+        object.__setattr__(self, "seasonal", bool(self.seasonal))
+        object.__setattr__(self, "show_residuals", bool(self.show_residuals))
+
+
+@dataclass(frozen=True)
+class ReplicaAnalysisDefaults:
+    """User defaults copied into Replica configuration for future records only."""
+
+    enabled: bool = False
+    pair_count: int = 1
+    interval_mm: float = 27.8
+
+    def __post_init__(self):
+        object.__setattr__(self, "enabled", bool(self.enabled))
+        object.__setattr__(self, "pair_count", max(1, min(10, int(self.pair_count))))
+        object.__setattr__(
+            self, "interval_mm", max(0.1, min(10000.0, float(self.interval_mm)))
+        )
+
+
+@dataclass(frozen=True)
 class AxisManualRange:
     """Session-only Y editor policies and retained numeric bound values.
 
@@ -500,6 +536,8 @@ class TimeSeriesSettingsModel:
     residual_current: ResidualStyleSettings = field(default_factory=ResidualStyleSettings)
     ensemble_defaults: EnsembleStyleSettings = field(default_factory=EnsembleStyleSettings)
     replica: ReplicaSettings = field(default_factory=ReplicaSettings)
+    fit_analysis_defaults: FitAnalysisDefaults = field(default_factory=FitAnalysisDefaults)
+    replica_analysis_defaults: ReplicaAnalysisDefaults = field(default_factory=ReplicaAnalysisDefaults)
     y_axis: YAxisSettings = field(default_factory=YAxisSettings)
     x_axis: XAxisSettings = field(default_factory=XAxisSettings)
     appearance: AppearanceSettings = field(default_factory=AppearanceSettings)
@@ -571,6 +609,8 @@ class TimeSeriesSettingsModel:
             "residual_defaults": self.residual_defaults.asParams(),
             "ensemble_defaults": self.ensemble_defaults.asParams(),
             "replica_defaults": {"interval_mm": self.replica.interval_mm, "pair_count": self.replica.pair_count},
+            "fit_analysis_defaults": asdict(self.fit_analysis_defaults),
+            "replica_analysis_defaults": asdict(self.replica_analysis_defaults),
             "appearance": asdict(self.appearance),
             "export": asdict(self.export),
         }
@@ -579,5 +619,5 @@ class TimeSeriesSettingsModel:
         """Return a defensive model copy without sharing listeners."""
         return TimeSeriesSettingsModel(**{name: deepcopy(getattr(self, name)) for name in (
             "series_defaults", "fit_defaults", "residual_defaults", "fit_current",
-            "residual_current", "ensemble_defaults", "replica", "y_axis", "x_axis",
-            "appearance", "export")})
+            "residual_current", "ensemble_defaults", "replica", "fit_analysis_defaults",
+            "replica_analysis_defaults", "y_axis", "x_axis", "appearance", "export")})

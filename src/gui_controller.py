@@ -28,6 +28,7 @@ from .qt_compat import (
     screen_aware_popup_position,
 )
 from .time_series.fit_state import TimeSeriesFitState
+from .time_series.analysis_defaults import StickyAnalysisDefaultsCoordinator
 from .models.time_series import FitConfiguration, ReplicaConfiguration, TimeSeriesAnalysis
 from .time_series.fit_style_controller import FitStyleController
 from .time_series.ensemble_style import EnsembleStyleController
@@ -123,7 +124,7 @@ class GuiController(QObject):
         self.ui = plugin.dockwidget
         self.choose_point_click_handler = cph.ClickHandler(plugin, msg_signal=self.msg_signal)
         self.choose_point_click_handler.new_record_analysis_provider = (
-            self._captureNewRecordAnalysisFromControls
+            self.choose_point_click_handler.plot_ts.analysisForNewRecord
         )
         self.time_series_settings = self.choose_point_click_handler.plot_ts.settings_model
         plotter = self.choose_point_click_handler.plot_ts
@@ -137,11 +138,23 @@ class GuiController(QObject):
         self.drawing_tool = None  # for polygon drawing
         self.drawing_tool_reference = None  # for reference polygon drawing
         self.selection_type = "point"  # "point" or "polygon" or "reference polygon"
-        self.time_series_fit_state = TimeSeriesFitState()
-        replica_defaults = self.time_series_settings.replica
+        fit_defaults = self.time_series_settings.fit_analysis_defaults
+        self.time_series_fit_state = TimeSeriesFitState(
+            fit_enabled=fit_defaults.enabled,
+            selected_fit_model=fit_defaults.model,
+            seasonal_enabled=fit_defaults.seasonal,
+            residual_enabled=fit_defaults.show_residuals,
+        )
+        replica_defaults = self.time_series_settings.replica_analysis_defaults
         self._replica_enabled_view = replica_defaults.enabled
         self._replica_interval_view = replica_defaults.interval_mm
         self._replica_pair_count_view = replica_defaults.pair_count
+        self._analysis_defaults = StickyAnalysisDefaultsCoordinator(
+            self.time_series_settings,
+            plotter.user_preferences,
+            diagnostic=self._reportAnalysisDefaultsPersistenceFailure,
+            defaults_changed=plotter.setNewRecordAnalysis,
+        )
         self.initializeSelection()
         setup_frames.setupTsFrame(self.ui)
         self.insar_map = InsarMap(self.iface)
@@ -158,11 +171,6 @@ class GuiController(QObject):
         self.choose_point_click_handler.plot_ts.residual_y_axis_mode = self.residual_y_axis_mode
         self.choose_point_click_handler.plot_ts.residual_manual_y_lower = self.residual_manual_y_lower
         self.choose_point_click_handler.plot_ts.residual_manual_y_upper = self.residual_manual_y_upper
-        self.time_series_replica_enabled = self.settings.value(
-            "insar_explorer/replica_enabled", False, type=bool
-        )
-        self.time_series_replica_interval_mm = self._loadReplicaInterval()
-        self.time_series_replica_pair_count = self._loadReplicaPairCount()
         self.time_series_style_popup = TimeSeriesStylePopup(self.ui)
         self.fit_popup = FitPopup(self.ui)
         self.manual_x_axis_popup = ManualXAxisPopup(self.ui)
@@ -227,6 +235,32 @@ class GuiController(QObject):
             return False
         self.msg_signal.emit(success_message, "done", 3000)
         return True
+
+    def _reportAnalysisDefaultsPersistenceFailure(self, scope, error):
+        """Report one recoverable sticky-default save failure."""
+        self.msg_signal.emit(
+            f"Could not save {scope}; the active record remains updated.",
+            "error",
+            5000,
+        )
+
+    def _persistCurrentFitAnalysisDefaults(self):
+        """Persist normalized fit state after an explicit user action only."""
+        state = self.time_series_fit_state
+        return self._analysis_defaults.update_fit(
+            enabled=state.fit_enabled,
+            model=state.selected_fit_model,
+            seasonal=state.seasonal_enabled,
+            show_residuals=bool(state.fit_enabled and state.residual_enabled),
+        )
+
+    def _persistCurrentReplicaAnalysisDefaults(self):
+        """Persist normalized Replica state after an explicit user action only."""
+        return self._analysis_defaults.update_replica(
+            enabled=self.time_series_replica_enabled,
+            pair_count=self.time_series_replica_pair_count,
+            interval_mm=self.time_series_replica_interval_mm,
+        )
 
     def initializeSelection(self):
         if self.selection_type == "point":
@@ -720,21 +754,12 @@ class GuiController(QObject):
             self._refreshFitPopupAvailability()
 
     def _captureNewRecordAnalysisFromControls(self):
-        """Capture toolbar/input state for the next genuine point or polygon record."""
-        state = self.time_series_fit_state
-        analysis = TimeSeriesAnalysis(
-            fit=FitConfiguration(
-                enabled=state.fit_enabled,
-                model=state.selected_fit_model if state.fit_enabled else None,
-                seasonal=state.seasonal_enabled,
-                show_residuals=bool(state.fit_enabled and state.residual_enabled),
-            ),
-            replica=ReplicaConfiguration(
-                enabled=self.time_series_replica_enabled,
-                interval_mm=self.time_series_replica_interval_mm,
-                pair_count=self.time_series_replica_pair_count,
-            ),
-        )
+        """Return the persistent future-record defaults snapshot.
+
+        This compatibility method deliberately ignores the active record and
+        projected toolbar state. Explicit user handlers update the coordinator.
+        """
+        analysis = self._analysis_defaults.snapshot()
         self.choose_point_click_handler.plot_ts.setNewRecordAnalysis(analysis)
         return analysis
 
@@ -781,6 +806,7 @@ class GuiController(QObject):
         """Enable or disable the currently selected model in one operation."""
         self.time_series_fit_state.setFitEnabled(enabled)
         self._applyTimeSeriesFitState()
+        self._persistCurrentFitAnalysisDefaults()
         if not enabled:
             self.msg_signal.emit("No fit model selected.", "i", 0)
 
@@ -788,11 +814,13 @@ class GuiController(QObject):
         """Select a model and refresh only when fitting is active."""
         self.time_series_fit_state.setSelectedModel(model)
         self._applyTimeSeriesFitState(refresh=self.time_series_fit_state.fit_enabled)
+        self._persistCurrentFitAnalysisDefaults()
 
     def setTimeSeriesSeasonalEnabled(self, enabled):
         """Set seasonal fitting and activate fitting when seasonal is enabled."""
         self.time_series_fit_state.setSeasonalEnabled(enabled)
         self._applyTimeSeriesFitState()
+        self._persistCurrentFitAnalysisDefaults()
 
     def setTimeSeriesResidualEnabled(self, enabled):
         """Commit residual intent once, then rebuild the matching axes layout."""
@@ -815,6 +843,7 @@ class GuiController(QObject):
         current = plotter.current_series()
         if current is not None:
             self._syncActiveAnalysisControls(current)
+        self._persistCurrentFitAnalysisDefaults()
         self.msg_signal.emit(
             "Residual plot enabled using the selected fit model."
             if enabled else "Residual plot disabled.", "i", 0
@@ -1940,12 +1969,14 @@ class GuiController(QObject):
             marker=marker, marker_size=marker_size,
         )
         self._applyReplicaSettingsSnapshot(replica, rerender=True)
+        self._persistCurrentReplicaAnalysisDefaults()
 
     def _applyReplicaDefaults(self, settings):
         """Intentionally replace future-record defaults and apply them to the active record."""
         applied = replace(settings, enabled=self.time_series_replica_enabled)
         self.time_series_settings.replace_domain("replica", settings)
         self._applyReplicaSettingsSnapshot(applied, rerender=True)
+        self._persistCurrentReplicaAnalysisDefaults()
 
     def restoreReplicaDefaults(self):
         """Apply persisted Replica defaults when an applicable target exists."""
@@ -1992,8 +2023,11 @@ class GuiController(QObject):
         self._syncTimeSeriesReplicaControls()
 
     def _restoreTimeSeriesReplicaState(self):
-        """Restore Replica configuration after plotter lifecycle changes."""
-        self._reloadReplicaPairCountFromConfig()
+        """Restore controls from typed analysis defaults without persistence writes."""
+        defaults = self.time_series_settings.replica_analysis_defaults
+        self._replica_enabled_view = defaults.enabled
+        self._replica_interval_view = defaults.interval_mm
+        self._replica_pair_count_view = defaults.pair_count
         self._applyTimeSeriesReplicaState(refresh=False)
 
     def _syncTimeSeriesReplicaControls(self):
@@ -2045,6 +2079,7 @@ class GuiController(QObject):
         """Enable or disable replicas while preserving the selected interval."""
         self.time_series_replica_enabled = bool(enabled)
         self._applyTimeSeriesReplicaState()
+        self._persistCurrentReplicaAnalysisDefaults()
         if enabled:
             message = (
                 "Replica enabled: time series will be replicated every "
@@ -2061,6 +2096,7 @@ class GuiController(QObject):
             return
         self.time_series_replica_interval_mm = interval_mm
         self._applyTimeSeriesReplicaState(refresh=self.time_series_replica_enabled)
+        self._persistCurrentReplicaAnalysisDefaults()
         self.msg_signal.emit(
             f"Replica interval set to ±{interval_mm:.1f} mm.", "i", 0
         )
@@ -2083,6 +2119,7 @@ class GuiController(QObject):
         self._applyReplicaSettingsSnapshot(
             applied, rerender=self.time_series_replica_enabled,
         )
+        self._persistCurrentReplicaAnalysisDefaults()
 
         self.msg_signal.emit(
             f"Replica pairs set to {self.time_series_replica_pair_count}.", "i", 0

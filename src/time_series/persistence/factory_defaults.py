@@ -25,6 +25,8 @@ def build_runtime_settings(preferences):
         fit_current=deepcopy(preferences.fit_defaults),
         residual_current=deepcopy(preferences.residual_defaults),
         replica=replica,
+        fit_analysis_defaults=deepcopy(preferences.fit_analysis_defaults),
+        replica_analysis_defaults=deepcopy(preferences.replica_analysis_defaults),
         appearance=deepcopy(preferences.appearance),
         export=deepcopy(preferences.export),
     )
