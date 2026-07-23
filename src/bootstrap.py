@@ -17,14 +17,22 @@ class TimeSeriesServices:
     settings_model: object
 
 
-def create_time_series_services(plugin_dir):
-    """Compose the Phase 07 legacy adapter and fresh runtime settings."""
-    from .time_series.persistence.legacy_json import (
-        LegacyJsonUserPreferencesRepository,
+def create_time_series_services(plugin_dir, diagnostic=None):
+    """Compose QSettings preferences with one-time legacy JSON migration."""
+    from .time_series.persistence import (
+        LegacyPreferencesMigrator, QSettingsUserPreferencesRepository,
     )
+    from .time_series.persistence.legacy_json import LegacyJsonUserPreferencesRepository
 
     config_path = os.path.join(plugin_dir, "src", "config", "config.json")
-    user_preferences = LegacyJsonUserPreferencesRepository(config_path)
+    user_preferences = QSettingsUserPreferencesRepository(diagnostic=diagnostic)
+    legacy = LegacyJsonUserPreferencesRepository(config_path)
+    LegacyPreferencesMigrator(
+        user_preferences,
+        legacy_repository=legacy,
+        legacy_path=config_path,
+        diagnostic=diagnostic,
+    ).migrate_if_needed()
     preferences = user_preferences.load()
     return TimeSeriesServices(
         user_preferences=user_preferences,
@@ -61,7 +69,8 @@ def ensure_time_series_services(plugin):
             "Cannot compose time-series services without plugin_dir"
         )
 
-    services = create_time_series_services(plugin_dir)
+    diagnostic = getattr(plugin, "report_time_series_diagnostic", None)
+    services = create_time_series_services(plugin_dir, diagnostic=diagnostic)
     plugin.time_series_services = services
     return services
 

@@ -30,6 +30,9 @@ from .insar_explorer_dockwidget import InsarExplorerDockWidget
 import os.path
 
 from .src.gui_controller import GuiController
+from .src.bootstrap import (
+    create_time_series_services, ensure_time_series_services,
+)
 from .src.qt_compat import BOTTOM_DOCK_WIDGET_AREA
 
 # Initialize Qt resources from file resources.py
@@ -53,6 +56,9 @@ class InsarExplorer:
 
         # initialize plugin directory
         self.plugin_dir = os.path.dirname(__file__)
+        self.time_series_services = create_time_series_services(
+            self.plugin_dir, diagnostic=self.report_time_series_diagnostic
+        )
 
         # initialize locale
         locale = QSettings().value('locale/userLocale')[0:2]
@@ -80,6 +86,12 @@ class InsarExplorer:
 
         # add GUI controller
         self.gui_controller = None
+
+    def report_time_series_diagnostic(self, message, exception=None):
+        """Report a recoverable time-series bootstrap warning through QGIS."""
+        self.iface.messageBar().pushWarning("InSAR Explorer", message)
+        if exception is not None:
+            print(f"InSAR Explorer: {message} ({exception})")
 
     # noinspection PyMethodMayBeStatic
     def tr(self, message):
@@ -238,6 +250,7 @@ class InsarExplorer:
             self.iface.addDockWidget(BOTTOM_DOCK_WIDGET_AREA, self.dockwidget)
             self.dockwidget.show()
             if self.gui_controller is None:
+                ensure_time_series_services(self)
                 self.gui_controller = GuiController(self)
         else:  # this will reload the widget when button clicked again
             self.iface.removeDockWidget(self.dockwidget)
