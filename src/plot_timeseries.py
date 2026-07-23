@@ -19,6 +19,7 @@ from .time_series.y_axis_range import (
 )
 from .time_series.settings.persistence import TimeSeriesSettingsPersistence, build_legacy_plot_params
 from .time_series.fit_style_controller import FitStyle
+from .time_series.store import TimeSeriesStore
 from .models.time_series import (
     TimeSeriesData,
     TimeSeriesGraphics,
@@ -134,7 +135,7 @@ class PlotTs():
         script_path = os.path.abspath(__file__)
         json_file = "config.json"
         self.config_file = os.path.join(os.path.dirname(script_path), 'config', json_file)
-        self.series_history: List[TimeSeriesRecord] = []
+        self._series_store = TimeSeriesStore()
         self._graphics_by_series_id: Dict[UUID, TimeSeriesGraphics] = {}
         self.default_style = None
         self.fit_models = []
@@ -200,6 +201,11 @@ class PlotTs():
             return
         self.axis_view_changed_callback(axis_name)
 
+
+    @property
+    def series_history(self) -> List[TimeSeriesRecord]:
+        """Return a compatibility copy of stored records in render order."""
+        return list(self._series_store.records())
 
     @property
     def replicate_flag(self):
@@ -377,7 +383,7 @@ class PlotTs():
         self.ref_coords = series.ref_coords
 
     def initializeAxes(self):
-        """Initialize the pyqtgraph plot items for the requested layout."""
+        """Initialize plot items while preserving any stored records."""
         layout_matches = (
             self.ax is not None
             and ((self.plot_residuals_flag and self.ax_residuals is not None)
@@ -386,13 +392,13 @@ class PlotTs():
         if layout_matches:
             return
 
-        if not self.hold_on_flag:
-            self._clearPlotWidget()
-            self._discardAllSeriesState()
-            self._createAxesForCurrentLayout()
+        if self._series_store.records():
+            self._rebuild_axes_and_rerender_history()
             return
 
-        self._rebuild_axes_and_rerender_history()
+        self._clearPlotWidget()
+        self._graphics_by_series_id.clear()
+        self._createAxesForCurrentLayout()
 
     def _createAxesForCurrentLayout(self) -> None:
         """Create axes matching the current residual-layout flag."""
@@ -405,7 +411,8 @@ class PlotTs():
 
     def _rebuild_axes_and_rerender_history(self) -> None:
         """Recreate axes and re-render retained records with stable identity."""
-        retained_records = list(self.series_history)
+        retained_records = self._series_store.records()
+        active_id = self._series_store.active_id()
         self._clearPlotWidget()
         self._graphics_by_series_id.clear()
         self._createAxesForCurrentLayout()
@@ -432,9 +439,11 @@ class PlotTs():
             self._createAxesForCurrentLayout()
             raise
 
-        self.series_history[:] = rebuilt_records
-        if rebuilt_records:
-            self._set_current_series(rebuilt_records[-1].data)
+        self._series_store.replace_many(rebuilt_records)
+        if active_id is not None:
+            self._series_store.set_active(active_id)
+        active = self.current_series()
+        self._set_current_series(active.data if active is not None else None)
         self._rebuildYDataRanges()
 
     def plotTs(self, *, dates=None, ts_values=None, ref_values=None, plot_multiple=True, coords=None, ref_coords=None,
@@ -538,15 +547,11 @@ class PlotTs():
         """Atomically swap one rendered record after replacement rendering succeeds."""
         if previous.id != replacement.id:
             raise ValueError("replacement record must preserve the original UUID")
-        index = next(
-            (i for i, record in enumerate(self.series_history) if record.id == previous.id),
-            None,
-        )
+        if self._series_store.index_of(previous.id) is None:
+            raise KeyError(f"time-series record not found: {previous.id}")
         self._remove_snapshot_graphics(previous)
-        if index is None:
-            self.series_history.append(replacement)
-        else:
-            self.series_history[index] = replacement
+        if not self._series_store.replace(replacement):
+            raise KeyError(f"time-series record not found: {replacement.id}")
         self._register_series_graphics(replacement, graphics)
         self._set_current_series(self.current_series().data)
         self._rebuildYDataRanges()
@@ -688,7 +693,7 @@ class PlotTs():
             self._remove_snapshot_graphics(snapshot)
 
         if self.series_history:
-            restored_snapshot = self.series_history[-1]
+            restored_snapshot = self.current_series()
             self._set_current_series(restored_snapshot.data)
             self.parms = deepcopy(restored_snapshot.style.params)
         else:
@@ -1318,7 +1323,7 @@ class PlotTs():
         """Remove rendered graphics and discard all stored series state."""
         for record in list(self.series_history):
             self._remove_snapshot_graphics(record)
-        self.series_history.clear()
+        self._series_store.clear()
         self._graphics_by_series_id.clear()
         self._set_current_series(None)
         self._y_data_ranges = {}
@@ -1376,12 +1381,16 @@ class PlotTs():
         here makes settings changes apply only to future plots when hold-on mode
         contains multiple series.
         """
-        snapshot = self.remove_series()
+        active = self.current_series()
+        if active is None:
+            return None
+        snapshot = self.remove_series_by_id(active.id)
         if snapshot is None:
             return None
         self._remove_snapshot_graphics(snapshot)
-        if self.series_history:
-            self._set_current_series(self.series_history[-1].data)
+        current = self.current_series()
+        if current is not None:
+            self._set_current_series(current.data)
         else:
             self._set_current_series(snapshot.data)
         self._rebuildYDataRanges()
@@ -1486,13 +1495,10 @@ class PlotTs():
 
     def replace_series_records(self, records) -> None:
         """Replace stored records by UUID while preserving order and graphics keys."""
-        replacements = {record.id: record for record in records}
-        if not replacements:
+        records = tuple(records)
+        if not records:
             return
-        for index, current in enumerate(self.series_history):
-            replacement = replacements.get(current.id)
-            if replacement is not None:
-                self.series_history[index] = replacement
+        self._series_store.replace_many(records)
         current = self.current_series()
         self._set_current_series(current.data if current is not None else None)
 
@@ -1507,7 +1513,7 @@ class PlotTs():
         """
         replacements = {snapshot.id: snapshot for snapshot in snapshots}
         with self.preserveViewport():
-            for index, current in enumerate(list(self.series_history)):
+            for current in self._series_store.records():
                 requested = replacements.get(current.id)
                 if requested is None:
                     continue
@@ -1520,7 +1526,10 @@ class PlotTs():
                         requested, data=requested.data.withResiduals(residuals)
                     )
                 self._remove_snapshot_graphics(current)
-                self.series_history[index] = replacement
+                if not self._series_store.replace(replacement):
+                    raise KeyError(
+                        f"time-series record not found: {replacement.id}"
+                    )
                 self._register_series_graphics(replacement, graphics)
             current = self.current_series()
             self._set_current_series(current.data if current is not None else None)
@@ -1570,27 +1579,29 @@ class PlotTs():
             raise
 
     def add_series(self, snapshot: TimeSeriesSnapshot) -> None:
-        """Store a time-series record; callers remain responsible for graphics."""
-        self.series_history.append(snapshot)
+        """Store a time-series record and make it active."""
+        self._series_store.add(snapshot, make_active=True)
 
     def current_series(self) -> Optional[TimeSeriesSnapshot]:
-        """Return the active stored time-series snapshot, if available."""
-        if self.series_history:
-            return self.series_history[-1]
-        return None
+        """Return the explicitly active stored record, if available."""
+        return self._series_store.active_record()
 
     def remove_series(self, index: int = -1) -> Optional[TimeSeriesSnapshot]:
         """Remove and return a record without changing registered graphics."""
-        if not self.series_history:
-            return None
-        return self.series_history.pop(index)
+        return self._series_store.remove_at(index)
 
     def remove_series_by_id(self, series_id: UUID) -> Optional[TimeSeriesSnapshot]:
         """Remove and return the record with the supplied stable identity."""
-        for index, snapshot in enumerate(self.series_history):
-            if snapshot.id == series_id:
-                return self.series_history.pop(index)
-        return None
+        return self._series_store.remove(series_id)
+
+    def setActiveSeries(self, series_id: UUID) -> bool:
+        """Make an existing record active and refresh compatibility views."""
+        record = self._series_store.get(series_id)
+        if record is None:
+            return False
+        self._series_store.set_active(series_id)
+        self._set_current_series(record.data)
+        return True
 
     def _dateStrings(self):
         date_strings = []
