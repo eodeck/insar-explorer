@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
+from enum import Enum
 from typing import Any, List, Optional
 from uuid import UUID, uuid4
 
@@ -23,15 +24,38 @@ def _readonlyArray(values: Any, *, dtype: Any = None, ndmin: int = 0) -> np.ndar
     return array
 
 
+class SpatialSelectionKind(str, Enum):
+    """Supported spatial-selection geometry categories."""
+
+    POINT = "point"
+    POLYGON = "polygon"
+
+
+@dataclass(frozen=True)
+class SpatialSelection:
+    """Renderer-independent spatial selection used by a time-series record."""
+
+    value: Any
+    kind: SpatialSelectionKind
+
+    @classmethod
+    def from_legacy(cls, value: Any) -> Optional["SpatialSelection"]:
+        """Convert an existing point/polygon selection object into typed state."""
+        if value is None:
+            return None
+        if isinstance(value, cls):
+            return value
+        kind = SpatialSelectionKind.POLYGON if hasattr(value, "geom") else SpatialSelectionKind.POINT
+        return cls(value=value, kind=kind)
+
+
 @dataclass(frozen=True)
 class TimeSeriesData:
-    """Properties for one time series, independent of plot handles and style."""
+    """Numeric properties for one time series, independent of spatial provenance."""
 
     dates: np.ndarray
     ts_values: np.ndarray
     ref_values: np.ndarray
-    coords: Any = None
-    ref_coords: Any = None
     plot_values: Optional[np.ndarray] = None
     plot_multiple_values: Optional[np.ndarray] = None
     min_plot_values: Optional[np.ndarray] = None
@@ -130,6 +154,13 @@ class TimeSeriesRecord:
     data: TimeSeriesData
     style: TimeSeriesStyle
     id: UUID = field(default_factory=uuid4)
+    target: Optional[SpatialSelection] = None
+    reference: Optional[SpatialSelection] = None
+
+    def __post_init__(self) -> None:
+        """Normalize legacy selection values while preserving immutable ownership."""
+        object.__setattr__(self, "target", SpatialSelection.from_legacy(self.target))
+        object.__setattr__(self, "reference", SpatialSelection.from_legacy(self.reference))
 
 
 # Transitional compatibility alias; remove after downstream APIs use record terminology.
@@ -189,8 +220,6 @@ def buildTimeSeriesData(
     dates: Any,
     ts_values: Any = None,
     ref_values: Any = None,
-    coords: Any = None,
-    ref_coords: Any = None,
 ) -> TimeSeriesData:
     """Normalize raw values into an immutable TimeSeriesData instance."""
     if dates is None:
@@ -242,8 +271,6 @@ def buildTimeSeriesData(
         dates=sorted_dates,
         ts_values=prepared_ts,
         ref_values=prepared_ref,
-        coords=coords,
-        ref_coords=ref_coords,
         plot_values=plot_values,
         plot_multiple_values=plot_multiple_values,
         min_plot_values=min_plot_values,

@@ -25,12 +25,17 @@ from .models.time_series import (
     TimeSeriesData,
     TimeSeriesGraphics,
     TimeSeriesRecord,
+    SpatialSelection,
+    SpatialSelectionKind,
     TimeSeriesSnapshot,
     DefaultTimeSeriesStyle,
     TimeSeriesStyle,
     buildTimeSeriesData,
     randomTimeSeriesColor,
 )
+
+_UNSET = object()
+
 
 try:
     from .. import __version__
@@ -358,39 +363,60 @@ class PlotTs():
         self._draw()
 
     def preparePlotValues(self):
-        """Recompute plot values from the active arrays for compatibility callers."""
-        series = buildTimeSeriesData(
-            dates=self.dates,
-            ts_values=self.ts_values,
-            ref_values=self.ref_values,
+        """Recompute plot values from active compatibility arrays."""
+        data = self._buildTimeSeriesData(
+            dates=self.dates, ts_values=self.ts_values, ref_values=self.ref_values
+        )
+        current = self.current_series()
+        record = self._buildTimeSeriesRecord(
+            data=data,
+            style=current.style if current is not None else self.default_style.snapshotStyle(),
             coords=self.coords,
             ref_coords=self.ref_coords,
+            record_id=current.id if current is not None else None,
+            source=current,
         )
-        self._set_current_series(series)
+        self._set_current_series(record)
 
-    def _buildTimeSeriesData(self, *, dates=None, ts_values=None, ref_values=None, coords=None, ref_coords=None) -> TimeSeriesData:
+    def _buildTimeSeriesData(self, *, dates=None, ts_values=None, ref_values=None) -> TimeSeriesData:
+        """Build immutable numeric data without spatial-selection ownership."""
         if dates is None:
             dates = self.dates
         if ts_values is None:
             ts_values = self.ts_values
         if ref_values is None:
             ref_values = self.ref_values
-        if coords is None:
-            coords = self.coords
-        if ref_coords is None:
-            ref_coords = self.ref_coords
         if dates is None:
             raise ValueError("dates are required to build time-series data")
         return buildTimeSeriesData(
-            dates=dates,
-            ts_values=ts_values,
-            ref_values=ref_values,
-            coords=coords,
-            ref_coords=ref_coords,
+            dates=dates, ts_values=ts_values, ref_values=ref_values
         )
 
-    def _set_current_series(self, series: Optional[TimeSeriesData]):
-        if series is None:
+    def _buildTimeSeriesRecord(
+        self, *, data: TimeSeriesData, style: TimeSeriesStyle,
+        coords=_UNSET, ref_coords=_UNSET, record_id=None, source=None,
+    ) -> TimeSeriesRecord:
+        """Build one normalized record while distinguishing omitted and cleared selections."""
+        if source is not None and record_id is not None and source.id != record_id:
+            raise ValueError("source record UUID does not match requested record UUID")
+        target = source.target if source is not None and coords is _UNSET else SpatialSelection.from_legacy(
+            None if coords is _UNSET else coords
+        )
+        reference = source.reference if source is not None and ref_coords is _UNSET else SpatialSelection.from_legacy(
+            None if ref_coords is _UNSET else ref_coords
+        )
+        kwargs = {
+            "data": data, "style": style, "target": target, "reference": reference,
+        }
+        if record_id is not None:
+            kwargs["id"] = record_id
+        elif source is not None:
+            kwargs["id"] = source.id
+        return TimeSeriesRecord(**kwargs)
+
+    def _set_current_series(self, record: Optional[TimeSeriesRecord]):
+        """Refresh compatibility fields from the explicitly active record."""
+        if record is None:
             self.dates = None
             self.ts_values = 0
             self.ref_values = 0
@@ -402,6 +428,7 @@ class PlotTs():
             self.coords = None
             self.ref_coords = None
             return
+        series = record.data
         self.dates = series.dates
         self.ts_values = series.ts_values
         self.ref_values = series.ref_values
@@ -410,8 +437,8 @@ class PlotTs():
         self.min_plot_values = series.min_plot_values
         self.max_plot_values = series.max_plot_values
         self.residuals_values = series.residuals_values
-        self.coords = series.coords
-        self.ref_coords = series.ref_coords
+        self.coords = record.target.value if record.target is not None else None
+        self.ref_coords = record.reference.value if record.reference is not None else None
 
     def initializeAxes(self):
         """Initialize plot items while preserving any stored records."""
@@ -468,10 +495,10 @@ class PlotTs():
         if active_id is not None:
             self._series_store.set_active(active_id)
         active = self.current_series()
-        self._set_current_series(active.data if active is not None else None)
+        self._set_current_series(active)
         self._rebuildYDataRanges()
 
-    def plotTs(self, *, dates=None, ts_values=None, ref_values=None, plot_multiple=True, coords=None, ref_coords=None,
+    def plotTs(self, *, dates=None, ts_values=None, ref_values=None, plot_multiple=True, coords=_UNSET, ref_coords=_UNSET,
                update=False, report_statistics=False):
         """Render under the nested-safe axis guard and normalize first-plot state."""
         initial_plot = self.ax is None
@@ -494,7 +521,7 @@ class PlotTs():
                 self.axis_state_sync_callback()
         return result
 
-    def _plotTsGuarded(self, *, dates=None, ts_values=None, ref_values=None, plot_multiple=True, coords=None, ref_coords=None,
+    def _plotTsGuarded(self, *, dates=None, ts_values=None, ref_values=None, plot_multiple=True, coords=_UNSET, ref_coords=_UNSET,
                update=False, report_statistics=False):
         # update: flag indicating if the plot should be updated or a new one created
 
@@ -508,8 +535,6 @@ class PlotTs():
             dates = source_data.dates if dates is None else dates
             ts_values = source_data.ts_values if ts_values is None else ts_values
             ref_values = source_data.ref_values if ref_values is None else ref_values
-            coords = source_data.coords if coords is None else coords
-            ref_coords = source_data.ref_coords if ref_coords is None else ref_coords
             random_marker_color_flag = False
             style = TimeSeriesStyle.fromParams(
                 source_snapshot.style.params,
@@ -528,11 +553,7 @@ class PlotTs():
 
         # build and validate before changing the existing record or its graphics.
         series = self._buildTimeSeriesData(
-            dates=dates,
-            ts_values=ts_values,
-            ref_values=ref_values,
-            coords=coords if coords is not None else self.coords,
-            ref_coords=ref_coords if ref_coords is not None else self.ref_coords,
+            dates=dates, ts_values=ts_values, ref_values=ref_values
         )
         if not series.hasFinitePlotValues():
             return
@@ -544,16 +565,19 @@ class PlotTs():
             style.params['time series plot']['marker color'] = rand_color
             style.params['time series plot']['line color'] = rand_color
 
+        record = self._buildTimeSeriesRecord(
+            data=series, style=style, coords=coords, ref_coords=ref_coords,
+            record_id=source_snapshot.id if source_snapshot is not None else None,
+            source=source_snapshot,
+        )
         if update:
-            replacement = replace(source_snapshot, data=series, style=style)
             self.rerender_record(
-                replacement,
-                plot_multiple=plot_multiple,
+                record, plot_multiple=plot_multiple,
                 report_statistics=report_statistics,
             )
         else:
             self._render_and_store_series(
-                series, style, plot_multiple=plot_multiple,
+                record, plot_multiple=plot_multiple,
                 report_statistics=report_statistics,
                 replacement=not self.hold_on_flag,
             )
@@ -574,12 +598,11 @@ class PlotTs():
         return self.rerender_record(replacement)
 
     def _render_and_store_series(
-        self, series: TimeSeriesData, style: TimeSeriesStyle, *,
+        self, record: TimeSeriesRecord, *,
         plot_multiple: bool = True, report_statistics: bool = False,
         replacement: bool = False,
     ) -> TimeSeriesRecord:
-        """Render and atomically register one record, cleaning failed replacements."""
-        record = TimeSeriesRecord(data=series, style=style)
+        """Render and atomically register one normalized record."""
         try:
             self.render_record(
                 record,
@@ -596,7 +619,7 @@ class PlotTs():
         rendered_record = self._series_store.get(record.id)
         if rendered_record is None:
             raise RuntimeError(f"rendered record was not stored: {record.id}")
-        self._set_current_series(rendered_record.data)
+        self._set_current_series(rendered_record)
         return rendered_record
 
     def _build_record_graphics(
@@ -701,7 +724,7 @@ class PlotTs():
         transaction.commit()
         self._detach_graphics(old_graphics)
         active = self.current_series()
-        self._set_current_series(active.data if active is not None else None)
+        self._set_current_series(active)
         self._rebuildYDataRanges()
         return new_graphics
 
@@ -882,7 +905,7 @@ class PlotTs():
 
         if self.series_history:
             restored_snapshot = self.current_series()
-            self._set_current_series(restored_snapshot.data)
+            self._set_current_series(restored_snapshot)
             self.parms = deepcopy(restored_snapshot.style.params)
         else:
             self._set_current_series(None)
@@ -1581,9 +1604,9 @@ class PlotTs():
         self._remove_snapshot_graphics(snapshot)
         current = self.current_series()
         if current is not None:
-            self._set_current_series(current.data)
+            self._set_current_series(current)
         else:
-            self._set_current_series(snapshot.data)
+            self._set_current_series(snapshot)
         self._rebuildYDataRanges()
         self._draw()
         return snapshot
@@ -1681,7 +1704,7 @@ class PlotTs():
             return
         self._series_store.replace_many(records)
         current = self.current_series()
-        self._set_current_series(current.data if current is not None else None)
+        self._set_current_series(current)
 
     def rerenderTimeSeriesSnapshots(
         self, snapshots: List[TimeSeriesSnapshot], *, draw: bool = True
@@ -1756,7 +1779,7 @@ class PlotTs():
         if record is None:
             return False
         self._series_store.set_active(series_id)
-        self._set_current_series(record.data)
+        self._set_current_series(record)
         return True
 
     def _dateStrings(self):
@@ -1765,23 +1788,47 @@ class PlotTs():
             date_strings.append(d.strftime('%Y-%m-%d'))
         return date_strings
 
+    @staticmethod
+    def _selection_crs(selection: Optional[SpatialSelection]) -> str:
+        """Return legacy CRS metadata for one optional spatial selection."""
+        return selection.value.crs_str() if selection is not None else "None"
+
+    @staticmethod
+    def _selection_wkt(selection: Optional[SpatialSelection]) -> str:
+        """Return legacy layer-CRS WKT metadata for one optional selection."""
+        return selection.value.as_wkt() if selection is not None else "None"
+
+    @staticmethod
+    def _selection_wgs84_wkt(selection: Optional[SpatialSelection]) -> str:
+        """Return legacy WGS84 WKT metadata for one optional selection."""
+        return selection.value.as_wkt_wgs84() if selection is not None else "None"
+
+    @staticmethod
+    def _selection_label(selection: Optional[SpatialSelection]) -> str:
+        """Return the legacy point/polygon label for export headers."""
+        return (selection.kind.value if selection is not None else SpatialSelectionKind.POINT.value)
+
     def exportAscii(self, filename=None):
         if filename is None:
             return
-        snapshot = self.current_series()
-        series = snapshot.data if snapshot is not None else None
-        if series is None:
+        record = self.current_series()
+        if record is None:
             if self.dates is None or self.plot_values is None:
                 return
-            series = self._buildTimeSeriesData(dates=self.dates, ts_values=self.ts_values, ref_values=self.ref_values,
-                                               coords=self.coords, ref_coords=self.ref_coords)
+            data = self._buildTimeSeriesData(
+                dates=self.dates, ts_values=self.ts_values, ref_values=self.ref_values
+            )
+            record = self._buildTimeSeriesRecord(
+                data=data, style=self.default_style.snapshotStyle(),
+                coords=self.coords, ref_coords=self.ref_coords,
+            )
+        series = record.data
         if series.dates is None or series.plot_values is None:
             return
 
         data_to_save = np.column_stack((series.dateStrings(), series.plot_values))
-
-        coords = series.coords
-        ref_coords = series.ref_coords
+        target = record.target
+        reference = record.reference
 
         separator = "\n*********************************************************************************************\n"
         header_lines = [separator]
@@ -1794,27 +1841,26 @@ class PlotTs():
                             "https://doi.org/10.1109/IGARSS55030.2025.11313961")
         header_lines.append(separator)
 
-        # we either have point or polygons.
-        coords_type = "polygon" if hasattr(coords, "geom") else "point"
-        ref_coords_type = "polygon" if hasattr(ref_coords, "geom") else "point"
+        target_type = self._selection_label(target)
+        reference_type = self._selection_label(reference)
         wgs84 = "CRS=EPSG:4326"
 
         header_lines.append("Layer CRS\n")
-        header_lines.append(f"Time series {coords_type}:")
-        header_lines.append(f"{coords.crs_str() if coords else 'None'}")
-        header_lines.append(f"{coords.as_wkt() if coords else 'None'}\n")
-        header_lines.append(f"Reference {ref_coords_type}:")
-        header_lines.append(f"{ref_coords.crs_str() if ref_coords else 'None'}")
-        header_lines.append(f"{ref_coords.as_wkt() if ref_coords else 'None'}")
+        header_lines.append(f"Time series {target_type}:")
+        header_lines.append(self._selection_crs(target))
+        header_lines.append(f"{self._selection_wkt(target)}\n")
+        header_lines.append(f"Reference {reference_type}:")
+        header_lines.append(self._selection_crs(reference))
+        header_lines.append(self._selection_wkt(reference))
 
         header_lines.append(separator)
         header_lines.append("WGS84 Lon/Lat\n")
-        header_lines.append(f"Time series {coords_type}:")
-        header_lines.append(f"{wgs84 if coords else 'None'}")
-        header_lines.append(f"{coords.as_wkt_wgs84() if coords else 'None'}\n")
-        header_lines.append(f"Reference {ref_coords_type}:")
-        header_lines.append(f"{wgs84 if ref_coords else 'None'}")
-        header_lines.append(f"{ref_coords.as_wkt_wgs84() if ref_coords else 'None'}")
+        header_lines.append(f"Time series {target_type}:")
+        header_lines.append(wgs84 if target is not None else "None")
+        header_lines.append(f"{self._selection_wgs84_wkt(target)}\n")
+        header_lines.append(f"Reference {reference_type}:")
+        header_lines.append(wgs84 if reference is not None else "None")
+        header_lines.append(self._selection_wgs84_wkt(reference))
         header_lines.append(separator)
 
         header_lines.append("Time series data\n")
