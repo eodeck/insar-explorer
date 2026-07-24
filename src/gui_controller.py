@@ -753,16 +753,6 @@ class GuiController(QObject):
             )
             self._refreshFitPopupAvailability()
 
-    def _captureNewRecordAnalysisFromControls(self):
-        """Return the persistent future-record defaults snapshot.
-
-        This compatibility method deliberately ignores the active record and
-        projected toolbar state. Explicit user handlers update the coordinator.
-        """
-        analysis = self._analysis_defaults.snapshot()
-        self.choose_point_click_handler.plot_ts.setNewRecordAnalysis(analysis)
-        return analysis
-
     def _syncActiveAnalysisControls(self, record):
         """Project active-record analysis into controller controls without rerendering."""
         if record is None:
