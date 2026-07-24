@@ -793,9 +793,16 @@ class GuiController(QObject):
             self._refreshTimeSeriesStylePopup()
 
     def setTimeSeriesFitEnabled(self, enabled):
-        """Enable or disable the currently selected model in one operation."""
-        self.time_series_fit_state.setFitEnabled(enabled)
-        self._applyTimeSeriesFitState()
+        """Commit Fit intent and rebuild any dependent residual layout once."""
+        state = self.time_series_fit_state
+        state.setFitEnabled(enabled)
+        plotter = self.choose_point_click_handler.plot_ts
+        with plotter.axisViewUpdateGuard():
+            self._applyTimeSeriesFitState(refresh=True)
+            plotter.initializeAxes()
+        current = plotter.current_series()
+        if current is not None:
+            self._syncActiveAnalysisControls(current)
         self._persistCurrentFitAnalysisDefaults()
         if not enabled:
             self.msg_signal.emit("No fit model selected.", "i", 0)

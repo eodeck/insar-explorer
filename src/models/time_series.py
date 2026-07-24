@@ -68,12 +68,25 @@ class SpatialSelection:
 
 @dataclass(frozen=True)
 class FitConfiguration:
-    """Per-series fit and residual calculation configuration."""
+    """Per-series fit and residual calculation configuration.
+
+    Residual presentation is valid only while fitting is enabled.  Enforcing
+    that dependency here prevents invalid analysis state from entering the
+    record store through construction, compatibility, or controller paths.
+    """
 
     enabled: bool = False
     model: Optional[str] = None
     seasonal: bool = False
     show_residuals: bool = False
+
+    def __post_init__(self) -> None:
+        enabled = bool(self.enabled)
+        object.__setattr__(self, "enabled", enabled)
+        object.__setattr__(self, "seasonal", bool(self.seasonal))
+        object.__setattr__(
+            self, "show_residuals", enabled and bool(self.show_residuals)
+        )
 
 
 @dataclass(frozen=True)

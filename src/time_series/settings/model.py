@@ -242,7 +242,11 @@ class FitAnalysisDefaults:
             self, "model", self.model if self.model in FIT_MODELS else DEFAULT_FIT_MODEL
         )
         object.__setattr__(self, "seasonal", bool(self.seasonal))
-        object.__setattr__(self, "show_residuals", bool(self.show_residuals))
+        object.__setattr__(
+            self,
+            "show_residuals",
+            bool(self.enabled) and bool(self.show_residuals),
+        )
 
 
 @dataclass(frozen=True)
