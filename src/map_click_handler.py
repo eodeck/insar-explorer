@@ -5,6 +5,7 @@ from qgis.gui import QgsHighlight
 from qgis.core import QgsProject, QgsCoordinateTransform, QgsCoordinateReferenceSystem
 from qgis.PyQt.QtGui import QCursor
 
+from .bootstrap import ensure_time_series_services
 from .qt_compat import RED, WAIT_CURSOR, YELLOW
 
 import numpy as np
@@ -109,6 +110,13 @@ class MapClickHandler:
         self.highlight = None
         self.reference_highlight = None
         self.map_reference_clicked_value = 0
+        self.new_record_analysis_provider = None
+
+    def _analysisForNewRecord(self):
+        """Capture controller-facing analysis immediately before new record creation."""
+        if self.new_record_analysis_provider is None:
+            return None
+        return self.new_record_analysis_provider()
 
     def identifyClickedFeatureID(self, point: QgsPointXY, layer: QgsMapLayer = None) -> int:
         """
@@ -263,7 +271,13 @@ class TSClickHandler(MapClickHandler):
     # TODO: separate PointClickHandler from TSClickHandler
     def __init__(self, plugin, msg_signal=None):
         super().__init__(plugin, msg_signal=msg_signal)
-        self.plot_ts = pts.PlotTs(self.ui)
+        services = ensure_time_series_services(plugin)
+        self.plot_ts = pts.PlotTs(
+            self.ui,
+            settings_model=services.settings_model,
+            user_preferences=services.user_preferences,
+            project_state_repository=services.project_state_repository,
+        )
         self.raster_layer = raster_layer_utils.RasterTimeseries()
         self.selected_field_name = None
 
@@ -316,8 +330,12 @@ class TSClickHandler(MapClickHandler):
                 ref_coords = crds
 
             dates = date_values[:, 0]
-            self.plot_ts.plotTs(dates=dates, ts_values=ts_values, ref_values=ref_values,
-                                coords=coords, ref_coords=ref_coords, report_statistics=True)
+            analysis = self._analysisForNewRecord() if not ref else None
+            self.plot_ts.plotTs(
+                dates=dates, ts_values=ts_values, ref_values=ref_values,
+                coords=coords, ref_coords=ref_coords, update=ref,
+                analysis=analysis, report_statistics=True,
+            )
 
     def choosePointClickedRaster(self, *, point: QgsPointXY, layer: QgsMapLayer = None, ref=False):
         status, message = grd_layer_utils.checkGrdTimeseries(layer)
@@ -351,12 +369,16 @@ class TSClickHandler(MapClickHandler):
             ref_coords = crds
 
         dates = date_values[:, 0]
-        self.plot_ts.plotTs(dates=dates, ts_values=ts_values, ref_values=ref_values,
-                            coords=coords, ref_coords=ref_coords, report_statistics=True)
+        analysis = self._analysisForNewRecord() if not ref else None
+        self.plot_ts.plotTs(
+            dates=dates, ts_values=ts_values, ref_values=ref_values,
+            coords=coords, ref_coords=ref_coords, update=ref,
+            analysis=analysis, report_statistics=True,
+        )
 
     def resetReferencePoint(self):
         self.clearReferenceFeatureHighlight()
-        self.plot_ts.plotTs(ref_values=0, report_statistics=True)
+        self.plot_ts.plotTs(ref_values=0, update=True, report_statistics=True)
 
 
 class PolygonClickHandler(MapClickHandler):
@@ -457,8 +479,12 @@ class PolygonClickHandler(MapClickHandler):
                     clicked_values = vector_layer_utils.getFeatureFieldValue(attributes, self.selected_field_name)
                     self.map_reference_clicked_value = np.mean(clicked_values)
 
-            self.plot_ts.plotTs(dates=dates, ts_values=ts_values, ref_values=ref_values, coords=coords,
-                                ref_coords=ref_coords, plot_multiple=True, report_statistics=True)
+            analysis = self._analysisForNewRecord() if not ref else None
+            self.plot_ts.plotTs(
+                dates=dates, ts_values=ts_values, ref_values=ref_values,
+                coords=coords, ref_coords=ref_coords, plot_multiple=True,
+                update=ref, analysis=analysis, report_statistics=True,
+            )
 
 
 class ClickHandler(TSClickHandler, PolygonClickHandler):

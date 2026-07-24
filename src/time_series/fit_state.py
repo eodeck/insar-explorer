@@ -22,8 +22,10 @@ class TimeSeriesFitState:
             self.selected_fit_model = DEFAULT_FIT_MODEL
 
     def setFitEnabled(self, enabled):
-        """Enable or disable fitting without discarding the selected model."""
+        """Enable or disable fitting while enforcing the residual dependency."""
         self.fit_enabled = bool(enabled)
+        if not self.fit_enabled:
+            self.residual_enabled = False
 
     def setSelectedModel(self, model):
         """Select an actual fit model without implicitly enabling fitting."""

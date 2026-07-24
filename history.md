@@ -1,6 +1,10 @@
 ### History
 
 v2.6.0dev
+- Introduced an immutable TimeSeriesRecord domain model and centralized TimeSeriesStore.
+- Decoupled rendering, controller, persistence, and analysis responsibilities.
+- Migrated user preferences to QSettings and retired configuration through config.json .
+- Added persistent analysis defaults for newly created time series.
 - Report r2 and rmse in status bar.
 - Update exponential model icon.
 - Add logarithm model fitting.

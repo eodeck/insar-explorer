@@ -1,10 +1,10 @@
 """Residual-series style model and selection-oriented mutation service."""
 
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Iterable
 
-from ..models.time_series import TimeSeriesSnapshot, TimeSeriesStyle
+from ..models.time_series import TimeSeriesSnapshot, TimeSeriesStyle, presentation_from_legacy_params
 from .style_schema import (
     RESIDUAL_DEFAULT_COLOR, RESIDUAL_LINE_WIDTH_RANGE, RESIDUAL_MARKER_SIZE_RANGE, normalize_alpha, normalize_color,
     normalize_number, normalize_residual_line_style, normalize_residual_marker,
@@ -77,11 +77,14 @@ class ResidualStyleController:
             for key in RESIDUAL_STYLE_KEYS:
                 if key in values:
                     residual[key] = self._normalize(key, values[key])
-            snapshot.style = TimeSeriesStyle.fromParams(
+            updated_style = TimeSeriesStyle.fromParams(
                 params, label=snapshot.style.label, visible=snapshot.style.visible,
                 z_order=snapshot.style.z_order,
             )
-            changed.append(snapshot)
+            changed.append(replace(snapshot, presentation=presentation_from_legacy_params(
+                updated_style.params, label=updated_style.label,
+                visible=updated_style.visible, z_order=updated_style.z_order,
+            )))
         return changed
 
     def randomizeColor(self, snapshots):

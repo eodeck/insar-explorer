@@ -1,10 +1,10 @@
 """Snapshot-owned ensemble style model and property-level mutation service."""
 
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Iterable
 
-from ..models.time_series import TimeSeriesSnapshot, TimeSeriesStyle
+from ..models.time_series import TimeSeriesSnapshot, TimeSeriesStyle, presentation_from_legacy_params
 from .style_schema import normalize_color, normalize_number
 
 ENSEMBLE_MEMBER_LINE_STYLE = "series line style"
@@ -105,11 +105,14 @@ class EnsembleStyleController:
             for key in ENSEMBLE_STYLE_KEYS:
                 if key in values:
                     plot[key] = self._normalize(key, values[key])
-            snapshot.style = TimeSeriesStyle.fromParams(
+            updated_style = TimeSeriesStyle.fromParams(
                 params, label=snapshot.style.label, visible=snapshot.style.visible,
                 z_order=snapshot.style.z_order,
             )
-            changed.append(snapshot)
+            changed.append(replace(snapshot, presentation=presentation_from_legacy_params(
+                updated_style.params, label=updated_style.label,
+                visible=updated_style.visible, z_order=updated_style.z_order,
+            )))
         return changed
 
     @staticmethod
