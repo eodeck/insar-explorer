@@ -4,9 +4,34 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
-from typing import Any, List, Optional
+from enum import Enum
+from typing import Any, List, Mapping, Optional
+from uuid import UUID, uuid4
 
 import numpy as np
+
+try:
+    from ..time_series.settings.model import (
+        EnsembleStyleSettings,
+        FitStyleSettings,
+        ReplicaStyleSettings,
+        ResidualStyleSettings,
+        SeriesStyleSettings,
+    )
+except ImportError:  # plain-Python test/import compatibility
+    from time_series.settings.model import (
+        EnsembleStyleSettings,
+        FitStyleSettings,
+        ReplicaStyleSettings,
+        ResidualStyleSettings,
+        SeriesStyleSettings,
+    )
+
+
+def randomTimeSeriesColor() -> str:
+    """Return a random canonical ``#RRGGBB`` color string."""
+    channels = np.random.randint(0, 256, size=3)
+    return "#{:02x}{:02x}{:02x}".format(*(int(channel) for channel in channels))
 
 
 def _readonlyArray(values: Any, *, dtype: Any = None, ndmin: int = 0) -> np.ndarray:
@@ -16,15 +41,78 @@ def _readonlyArray(values: Any, *, dtype: Any = None, ndmin: int = 0) -> np.ndar
     return array
 
 
+class SpatialSelectionKind(str, Enum):
+    """Supported spatial-selection geometry categories."""
+
+    POINT = "point"
+    POLYGON = "polygon"
+
+
+@dataclass(frozen=True)
+class SpatialSelection:
+    """Renderer-independent spatial selection used by a time-series record."""
+
+    value: Any
+    kind: SpatialSelectionKind
+
+    @classmethod
+    def from_legacy(cls, value: Any) -> Optional["SpatialSelection"]:
+        """Convert an existing point/polygon selection object into typed state."""
+        if value is None:
+            return None
+        if isinstance(value, cls):
+            return value
+        kind = SpatialSelectionKind.POLYGON if hasattr(value, "geom") else SpatialSelectionKind.POINT
+        return cls(value=value, kind=kind)
+
+
+@dataclass(frozen=True)
+class FitConfiguration:
+    """Per-series fit and residual calculation configuration.
+
+    Residual presentation is valid only while fitting is enabled.  Enforcing
+    that dependency here prevents invalid analysis state from entering the
+    record store through construction, compatibility, or controller paths.
+    """
+
+    enabled: bool = False
+    model: Optional[str] = None
+    seasonal: bool = False
+    show_residuals: bool = False
+
+    def __post_init__(self) -> None:
+        enabled = bool(self.enabled)
+        object.__setattr__(self, "enabled", enabled)
+        object.__setattr__(self, "seasonal", bool(self.seasonal))
+        object.__setattr__(
+            self, "show_residuals", enabled and bool(self.show_residuals)
+        )
+
+
+@dataclass(frozen=True)
+class ReplicaConfiguration:
+    """Per-series replica-generation configuration."""
+
+    enabled: bool = False
+    interval_mm: float = 0.0
+    pair_count: int = 0
+
+
+@dataclass(frozen=True)
+class TimeSeriesAnalysis:
+    """All analysis behavior owned by one time-series record."""
+
+    fit: FitConfiguration = field(default_factory=FitConfiguration)
+    replica: ReplicaConfiguration = field(default_factory=ReplicaConfiguration)
+
+
 @dataclass(frozen=True)
 class TimeSeriesData:
-    """Properties for one time series, independent of plot handles and style."""
+    """Numeric properties for one time series, independent of spatial provenance."""
 
     dates: np.ndarray
     ts_values: np.ndarray
     ref_values: np.ndarray
-    coords: Any = None
-    ref_coords: Any = None
     plot_values: Optional[np.ndarray] = None
     plot_multiple_values: Optional[np.ndarray] = None
     min_plot_values: Optional[np.ndarray] = None
@@ -38,6 +126,14 @@ class TimeSeriesData:
         values = np.asarray(self.plot_values, dtype=np.float64)
         return bool(np.sum(np.isfinite(values)) > 0)
 
+    def hasEnsembleData(self) -> bool:
+        """Return True when this snapshot contains multiple member time series."""
+        return bool(
+            self.plot_multiple_values is not None
+            and np.asarray(self.plot_multiple_values).ndim == 2
+            and np.asarray(self.plot_multiple_values).shape[1] > 1
+        )
+
     def dateStrings(self) -> List[str]:
         """Return dates formatted for ASCII export."""
         return [date.strftime('%Y-%m-%d') for date in self.dates]
@@ -49,8 +145,55 @@ class TimeSeriesData:
 
 
 @dataclass(frozen=True)
+class TimeSeriesPresentation:
+    """All renderer-independent presentation state owned by one series."""
+
+    series: SeriesStyleSettings = field(default_factory=SeriesStyleSettings)
+    ensemble: EnsembleStyleSettings = field(default_factory=EnsembleStyleSettings)
+    fit: FitStyleSettings = field(default_factory=FitStyleSettings)
+    residual: ResidualStyleSettings = field(default_factory=ResidualStyleSettings)
+    replica: ReplicaStyleSettings = field(default_factory=ReplicaStyleSettings)
+    label: Optional[str] = None
+    visible: bool = True
+    # Reserved metadata for a later layering feature; the Phase 6 renderer
+    # does not currently expose or apply per-series z-order editing.
+    z_order: Optional[int] = None
+
+
+def presentation_from_legacy_params(
+    params: Optional[Mapping[str, Any]], *, label: Optional[str] = None,
+    visible: bool = True, z_order: Optional[int] = None,
+) -> TimeSeriesPresentation:
+    """Build typed per-series presentation from legacy plot parameters."""
+    copied = deepcopy(dict(params)) if isinstance(params, Mapping) else {}
+    return TimeSeriesPresentation(
+        series=SeriesStyleSettings.from_params(copied),
+        ensemble=EnsembleStyleSettings.fromParams(copied),
+        fit=FitStyleSettings.fromParams(copied),
+        residual=ResidualStyleSettings.fromParams(copied),
+        replica=ReplicaStyleSettings.fromParams(copied),
+        label=label,
+        visible=bool(visible),
+        z_order=z_order,
+    )
+
+
+def presentation_to_legacy_params(presentation: TimeSeriesPresentation) -> dict[str, Any]:
+    """Build a defensive legacy parameter dictionary for compatibility consumers."""
+    plot = {}
+    plot.update(presentation.series.as_params())
+    plot.update(presentation.ensemble.asParams())
+    plot.update(presentation.replica.asParams())
+    return {
+        "time series plot": deepcopy(plot),
+        "model fit": deepcopy(presentation.fit.asParams()),
+        "residual plot": deepcopy(presentation.residual.asParams()),
+    }
+
+
+@dataclass(frozen=True)
 class TimeSeriesStyle:
-    """Display metadata and copied settings for one plotted series."""
+    """Defensive compatibility projection of typed per-series presentation."""
 
     params: dict
     label: Optional[str] = None
@@ -59,8 +202,45 @@ class TimeSeriesStyle:
 
     @classmethod
     def fromParams(cls, params: Optional[dict], **kwargs: Any) -> "TimeSeriesStyle":
-        """Create style metadata with a defensive copy of mutable settings."""
-        return cls(params=deepcopy(params) if params is not None else {}, **kwargs)
+        """Create copied legacy style metadata for compatibility consumers."""
+        copied_params = deepcopy(params) if params is not None else {}
+        copied_params.get("time series plot", {}).pop("replica pair count", None)
+        return cls(params=copied_params, **kwargs)
+
+
+@dataclass
+class DefaultTimeSeriesStyle:
+    """Mutable source of typed defaults used only for newly created records."""
+
+    def __init__(self, style: TimeSeriesStyle):
+        self._presentation = presentation_from_legacy_params(
+            style.params, label=style.label, visible=style.visible, z_order=style.z_order
+        )
+
+    @classmethod
+    def fromParams(cls, params: Optional[dict]) -> "DefaultTimeSeriesStyle":
+        return cls(TimeSeriesStyle.fromParams(params))
+
+    def snapshotPresentation(self) -> TimeSeriesPresentation:
+        """Return an immutable presentation snapshot for a newly created record."""
+        return replace(self._presentation)
+
+    def snapshotStyle(self) -> TimeSeriesStyle:
+        """Return a defensive compatibility projection."""
+        presentation = self.snapshotPresentation()
+        return TimeSeriesStyle(
+            presentation_to_legacy_params(presentation), presentation.label,
+            presentation.visible, presentation.z_order,
+        )
+
+    def replaceFromSeries(self, style: TimeSeriesStyle) -> None:
+        self._presentation = presentation_from_legacy_params(
+            style.params, label=style.label, visible=style.visible, z_order=style.z_order
+        )
+
+    @property
+    def params(self) -> dict:
+        return presentation_to_legacy_params(self._presentation)
 
 
 @dataclass
@@ -80,13 +260,35 @@ class TimeSeriesGraphics:
     residual_y_data: List[Any] = field(default_factory=list)
 
 
-@dataclass
-class TimeSeriesSnapshot:
-    """Complete stored state for one plotted time series."""
+@dataclass(frozen=True)
+class TimeSeriesRecord:
+    """Renderer-independent stored state for one time series."""
 
     data: TimeSeriesData
-    style: TimeSeriesStyle
-    graphics: TimeSeriesGraphics = field(default_factory=TimeSeriesGraphics)
+    presentation: TimeSeriesPresentation
+    analysis: TimeSeriesAnalysis = field(default_factory=TimeSeriesAnalysis)
+    id: UUID = field(default_factory=uuid4)
+    target: Optional[SpatialSelection] = None
+    reference: Optional[SpatialSelection] = None
+
+    def __post_init__(self) -> None:
+        """Normalize legacy selection values while preserving immutable ownership."""
+        object.__setattr__(self, "target", SpatialSelection.from_legacy(self.target))
+        object.__setattr__(self, "reference", SpatialSelection.from_legacy(self.reference))
+
+    @property
+    def style(self) -> TimeSeriesStyle:
+        """Return a defensive legacy style projection of authoritative presentation."""
+        return TimeSeriesStyle(
+            presentation_to_legacy_params(self.presentation),
+            label=self.presentation.label,
+            visible=self.presentation.visible,
+            z_order=self.presentation.z_order,
+        )
+
+
+# Transitional compatibility alias; remove after downstream APIs use record terminology.
+TimeSeriesSnapshot = TimeSeriesRecord
 
 
 def _normalizeValueMatrix(
@@ -142,8 +344,6 @@ def buildTimeSeriesData(
     dates: Any,
     ts_values: Any = None,
     ref_values: Any = None,
-    coords: Any = None,
-    ref_coords: Any = None,
 ) -> TimeSeriesData:
     """Normalize raw values into an immutable TimeSeriesData instance."""
     if dates is None:
@@ -195,8 +395,6 @@ def buildTimeSeriesData(
         dates=sorted_dates,
         ts_values=prepared_ts,
         ref_values=prepared_ref,
-        coords=coords,
-        ref_coords=ref_coords,
         plot_values=plot_values,
         plot_multiple_values=plot_multiple_values,
         min_plot_values=min_plot_values,

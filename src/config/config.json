@@ -35,9 +35,13 @@
                 "value": "o",
                 "options": [
                     "o",
-                    "^",
                     "s",
-                    "x"
+                    "^",
+                    "v",
+                    "+",
+                    "x",
+                    "d",
+                    "*"
                 ],
                 "default": "o"
             },
@@ -67,9 +71,11 @@
                 "value": 5.0,
                 "default": 5,
                 "range": [
-                    0,
-                    100
-                ]
+                    0.0,
+                    100.0
+                ],
+                "step": 0.5,
+                "decimals": 1
             },
             "line style": {
                 "type": "dropdown",
@@ -78,8 +84,8 @@
                     "",
                     "-",
                     "--",
-                    "-.",
-                    ":"
+                    ":",
+                    "-."
                 ],
                 "default": "",
                 "advanced": true
@@ -105,85 +111,75 @@
                 "value": 1.0,
                 "default": 1.0,
                 "range": [
-                    0,
-                    100
+                    0.0,
+                    20.0
                 ],
-                "advanced": true
+                "advanced": true,
+                "step": 0.5,
+                "decimals": 1
             },
             "series fill color": {
                 "type": "color",
                 "value": "#1f77b4",
                 "default": "#1f77b4",
-                "advanced": true
+                "advanced": true,
+                "description": "Default ensemble spread fill color for newly created ensemble plots."
             },
             "series fill alpha": {
                 "type": "float",
                 "value": 0.2,
                 "default": 0.2,
                 "range": [
-                    0,
-                    1
+                    0.0,
+                    1.0
                 ],
-                "advanced": true
+                "advanced": true,
+                "step": 0.05,
+                "decimals": 2,
+                "description": "Default ensemble spread opacity for newly created ensemble plots. A value of 0 hides the spread."
             },
             "series line style": {
                 "type": "dropdown",
                 "value": "-",
                 "options": [
-                    "",
-                    "-",
-                    "--",
-                    "-.",
-                    ":"
+                    "-"
                 ],
-                "default": "",
-                "advanced": true
+                "default": "-",
+                "advanced": true,
+                "description": "Ensemble member lines always use a solid line style."
             },
             "series line color": {
                 "type": "color",
                 "value": "gray",
                 "default": "gray",
-                "advanced": true
+                "advanced": true,
+                "description": "Default ensemble member line color for newly created ensemble plots."
             },
             "series line alpha": {
                 "type": "float",
                 "value": 0.5,
                 "default": 0.5,
                 "range": [
-                    0,
-                    1
+                    0.0,
+                    1.0
                 ],
-                "advanced": true
+                "advanced": true,
+                "step": 0.05,
+                "decimals": 2,
+                "description": "Default ensemble member line opacity for newly created ensemble plots."
             },
             "series line width": {
                 "type": "float",
                 "value": 0.5,
-                "default": 0.2,
+                "default": 0.5,
                 "range": [
-                    0,
-                    100
+                    0.0,
+                    20.0
                 ],
-                "advanced": true
-            },
-            "ymax": {
-                "type": "float",
-                "value": 60.0,
-                "auto": true,
-                "range": [
-                    -10000,
-                    10000
-                ],
-                "default": true
-            },
-            "ymin": {
-                "type": "float",
-                "value": -60.0,
-                "auto": true,
-                "range": [
-                    -10000,
-                    10000
-                ],
-                "default": true
+                "advanced": true,
+                "step": 0.5,
+                "decimals": 1,
+                "description": "Default ensemble member line width for newly created ensemble plots. A value of 0 hides member lines."
             },
             "grid": {
                 "type": "dropdown",
@@ -199,8 +195,8 @@
             },
             "background color": {
                 "type": "color",
-                "value": "#f5f5f5",
-                "default": "#f5f5f5",
+                "value": "#ffffff",
+                "default": "white",
                 "advanced": true
             },
             "replica color 1": {
@@ -239,29 +235,15 @@
                 "value": "o",
                 "options": [
                     "o",
-                    "^",
                     "s",
-                    "x"
+                    "^",
+                    "v",
+                    "+",
+                    "x",
+                    "d",
+                    "*"
                 ],
                 "default": "o"
-            },
-            "number of up replicas": {
-                "type": "int",
-                "value": 1,
-                "default": 1,
-                "range": [
-                    0,
-                    10
-                ]
-            },
-            "number of down replicas": {
-                "type": "int",
-                "value": 1,
-                "default": 1,
-                "range": [
-                    0,
-                    10
-                ]
             },
             "date format": {
                 "type": "string",
@@ -269,6 +251,15 @@
                 "auto": true,
                 "default": true,
                 "advanced": true
+            },
+            "replica pair count": {
+                "type": "int",
+                "value": 1,
+                "default": 1,
+                "range": [
+                    1,
+                    10
+                ]
             }
         },
         "model fit": {
@@ -278,8 +269,8 @@
                 "options": [
                     "-",
                     "--",
-                    "-.",
-                    ":"
+                    ":",
+                    "-."
                 ],
                 "default": "--",
                 "advanced": false
@@ -303,10 +294,10 @@
             "line width": {
                 "type": "float",
                 "value": 2.0,
-                "default": 5.0,
+                "default": 2.0,
                 "range": [
-                    0,
-                    100
+                    0.0,
+                    20.0
                 ],
                 "advanced": false
             }
@@ -335,9 +326,13 @@
                 "value": "o",
                 "options": [
                     "o",
-                    "^",
                     "s",
-                    "x"
+                    "^",
+                    "v",
+                    "+",
+                    "x",
+                    "d",
+                    "*"
                 ],
                 "default": "o"
             },
@@ -367,9 +362,11 @@
                 "value": 5.0,
                 "default": 5,
                 "range": [
-                    0,
-                    100
-                ]
+                    0.0,
+                    100.0
+                ],
+                "step": 0.5,
+                "decimals": 1
             },
             "line style": {
                 "type": "dropdown",
@@ -378,8 +375,8 @@
                     "",
                     "-",
                     "--",
-                    "-.",
-                    ":"
+                    ":",
+                    "-."
                 ],
                 "default": "",
                 "advanced": true
@@ -405,36 +402,21 @@
                 "value": 1.0,
                 "default": 1.0,
                 "range": [
-                    0,
-                    100
+                    0.0,
+                    20.0
                 ],
-                "advanced": true
+                "advanced": true,
+                "step": 0.5,
+                "decimals": 1
             },
-            "ymax": {
-                "type": "float",
-                "value": 60.0,
-                "auto": true,
-                "range": [
-                    -10000,
-                    10000
-                ],
-                "default": true
-            },
-            "ymin": {
-                "type": "float",
-                "value": -60.0,
-                "auto": true,
-                "range": [
-                    -10000,
-                    10000
-                ],
-                "default": true
+            "grid": {
+                "value": "both"
             }
         },
         "figure": {
             "background color": {
                 "type": "color",
-                "value": "white",
+                "value": "#ffffff",
                 "default": "white",
                 "advanced": false
             }
@@ -463,11 +445,13 @@
                 ],
                 "advanced": false
             },
-            "credit": {
-                "type": "string",
-                "value": "Powered by InSAR Explorer",
-                "default": "Powered by InSAR Explorer",
-                "advanced": false
+            "include attribution": {
+                "type": "bool",
+                "value": true,
+                "default": true,
+                "advanced": false,
+                "text": "Include attribution",
+                "icon": ":/plugins/insar-explorer/icon.svg"
             }
         }
     },

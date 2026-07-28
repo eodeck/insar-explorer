@@ -11,12 +11,17 @@
   <qresource prefix="icons">
     <file>icons/polygon_selection.png</file>
     <file>icons/polygon_reference_selection.png</file>
+    <file>icons/x_axis_from_data.svg</file>
+    <file>icons/x_axis_custom.svg</file>
+    <file>icons/x_axis_manual.svg</file>
     <file>icons/x.svg</file>
     <file>icons/residual.svg</file>
     <file>icons/setting.svg</file>
     <file>icons/y_axis_symmetric.svg</file>
     <file>icons/y_axis_from_data.svg</file>
     <file>icons/y_axis_adaptive.svg</file>
+    <file>icons/y_axis_custom.svg</file>
+    <file>icons/y_axis_manual.svg</file>
     <file>icons/plot_hold_on.svg</file>
     <file>icons/screenshot.svg</file>
     <file>icons/apply_symbology_on-the-fly.svg</file>
@@ -28,12 +33,19 @@
     <file>icons/sync_map_with_reference.svg</file>
     <file>icons/plot_random_color.svg</file>
     <file>icons/plot_remove_last.svg</file>
+    <file>icons/plot_settings.svg</file>
     <file>icons/reverse.svg</file>
+    <file>icons/fit_curve.svg</file>
     <file>icons/fit_poly3.svg</file>
     <file>icons/fit_poly2.svg</file>
     <file>icons/fit_poly1.svg</file>
     <file>icons/fit_exponential.svg</file>
+    <file>icons/fit_log.svg</file>
     <file>icons/fit__add_seasonal.svg</file>
+    <file>icons/bookmark.svg</file>
+    <file>icons/bookmark_star.svg</file>
+    <file>icons/bookmark_set.svg</file>
+    <file>icons/bookmark_reset.svg</file>
     <file>icons/replica.svg</file>
     <file>icons/data_range.svg</file>
     <file>icons/export.svg</file>

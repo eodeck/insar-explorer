@@ -1,5 +1,20 @@
 ### History
 
+v2.7.0dev
+- Introduced an immutable TimeSeriesRecord domain model and centralized TimeSeriesStore.
+- Decoupled rendering, controller, persistence, and analysis responsibilities.
+- Migrated user preferences to QSettings and retired configuration through config.json .
+- Added persistent analysis defaults for newly created time series.
+- Report r2 and rmse in status bar.
+- Update exponential model icon.
+- Add logarithm model fitting.
+- Fix exponential fit: remove fallback to linear and report failure. 
+- Fix time series plot to align year labels to calendar boundaries.
+- Move plot settings to time series toolbar.
+- Move replica to time series toolbar.
+- Move fit curve to time series toolbar.
+- Move time series setting and exports to time series toolbar.
+
 v2.6.0
 - Transfer the repo to eodeck.
 
