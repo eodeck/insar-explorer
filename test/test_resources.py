@@ -8,7 +8,7 @@
 
 """
 
-__author__ = 'mahmud@ipi.uni-hannover.de'
+__author__ = 'insar-explorer@eodeck.com'
 __date__ = '2024-11-01'
 __copyright__ = 'Copyright 2024-2026, Mahmud Haghighi'
 

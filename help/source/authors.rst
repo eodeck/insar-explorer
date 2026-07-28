@@ -2,11 +2,11 @@
 Authors
 *******
 
-    `Mahmud Haghighi <https://www.ipi.uni-hannover.de/en/haghighi/>`_
+    `Mahmud Haghighi <https://github.com/mahmud1>`_
 
 Contributors
 ************
 
-    `Andreas Piter <https://www.ipi.uni-hannover.de/en/piter/>`_,
-    `Erik Rivas <https://www.ipi.uni-hannover.de/en/institute/team/erik-rivas>`_
+    `Andreas Piter <https://github.com/Andreas-Piter>`_,
+    `Erik Rivas <https://github.com/esrivas17>`_
 

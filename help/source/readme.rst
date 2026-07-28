@@ -1,4 +1,4 @@
-.. image:: https://github.com/luhipi/insar-explorer/blob/main/icon.png?raw=true
+.. image:: https://github.com/eodeck/insar-explorer/blob/main/icon.png?raw=true
    :alt: InSAR Explorer
 
 InSAR Explorer

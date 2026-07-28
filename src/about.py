@@ -11,9 +11,7 @@ about = f"""
         <h3>InSAR Explorer</h3>
         <p>  {__version__} ({__date__}) </p>
         <p style="text-align: justify;">
-            <span style="margin-left: 10em;">InSAR Explorer is developed by Mahmud Haghighi at the
-            Institute of Photogrammetry and GeoInformation, Leibniz University Hannover.&nbsp;
-             It is designed for interactive visualization and analysis of InSAR time series results.
+            <span style="margin-left: 10em;">InSAR Explorer is designed for interactive visualization and analysis of InSAR time series results.
             </span>
         </p>
 
@@ -43,9 +41,9 @@ about = f"""
             </p>
          <h3>Help</h3>
          <h4><a href="https://doi.org/10.5281/zenodo.14052813">Sample Data</a></h4>
-         <h4><a href="https://insar-explorer.readthedocs.io/en/latest/#data-preparation">
+         <h4><a href="https://insar-explorer.eodeck.com/en/latest/#data-preparation">
          Supported InSAR Processors</a></h4>
-         <h4><a href="https://insar-explorer.readthedocs.io/en/latest">Full Documentation</a></h4>
-         <h4><a href="https://github.com/luhipi/insar-explorer">Source Code on GitHub</a></h4>
-         <h4><a href="https://github.com/luhipi/insar-explorer/issues">Recommendations or Bug Report</a></h5>
+         <h4><a href="https://insar-explorer.eodeck.com/en/latest">Full Documentation</a></h4>
+         <h4><a href="https://github.com/eodeck/insar-explorer">Source Code on GitHub</a></h4>
+         <h4><a href="https://github.com/eodeck/insar-explorer/issues">Recommendations or Bug Report</a></h5>
          """

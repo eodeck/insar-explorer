@@ -5,12 +5,12 @@ qgisMaximumVersion=4.99
 description=InSAR Explorer is a QGIS plugin that allows for dynamic visualization and analysis of InSAR time series data
 version=2.5.1
 author=Mahmud Haghighi
-email=mahmud@ipi.uni-hannover.de
+email=insar-explorer@eodeck.com
 
-about=InSAR Explorer is a QGIS plugin designed for interactive visualization and analysis of InSAR time series results. With a user-friendly interface, it allows users to dynamically plot and explore ground displacement data over time. You can find the source code on GitHub (https://github.com/luhipi/insar-explorer). A sample shapefile containing time series data for testing the plugin is available on Zenodo (https://zenodo.org/records/14052813). Currently, vector data from SARvey, MintPy, MintPy, SARscape, and EGMS and raster data from GMTSAR and Mintpy are supported. Please refer to the documentation for more information about how to prepare the data (https://luhipi.github.io/insar-explorer/)
+about=InSAR Explorer is a QGIS plugin designed for interactive visualization and analysis of InSAR time series results. With a user-friendly interface, it allows users to dynamically plot and explore ground displacement data over time. You can find the source code on GitHub (https://github.com/eodeck/insar-explorer). A sample shapefile containing time series data for testing the plugin is available on Zenodo (https://zenodo.org/records/14052813). Currently, vector data from SARvey, MintPy, MintPy, SARscape, and EGMS and raster data from GMTSAR and Mintpy are supported. Please refer to the documentation for more information about how to prepare the data (https://insar-explorer.eodeck.com/)
 
-tracker=https://github.com/luhipi/insar-explorer/issues
-repository=https://github.com/luhipi/insar-explorer
+tracker=https://github.com/eodeck/insar-explorer/issues
+repository=https://github.com/eodeck/insar-explorer
 # End of mandatory metadata
 
 # Recommended items:
@@ -22,7 +22,7 @@ hasProcessingProvider=no
 # Tags are comma separated with spaces allowed
 tags=InSAR,Time Series,displacement,Sentinel,Sentinel-1,deformation,TerraSAR-X,SARvey,MintPy,MiaplPy,GMTSAR,SARscape,EGMS,Plot,Persistent Scatterer, PSI, Small baseline, SBAS
 
-homepage=https://luhipi.github.io/insar-explorer/
+homepage=https://insar-explorer.eodeck.com
 category=Plugins
 icon=icon.png
 # experimental flag
