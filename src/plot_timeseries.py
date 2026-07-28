@@ -1961,7 +1961,7 @@ class PlotTs():
         header_lines.append("This file contains a time series produced with InSAR Explorer. InSAR Explorer is a free "
                             "QGIS \nplugin for interactive visualization and analysis of InSAR time-series. "
                             "Visit the project website \nfor installation, documentation, license, and examples: "
-                            "https://luhipi.github.io/insar-explorer\n"
+                            "https://insar-explorer.eodeck.com/\n"
                             "If you use InSAR Explorer, please cite the paper: "
                             "https://doi.org/10.1109/IGARSS55030.2025.11313961")
         header_lines.append(separator)

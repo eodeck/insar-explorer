@@ -12,4 +12,4 @@ Description
     `SARscape <#data-preparation-sarscape>`_,
     and `EGMS <#data-preparation-egms>`_.
     The plugin is also available on the `QGIS plugins web portal <https://plugins.qgis.org/plugins/insar_explorer-dev/>`_.
-    The latest development version is available on the `GitHub repository <https://github.com/luhipi/insar-explorer>`_.
+    The latest development version is available on the `GitHub repository <https://github.com/eodeck/insar-explorer>`_.

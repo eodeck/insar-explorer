@@ -39,7 +39,7 @@
          <string/>
         </property>
         <property name="text">
-         <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;a href=&quot;https://luhipi.github.io/insar-explorer&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0068da;&quot;&gt;About InSAR Explorer&lt;/span&gt;&lt;/a&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+         <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;a href=&quot;https://insar-explorer.eodeck.com/&quot;&gt;&lt;span style=&quot; text-decoration: underline; color:#0068da;&quot;&gt;About InSAR Explorer&lt;/span&gt;&lt;/a&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
         </property>
         <property name="openExternalLinks">
          <bool>true</bool>

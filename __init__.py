@@ -8,7 +8,7 @@
                              -------------------
         begin                : 2024-11-01
         copyright            : (C) 2024-2026 by Mahmud Haghighi
-        email                : mahmud@ipi.uni-hannover.de
+        email                : insar-explorer@eodeck.com
         git sha              : $Format:%H$
  ***************************************************************************/
 
@@ -23,8 +23,8 @@
  This script initializes the plugin, making it known to QGIS.
 """
 
-__version__ = "2.6.0"
-__date__ = "2026.07.24"
+__version__ = "2.7.0dev"
+__date__ = "2026.07.28"
 
 
 # noinspection PyPep8Naming

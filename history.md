@@ -1,6 +1,6 @@
 ### History
 
-v2.6.0
+v2.7.0dev
 - Introduced an immutable TimeSeriesRecord domain model and centralized TimeSeriesStore.
 - Decoupled rendering, controller, persistence, and analysis responsibilities.
 - Migrated user preferences to QSettings and retired configuration through config.json .
@@ -14,6 +14,9 @@ v2.6.0
 - Move replica to time series toolbar.
 - Move fit curve to time series toolbar.
 - Move time series setting and exports to time series toolbar.
+
+v2.6.0
+- Transfer the repo to eodeck.
 
 v2.5.0
 - Support for Qt6 for compatibility with QGIS 4.
