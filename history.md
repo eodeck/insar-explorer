@@ -1,6 +1,6 @@
 ### History
 
-v2.7.0dev
+v2.7.0
 - Introduced an immutable TimeSeriesRecord domain model and centralized TimeSeriesStore.
 - Decoupled rendering, controller, persistence, and analysis responsibilities.
 - Migrated user preferences to QSettings and retired configuration through config.json .
