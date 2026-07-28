@@ -1,5 +1,8 @@
 ### History
 
+v2.6.0
+- Transfer the repo to eodeck.
+
 v2.5.0
 - Support for Qt6 for compatibility with QGIS 4.
 - Remove "." from marker options.

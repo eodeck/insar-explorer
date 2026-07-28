@@ -6,7 +6,7 @@
 #		begin				: 2024-11-01
 #		git sha				: $Format:%H$
 #		copyright			: (C) 2024-2026 by Mahmud Haghighi
-#		email				: mahmud@ipi.uni-hannover.de
+#		email				: insar-explorer@eodeck.com
 # ***************************************************************************/
 #
 #/***************************************************************************
