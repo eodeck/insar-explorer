@@ -220,6 +220,19 @@ class InsarExplorer:
     def unload(self):
         """Removes the plugin menu item and icon from QGIS GUI."""
 
+        # session workflow state must not survive plugin unload/reload.
+        services = getattr(self, "time_series_services", None)
+        reference_session = getattr(services, "reference_session", None)
+        if reference_session is not None:
+            reference_session.clear()
+
+        controller = getattr(self, "gui_controller", None)
+        click_handler = getattr(controller, "choose_point_click_handler", None)
+        if click_handler is not None:
+            click_handler.clearReferenceFeatureHighlight()
+        if controller is not None:
+            controller.removePolygonDrawingTool(reference=True)
+
         # print "** UNLOAD InsarExplorer"
 
         for action in self.actions:

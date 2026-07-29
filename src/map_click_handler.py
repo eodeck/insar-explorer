@@ -6,6 +6,7 @@ from qgis.core import QgsProject, QgsCoordinateTransform, QgsCoordinateReference
 from qgis.PyQt.QtGui import QCursor
 
 from .bootstrap import ensure_time_series_services
+from .time_series.reference_session import ActiveReference
 from .qt_compat import RED, WAIT_CURSOR, YELLOW
 
 import numpy as np
@@ -272,6 +273,7 @@ class TSClickHandler(MapClickHandler):
     def __init__(self, plugin, msg_signal=None):
         super().__init__(plugin, msg_signal=msg_signal)
         services = ensure_time_series_services(plugin)
+        self.reference_session = services.reference_session
         self.plot_ts = pts.PlotTs(
             self.ui,
             settings_model=services.settings_model,
@@ -282,6 +284,7 @@ class TSClickHandler(MapClickHandler):
         self.selected_field_name = None
 
     def reset(self):
+        self.reference_session.clear()
         self.clearFeatureHighlight()
         self.clearReferenceFeatureHighlight()
         self.raster_layer.reset()
@@ -302,6 +305,20 @@ class TSClickHandler(MapClickHandler):
         else:
             return
 
+    def _referenceInputsForNewTarget(self):
+        """Return active session-reference inputs without consulting a record."""
+        reference = self.reference_session.current()
+        if reference is None:
+            return None, None
+        return reference.values_array(), reference.selection.value
+
+    def _commitSelectedReference(self, *, dates, values, selection):
+        """Commit workflow state only after extraction/record update succeeds."""
+        reference = ActiveReference.create(
+            dates=dates, values=values, selection=selection
+        )
+        self.reference_session.set(reference)
+
     def choosePointClickedVector(self, *, point: QgsPointXY, layer: QgsMapLayer = None, ref=False):
         feature = self.identifyClickedFeature(point, layer=layer, ref=ref)
 
@@ -319,7 +336,7 @@ class TSClickHandler(MapClickHandler):
             date_values = vector_layer_utils.extractDateValueAttributes(attributes)
             if not ref:
                 ts_values = date_values[:, 1]
-                ref_values = None
+                ref_values, ref_coords = self._referenceInputsForNewTarget()
                 coords = crds
             else:
                 ref_values = date_values[:, 1]
@@ -336,6 +353,10 @@ class TSClickHandler(MapClickHandler):
                 coords=coords, ref_coords=ref_coords, update=ref,
                 analysis=analysis, report_statistics=True,
             )
+            if ref:
+                self._commitSelectedReference(
+                    dates=dates, values=ref_values, selection=ref_coords
+                )
 
     def choosePointClickedRaster(self, *, point: QgsPointXY, layer: QgsMapLayer = None, ref=False):
         status, message = grd_layer_utils.checkGrdTimeseries(layer)
@@ -360,7 +381,7 @@ class TSClickHandler(MapClickHandler):
 
         if not ref:
             ts_values = date_values[:, 1]
-            ref_values = None
+            ref_values, ref_coords = self._referenceInputsForNewTarget()
             coords = crds
         else:
             ref_values = date_values[:, 1]
@@ -375,10 +396,17 @@ class TSClickHandler(MapClickHandler):
             coords=coords, ref_coords=ref_coords, update=ref,
             analysis=analysis, report_statistics=True,
         )
+        if ref:
+            self._commitSelectedReference(
+                dates=dates, values=ref_values, selection=ref_coords
+            )
 
     def resetReferencePoint(self):
+        self.reference_session.clear()
         self.clearReferenceFeatureHighlight()
-        self.plot_ts.plotTs(ref_values=0, update=True, report_statistics=True)
+        self.plot_ts.plotTs(
+            ref_values=0, ref_coords=None, update=True, report_statistics=True
+        )
 
 
 class PolygonClickHandler(MapClickHandler):
@@ -468,7 +496,7 @@ class PolygonClickHandler(MapClickHandler):
 
             if not ref:
                 ts_values = values
-                ref_values = None
+                ref_values, ref_coords = self._referenceInputsForNewTarget()
                 coords = crds
             else:
                 ref_values = values
@@ -485,6 +513,10 @@ class PolygonClickHandler(MapClickHandler):
                 coords=coords, ref_coords=ref_coords, plot_multiple=True,
                 update=ref, analysis=analysis, report_statistics=True,
             )
+            if ref:
+                self._commitSelectedReference(
+                    dates=dates, values=ref_values, selection=ref_coords
+                )
 
 
 class ClickHandler(TSClickHandler, PolygonClickHandler):
