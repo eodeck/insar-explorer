@@ -122,6 +122,10 @@ class GuiController(QObject):
         super().__init__()
         self.iface = plugin.iface
         self.ui = plugin.dockwidget
+        self._plugin_diagnostic = getattr(
+            plugin, "report_time_series_diagnostic", None
+        )
+        self._last_fit_statistics_message = None
         self.choose_point_click_handler = cph.ClickHandler(plugin, msg_signal=self.msg_signal)
         self.choose_point_click_handler.new_record_analysis_provider = (
             self.choose_point_click_handler.plot_ts.analysisForNewRecord
@@ -237,12 +241,20 @@ class GuiController(QObject):
         return True
 
     def _reportAnalysisDefaultsPersistenceFailure(self, scope, error):
-        """Report one recoverable sticky-default save failure."""
-        self.msg_signal.emit(
-            f"Could not save {scope}; the active record remains updated.",
-            "error",
-            5000,
+        """Report only sticky-default failure and log the underlying exception."""
+        is_fit_scope = scope == "fit analysis defaults"
+        warning = (
+            "Fit updated, but its default could not be saved."
+            if is_fit_scope
+            else f"{scope.capitalize()} could not be saved."
         )
+        if is_fit_scope and self._last_fit_statistics_message:
+            warning = f"{self._last_fit_statistics_message}. {warning}"
+        self.msg_signal.emit(warning, "error", 6000)
+        if self._plugin_diagnostic is not None:
+            self._plugin_diagnostic(
+                f"Unable to persist {scope}.", error, notify=False
+            )
 
     def _persistCurrentFitAnalysisDefaults(self):
         """Persist normalized fit state after an explicit user action only."""
@@ -713,10 +725,12 @@ class GuiController(QObject):
             f"RMSE {self._formatFitRmse(statistics.rmse)} mm — "
             f"{label}{seasonal_suffix} fit"
         )
+        self._last_fit_statistics_message = message
         self.msg_signal.emit(message, "i", 6000)
 
     def _handleTimeSeriesFitFailure(self, error, *, seasonal=False):
-        """Show a non-modal fitting failure message."""
+        """Show a non-modal fitting failure message without retaining stale statistics."""
+        self._last_fit_statistics_message = None
         label = {
             "exp": "Exponential",
             "log": "Logarithmic",
@@ -771,8 +785,10 @@ class GuiController(QObject):
         self._syncTimeSeriesFitControls()
         self._syncTimeSeriesReplicaControls()
 
-    def _applyTimeSeriesFitState(self, refresh=True):
-        """Apply fit state to the plotter and both temporary UI surfaces."""
+    def _applyTimeSeriesFitState(
+        self, refresh=True, *, report_statistics: bool = False,
+    ):
+        """Apply fit state and optionally report one explicit fit recalculation."""
         state = self.time_series_fit_state
         plotter = self.choose_point_click_handler.plot_ts
         plotter.fit_models = [state.selected_fit_model] if state.fit_enabled else []
@@ -785,10 +801,12 @@ class GuiController(QObject):
             show_residuals=state.residual_enabled and state.fit_enabled,
         )
         self._syncTimeSeriesFitControls()
-        if refresh:
+        if refresh and plotter.current_series() is not None:
             with plotter.axisViewUpdateGuard():
-                if not plotter.updateActiveAnalysis(fit=fit_config):
-                    plotter.plotTs(update=True, report_statistics=True)
+                plotter.updateActiveAnalysis(
+                    fit=fit_config,
+                    report_statistics=report_statistics,
+                )
         if hasattr(self, "time_series_style_popup"):
             self._refreshTimeSeriesStylePopup()
 
@@ -797,8 +815,12 @@ class GuiController(QObject):
         state = self.time_series_fit_state
         state.setFitEnabled(enabled)
         plotter = self.choose_point_click_handler.plot_ts
+        self._last_fit_statistics_message = None
         with plotter.axisViewUpdateGuard():
-            self._applyTimeSeriesFitState(refresh=True)
+            self._applyTimeSeriesFitState(
+                refresh=True,
+                report_statistics=bool(enabled),
+            )
             plotter.initializeAxes()
         current = plotter.current_series()
         if current is not None:
@@ -810,13 +832,24 @@ class GuiController(QObject):
     def setTimeSeriesFitModel(self, model):
         """Select a model and refresh only when fitting is active."""
         self.time_series_fit_state.setSelectedModel(model)
-        self._applyTimeSeriesFitState(refresh=self.time_series_fit_state.fit_enabled)
+        fit_enabled = self.time_series_fit_state.fit_enabled
+        if fit_enabled:
+            self._last_fit_statistics_message = None
+        self._applyTimeSeriesFitState(
+            refresh=fit_enabled,
+            report_statistics=fit_enabled,
+        )
         self._persistCurrentFitAnalysisDefaults()
 
     def setTimeSeriesSeasonalEnabled(self, enabled):
         """Set seasonal fitting and activate fitting when seasonal is enabled."""
         self.time_series_fit_state.setSeasonalEnabled(enabled)
-        self._applyTimeSeriesFitState()
+        fit_enabled = self.time_series_fit_state.fit_enabled
+        if fit_enabled:
+            self._last_fit_statistics_message = None
+        self._applyTimeSeriesFitState(
+            report_statistics=fit_enabled,
+        )
         self._persistCurrentFitAnalysisDefaults()
 
     def setTimeSeriesResidualEnabled(self, enabled):
@@ -831,9 +864,10 @@ class GuiController(QObject):
             show_residuals=bool(state.fit_enabled and state.residual_enabled),
         )
         with plotter.axisViewUpdateGuard():
-            if not plotter.updateActiveAnalysis(fit=fit_config):
+            if not plotter.updateActiveAnalysis(
+                fit=fit_config, report_statistics=False
+            ):
                 self._applyTimeSeriesFitState(refresh=False)
-                plotter.plotTs(update=True, report_statistics=False)
             plotter.initializeAxes()
         # The rerender callback projects the committed record back into both UI
         # surfaces. Repeat the guarded projection for plotters without a callback.

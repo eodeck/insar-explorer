@@ -88,15 +88,23 @@ class InsarExplorer:
         # add GUI controller
         self.gui_controller = None
 
-    def report_time_series_diagnostic(self, message, exception=None):
-        """Report each recoverable persistence warning once per startup."""
+    def report_time_series_diagnostic(
+        self, message, exception=None, *, notify=True,
+    ):
+        """Report each recoverable diagnostic once, preserving exception causes."""
         key = (message, type(exception).__name__ if exception else None)
         if key in self._reported_time_series_diagnostics:
             return
         self._reported_time_series_diagnostics.add(key)
-        self.iface.messageBar().pushWarning("InSAR Explorer", message)
-        if exception is not None:
-            print(f"InSAR Explorer: {message} ({exception})")
+        if notify:
+            self.iface.messageBar().pushWarning("InSAR Explorer", message)
+        details = []
+        current = exception
+        while current is not None:
+            details.append(f"{type(current).__name__}: {current}")
+            current = current.__cause__
+        suffix = " <- ".join(details)
+        print(f"InSAR Explorer: {message}" + (f" ({suffix})" if suffix else ""))
 
     # noinspection PyMethodMayBeStatic
     def tr(self, message):

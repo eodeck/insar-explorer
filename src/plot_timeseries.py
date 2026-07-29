@@ -439,8 +439,11 @@ class PlotTs():
         """Return the controller-captured analysis used by the next new record."""
         return self._new_record_analysis
 
-    def updateActiveAnalysis(self, *, fit=_UNSET, replica=_UNSET) -> bool:
-        """Transactionally replace analysis configuration for the active record."""
+    def updateActiveAnalysis(
+        self, *, fit=_UNSET, replica=_UNSET,
+        report_statistics: bool = False,
+    ) -> bool:
+        """Transactionally replace active analysis and optionally report fit statistics."""
         current = self.current_series()
         if current is None:
             return False
@@ -449,7 +452,10 @@ class PlotTs():
             analysis = replace(analysis, fit=fit)
         if replica is not _UNSET:
             analysis = replace(analysis, replica=replica)
-        self.rerender_record(replace(current, analysis=analysis))
+        self.rerender_record(
+            replace(current, analysis=analysis),
+            report_statistics=bool(report_statistics),
+        )
         return True
 
     def updateActiveReplicaState(self, *, configuration, presentation) -> bool:
