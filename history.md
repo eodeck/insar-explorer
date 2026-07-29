@@ -1,5 +1,11 @@
 ### History
 
+
+v2.7.1
+- Removed false QGIS 4 persistence warnings for Fit and Replica settings.
+- Fixed Fit statistics refresh when enabling or updating Fit.
+- Restored reference-point persistence across new time-series selections.
+
 v2.7.0
 - Introduced an immutable TimeSeriesRecord domain model and centralized TimeSeriesStore.
 - Decoupled rendering, controller, persistence, and analysis responsibilities.
