@@ -40,6 +40,7 @@ EVENT_CLOSE = _enum_value(QEvent, "Type", "Close")
 
 # QtCore.Qt enums
 BOTTOM_DOCK_WIDGET_AREA = _enum_value(Qt, "DockWidgetArea", "BottomDockWidgetArea")
+ALIGN_LEFT = _enum_value(Qt, "AlignmentFlag", "AlignLeft")
 ALIGN_RIGHT = _enum_value(Qt, "AlignmentFlag", "AlignRight")
 ALIGN_VCENTER = _enum_value(Qt, "AlignmentFlag", "AlignVCenter")
 ALIGN_RIGHT_VCENTER = ALIGN_RIGHT | ALIGN_VCENTER
