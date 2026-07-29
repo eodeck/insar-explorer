@@ -5,7 +5,7 @@ normalizes fields independently so one malformed value cannot invalidate an
 otherwise usable preference set.
 """
 
-from typing import Any, Callable, Iterable, Optional
+from typing import Any, Iterable
 
 from .factory_defaults import factory_user_preferences
 from .interfaces import PreferencesPersistenceError, TimeSeriesUserPreferences
@@ -23,6 +23,38 @@ from ..settings.model import (
 
 SCHEMA_VERSION = 2
 DEFAULT_PREFIX = "insar_explorer/time_series"
+
+
+def _qsettings_status_code(status: Any) -> int:
+    """Return a stable integer for Qt 5 ints and Qt 6 enum wrappers."""
+    if status is None:
+        return 0
+    value = getattr(status, "value", status)
+    if callable(value):
+        value = value()
+    try:
+        return int(value)
+    except (TypeError, ValueError, OverflowError):
+        name = getattr(status, "name", "")
+        if callable(name):
+            name = name()
+        return 0 if str(name).split(".")[-1] == "NoError" else -1
+
+
+def _runtime_versions() -> str:
+    """Return non-sensitive QGIS/Qt runtime details for diagnostics."""
+    details = []
+    try:
+        from qgis.core import Qgis
+        details.append(f"QGIS={getattr(Qgis, 'QGIS_VERSION', 'unknown')}")
+    except Exception:
+        details.append("QGIS=unavailable")
+    try:
+        from qgis.PyQt.QtCore import PYQT_VERSION_STR, QT_VERSION_STR
+        details.extend((f"Qt={QT_VERSION_STR}", f"PyQt={PYQT_VERSION_STR}"))
+    except Exception:
+        details.extend(("Qt=unavailable", "PyQt=unavailable"))
+    return ", ".join(details)
 
 
 def read_bool(value: Any, default: bool) -> bool:
@@ -247,20 +279,33 @@ class QSettingsUserPreferencesRepository:
         if sync:
             self.sync()
 
-    def sync(self) -> None:
-        """Synchronize pending writes and validate the backend status."""
+    def _status_code(self) -> int:
+        status_method = getattr(self._settings, "status", None)
+        return _qsettings_status_code(status_method()) if status_method else 0
+
+    def sync(self, *, scope: str = "preferences") -> None:
+        """Synchronize writes using Qt 5/Qt 6 compatible status handling.
+
+        Qt 5 exposes ``QSettings.status()`` as an integer, while Qt 6 may
+        expose a scoped enum.  The value is canonicalized locally and every
+        non-zero status is treated as a persistence failure.  Same-instance
+        read-back is deliberately not used as a durability signal.
+        """
         try:
             sync_method = getattr(self._settings, "sync", None)
             if sync_method:
                 sync_method()
-            status_method = getattr(self._settings, "status", None)
-            if status_method and status_method() not in (None, 0):
-                raise RuntimeError("QSettings synchronization failed")
+            current_status = self._status_code()
+            if current_status != 0:
+                raise RuntimeError(
+                    "QSettings synchronization failed "
+                    f"(scope={scope}, status={current_status}, {_runtime_versions()})"
+                )
         except PreferencesPersistenceError:
             raise
         except Exception as exc:
             raise PreferencesPersistenceError(
-                "Unable to save time-series preferences."
+                "Setting applied, but it could not be saved for the next session."
             ) from exc
 
     def save_scope(
@@ -272,10 +317,11 @@ class QSettingsUserPreferencesRepository:
             if spec_scope == scope and (
                 not only_missing or not self.contains(suffix)
             ):
-                self._write(suffix, getattr(settings, field))
+                value = getattr(settings, field)
+                self._write(suffix, value)
         self._write("schema_version", SCHEMA_VERSION)
         if sync:
-            self.sync()
+            self.sync(scope=scope)
 
     def save_preferences_missing(
         self, preferences: TimeSeriesUserPreferences, *, sync: bool = True
