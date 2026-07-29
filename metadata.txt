@@ -3,7 +3,7 @@ name=InSAR Explorer
 qgisMinimumVersion=3.0
 qgisMaximumVersion=4.99
 description=InSAR Explorer is a QGIS plugin that allows for dynamic visualization and analysis of InSAR time series data
-version=2.7.1
+version=2.8.0dev
 author=Mahmud Haghighi
 email=insar-explorer@eodeck.com
 
