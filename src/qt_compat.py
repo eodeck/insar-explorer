@@ -11,11 +11,11 @@ try:
     except ImportError:
         from qgis.PyQt.QtWidgets import QAction, QActionGroup
         from qgis.PyQt.QtGui import QGuiApplication
-    from qgis.PyQt.QtWidgets import QApplication, QColorDialog, QFrame, QMessageBox, QSizePolicy, QToolButton
+    from qgis.PyQt.QtWidgets import QApplication, QAbstractItemView, QColorDialog, QFrame, QHeaderView, QMessageBox, QSizePolicy, QStyle, QToolButton
 except ImportError:
     from PySide6.QtCore import QEvent, QPoint, QRect, QSize, Qt
     from PySide6.QtGui import QAction, QActionGroup, QGuiApplication
-    from PySide6.QtWidgets import QApplication, QColorDialog, QFrame, QMessageBox, QSizePolicy, QToolButton
+    from PySide6.QtWidgets import QApplication, QAbstractItemView, QColorDialog, QFrame, QHeaderView, QMessageBox, QSizePolicy, QStyle, QToolButton
 
 try:
     from qgis.core import QgsMapLayer, QgsWkbTypes
@@ -42,6 +42,7 @@ EVENT_CLOSE = _enum_value(QEvent, "Type", "Close")
 BOTTOM_DOCK_WIDGET_AREA = _enum_value(Qt, "DockWidgetArea", "BottomDockWidgetArea")
 ALIGN_LEFT = _enum_value(Qt, "AlignmentFlag", "AlignLeft")
 ALIGN_RIGHT = _enum_value(Qt, "AlignmentFlag", "AlignRight")
+ALIGN_CENTER = _enum_value(Qt, "AlignmentFlag", "AlignCenter")
 ALIGN_VCENTER = _enum_value(Qt, "AlignmentFlag", "AlignVCenter")
 ALIGN_RIGHT_VCENTER = ALIGN_RIGHT | ALIGN_VCENTER
 YELLOW = _enum_value(Qt, "GlobalColor", "yellow")
@@ -52,6 +53,18 @@ KEY_SPACE = _enum_value(Qt, "Key", "Key_Space")
 RIGHT_MOUSE_BUTTON = _enum_value(Qt, "MouseButton", "RightButton")
 DOWN_ARROW = _enum_value(Qt, "ArrowType", "DownArrow")
 ITEM_IS_EDITABLE = _enum_value(Qt, "ItemFlag", "ItemIsEditable")
+ITEM_IS_ENABLED = _enum_value(Qt, "ItemFlag", "ItemIsEnabled")
+ITEM_IS_SELECTABLE = _enum_value(Qt, "ItemFlag", "ItemIsSelectable")
+DISPLAY_ROLE = _enum_value(Qt, "ItemDataRole", "DisplayRole")
+EDIT_ROLE = _enum_value(Qt, "ItemDataRole", "EditRole")
+DECORATION_ROLE = _enum_value(Qt, "ItemDataRole", "DecorationRole")
+TOOLTIP_ROLE = _enum_value(Qt, "ItemDataRole", "ToolTipRole")
+TEXT_ALIGNMENT_ROLE = _enum_value(Qt, "ItemDataRole", "TextAlignmentRole")
+FONT_ROLE = _enum_value(Qt, "ItemDataRole", "FontRole")
+FOREGROUND_ROLE = _enum_value(Qt, "ItemDataRole", "ForegroundRole")
+HORIZONTAL = _enum_value(Qt, "Orientation", "Horizontal")
+SCROLL_BAR_ALWAYS_OFF = _enum_value(Qt, "ScrollBarPolicy", "ScrollBarAlwaysOff")
+NO_CONTEXT_MENU = _enum_value(Qt, "ContextMenuPolicy", "NoContextMenu")
 DASH_LINE = _enum_value(Qt, "PenStyle", "DashLine")
 DOT_LINE = _enum_value(Qt, "PenStyle", "DotLine")
 DASH_DOT_LINE = _enum_value(Qt, "PenStyle", "DashDotLine")
@@ -64,6 +77,20 @@ PEN_STYLE_BY_NAME = {
 # Qt window flags
 POPUP_WINDOW_FLAG = _enum_value(Qt, "WindowType", "Popup")
 
+
+# QAbstractItemView / QHeaderView enums
+NO_SELECTION = _enum_value(QAbstractItemView, "SelectionMode", "NoSelection")
+EDIT_DOUBLE_CLICKED = _enum_value(QAbstractItemView, "EditTrigger", "DoubleClicked")
+EDIT_SELECTED_CLICKED = _enum_value(QAbstractItemView, "EditTrigger", "SelectedClicked")
+EDIT_KEY_PRESSED = _enum_value(QAbstractItemView, "EditTrigger", "EditKeyPressed")
+NO_DRAG_DROP = _enum_value(QAbstractItemView, "DragDropMode", "NoDragDrop")
+HEADER_STRETCH = _enum_value(QHeaderView, "ResizeMode", "Stretch")
+HEADER_FIXED = _enum_value(QHeaderView, "ResizeMode", "Fixed")
+
+# QStyle state flags
+STYLE_STATE_SELECTED = _enum_value(QStyle, "StateFlag", "State_Selected", "State_Selected")
+STYLE_STATE_HAS_FOCUS = _enum_value(QStyle, "StateFlag", "State_HasFocus", "State_HasFocus")
+STYLE_STATE_MOUSE_OVER = _enum_value(QStyle, "StateFlag", "State_MouseOver", "State_MouseOver")
 
 # QFrame enums
 FRAME_SHAPE_STYLED_PANEL = _enum_value(QFrame, "Shape", "StyledPanel")

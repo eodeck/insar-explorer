@@ -138,6 +138,7 @@ class GuiController(QObject):
         plotter.fit_failure_callback = self._handleTimeSeriesFitFailure
         plotter.fit_success_callback = self._handleTimeSeriesFitSuccess
         plotter.analysis_state_sync_callback = self._syncActiveAnalysisControls
+        plotter.pending_changed_callback = self._syncPendingTimeSeriesPanel
         self.click_tool = None  # plugin.click_tool
         self.drawing_tool = None  # for polygon drawing
         self.drawing_tool_reference = None  # for reference polygon drawing
@@ -473,6 +474,10 @@ class GuiController(QObject):
         MessageBox(text)
 
     def connectTimeseriesSignals(self):
+        panel = self.ui.time_series_point_panel
+        panel.addPendingRequested.connect(self.addPendingTimeSeries)
+        panel.discardPendingRequested.connect(self.discardPendingTimeSeries)
+        panel.pendingLabelEdited.connect(self.updatePendingTimeSeriesLabel)
         self.ui.pb_choose_point.clicked.connect(self.activatePointSelection)
         self.ui.pb_set_reference.clicked.connect(self.activateReferencePointSelection)
         self.ui.pb_reset_reference.clicked.connect(self.resetReferencePoint)
@@ -801,7 +806,7 @@ class GuiController(QObject):
             show_residuals=state.residual_enabled and state.fit_enabled,
         )
         self._syncTimeSeriesFitControls()
-        if refresh and plotter.current_series() is not None:
+        if refresh and plotter.editable_time_series_record() is not None:
             with plotter.axisViewUpdateGuard():
                 plotter.updateActiveAnalysis(
                     fit=fit_config,
@@ -822,7 +827,7 @@ class GuiController(QObject):
                 report_statistics=bool(enabled),
             )
             plotter.initializeAxes()
-        current = plotter.current_series()
+        current = plotter.editable_time_series_record()
         if current is not None:
             self._syncActiveAnalysisControls(current)
         self._persistCurrentFitAnalysisDefaults()
@@ -871,7 +876,7 @@ class GuiController(QObject):
             plotter.initializeAxes()
         # The rerender callback projects the committed record back into both UI
         # surfaces. Repeat the guarded projection for plotters without a callback.
-        current = plotter.current_series()
+        current = plotter.editable_time_series_record()
         if current is not None:
             self._syncActiveAnalysisControls(current)
         self._persistCurrentFitAnalysisDefaults()
@@ -1354,6 +1359,32 @@ class GuiController(QObject):
         self.time_series_style_popup.move(point)
         self.time_series_style_popup.show()
         self.time_series_style_popup.raise_()
+
+    def _syncPendingTimeSeriesPanel(self, record):
+        """Project pending session state into the right-side panel."""
+        panel = self.ui.time_series_point_panel
+        if record is None:
+            panel.clear_pending()
+        else:
+            panel.show_pending(record)
+
+    def addPendingTimeSeries(self):
+        """Commit the exact pending preview without rerunning extraction."""
+        try:
+            self.choose_point_click_handler.plot_ts.commit_pending()
+        except Exception as error:
+            if self._plugin_diagnostic is not None:
+                self._plugin_diagnostic("pending_add", error)
+            else:
+                self.msg_signal.emit(str(error), "c", 0)
+
+    def discardPendingTimeSeries(self):
+        """Discard only the pending preview and preserve the active reference."""
+        self.choose_point_click_handler.plot_ts.discard_pending()
+
+    def updatePendingTimeSeriesLabel(self, label):
+        """Apply a normalized label to the pending record only."""
+        self.choose_point_click_handler.plot_ts.update_pending_label(label)
 
     def holdOnPlot(self, status):
         self.choose_point_click_handler.plot_ts.hold_on_flag = status

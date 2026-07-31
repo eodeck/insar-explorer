@@ -1,5 +1,8 @@
 ### History
 
+v2.8.0
+- Added pending time series selection to the time series selection panel.
+- Introduced time series selection panel
 
 v2.7.1
 - Removed false QGIS 4 persistence warnings for Fit and Replica settings.

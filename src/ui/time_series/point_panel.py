@@ -1,7 +1,7 @@
 """Dedicated time-series point panel for selection controls and future records."""
 
 from qgis.PyQt import QtGui, QtWidgets
-from qgis.PyQt.QtCore import QEvent, QSize
+from qgis.PyQt.QtCore import QEvent, QSize, pyqtSignal
 
 from ...qt_compat import (
     ALIGN_LEFT,
@@ -10,17 +10,42 @@ from ...qt_compat import (
     SIZE_POLICY_FIXED,
     SIZE_POLICY_MAXIMUM,
     SIZE_POLICY_PREFERRED,
+    EDIT_DOUBLE_CLICKED,
+    EDIT_KEY_PRESSED,
+    EDIT_SELECTED_CLICKED,
+    HEADER_FIXED,
+    HEADER_STRETCH,
+    NO_CONTEXT_MENU,
+    NO_DRAG_DROP,
+    NO_SELECTION,
+    SCROLL_BAR_ALWAYS_OFF,
 )
+
+from .columns import (
+    PENDING_ACTION_BUTTON_SIZE,
+    PENDING_ACTION_ICON_SIZE,
+    PENDING_ROW_HEIGHT,
+    TIME_SERIES_TYPE_COLUMN_WIDTH,
+    TIME_SERIES_TYPE_ICON_SIZE,
+    TimeSeriesColumn,
+)
+from .pending_label_delegate import PendingLabelDelegate
+from .pending_model import PendingTimeSeriesModel
+from .type_indicator_delegate import TimeSeriesTypeIndicatorDelegate
+
+
+PENDING_ACTION_ICONS = {
+    "add": ":/icons/icons/item_add.svg",
+    "discard": ":/icons/icons/item_discard.svg",
+}
 
 
 class TimeSeriesPointPanel(QtWidgets.QWidget):
-    """Own the compact selection header and reserved point-list area.
+    """Own selection controls, pending preview controls, and future list space."""
 
-    The selection controls are recreated as compatible widgets because the
-    baseline ``.ui`` controls were removed when the controls moved out of the
-    settings tab. Their object names, icon resources, dimensions, interaction
-    flags, styling, and dock-level compatibility attributes are preserved.
-    """
+    addPendingRequested = pyqtSignal()
+    discardPendingRequested = pyqtSignal()
+    pendingLabelEdited = pyqtSignal(str)
 
     ICON_SIZE = 18
     BUTTON_SIZE = 26
@@ -30,9 +55,6 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
     HOVER_STYLE = "QPushButton:hover {\n    border: 1px solid #bbb;\n}\n"
     SUBGROUP_TEXT_EMPHASIS = 0.76
     PLACEHOLDER_TEXT_EMPHASIS = 0.62
-
-
-
     _BUTTON_METADATA = (
         ("pb_choose_point", ":/icons/icons/select_point.svg", True, True,
          "Select a time-series point on the map", "Select time-series point"),
@@ -123,7 +145,105 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         header_grid.setColumnStretch(6, 1)
         layout.addLayout(header_grid)
 
-        layout.addWidget(self._separator(vertical=False, object_name="point_list_separator"))
+        self.selection_pending_separator = self._separator(
+            vertical=False, object_name="selection_pending_separator"
+        )
+        layout.addWidget(self.selection_pending_separator)
+
+        self.pending_model = PendingTimeSeriesModel(self)
+        self.pending_model.labelEdited.connect(self.pendingLabelEdited.emit)
+        self.pending_view = QtWidgets.QTableView(self)
+        self.pending_view.setObjectName("pending_time_series_view")
+        self.pending_view.setModel(self.pending_model)
+        self.pending_view.setIconSize(
+            QSize(TIME_SERIES_TYPE_ICON_SIZE, TIME_SERIES_TYPE_ICON_SIZE)
+        )
+        pending_font = self.pending_view.font()
+        if pending_font.pointSizeF() > 0:
+            pending_font.setPointSizeF(max(pending_font.pointSizeF() - 1.0, 8.0))
+            self.pending_view.setFont(pending_font)
+        self.pending_view.setSelectionMode(NO_SELECTION)
+        self.pending_view.setMouseTracking(True)
+        self.pending_view.viewport().setMouseTracking(True)
+        self.pending_view.setEditTriggers(
+            EDIT_DOUBLE_CLICKED | EDIT_SELECTED_CLICKED | EDIT_KEY_PRESSED
+        )
+        self.pending_view.setSortingEnabled(False)
+        self.pending_view.setDragDropMode(NO_DRAG_DROP)
+        self.pending_view.setDragEnabled(False)
+        self.pending_view.setAcceptDrops(False)
+        self.pending_view.setContextMenuPolicy(NO_CONTEXT_MENU)
+        self.pending_view.setHorizontalScrollBarPolicy(SCROLL_BAR_ALWAYS_OFF)
+        self.pending_view.setVerticalScrollBarPolicy(SCROLL_BAR_ALWAYS_OFF)
+        self.pending_view.setShowGrid(False)
+        self.pending_view.setStyleSheet(
+            "QTableView#pending_time_series_view {"
+            " border: none;"
+            " border-bottom: 1px solid palette(mid);"
+            " background: transparent;"
+            "}"
+            "QTableView#pending_time_series_view::item {"
+            " border: none;"
+            " background: transparent;"
+            "}"
+            "QTableView#pending_time_series_view::item:hover {"
+            " background: transparent;"
+            "}"
+        )
+        self.pending_view.verticalHeader().hide()
+        self.pending_view.horizontalHeader().hide()
+        self.pending_view.verticalHeader().setDefaultSectionSize(PENDING_ROW_HEIGHT)
+        header = self.pending_view.horizontalHeader()
+        header.setSectionResizeMode(TimeSeriesColumn.LABEL, HEADER_STRETCH)
+        header.setSectionResizeMode(TimeSeriesColumn.TARGET, HEADER_FIXED)
+        header.setSectionResizeMode(TimeSeriesColumn.REFERENCE, HEADER_FIXED)
+        self.pending_view.setColumnWidth(
+            TimeSeriesColumn.TARGET, TIME_SERIES_TYPE_COLUMN_WIDTH
+        )
+        self.pending_view.setColumnWidth(
+            TimeSeriesColumn.REFERENCE, TIME_SERIES_TYPE_COLUMN_WIDTH
+        )
+        self.pending_label_delegate = PendingLabelDelegate(self.pending_view)
+        self.pending_view.setItemDelegateForColumn(
+            TimeSeriesColumn.LABEL, self.pending_label_delegate
+        )
+        self.pending_type_indicator_delegate = TimeSeriesTypeIndicatorDelegate(
+            self.pending_view
+        )
+        self.pending_view.setItemDelegateForColumn(
+            TimeSeriesColumn.TARGET, self.pending_type_indicator_delegate
+        )
+        self.pending_view.setItemDelegateForColumn(
+            TimeSeriesColumn.REFERENCE, self.pending_type_indicator_delegate
+        )
+        self.pending_view.setFixedHeight(PENDING_ROW_HEIGHT + 1)
+        self.pending_view.setSizePolicy(SIZE_POLICY_EXPANDING, SIZE_POLICY_FIXED)
+
+        pending_actions = QtWidgets.QHBoxLayout()
+        pending_actions.setObjectName("pending_time_series_actions_layout")
+        pending_actions.setContentsMargins(0, 0, 0, 0)
+        pending_actions.setSpacing(3)
+        pending_actions.addWidget(self.pending_view, 1)
+
+        self.pending_add_button = self._pending_action_button(
+            "pb_add_pending",
+            PENDING_ACTION_ICONS["add"],
+            "Add the pending time series",
+            "Add pending time series",
+        )
+        self.pending_add_button.clicked.connect(self.addPendingRequested)
+        pending_actions.addWidget(self.pending_add_button, 0, ALIGN_VCENTER)
+
+        self.pending_discard_button = self._pending_action_button(
+            "pb_discard_pending",
+            PENDING_ACTION_ICONS["discard"],
+            "Discard the pending time series",
+            "Discard pending time series",
+        )
+        self.pending_discard_button.clicked.connect(self.discardPendingRequested)
+        pending_actions.addWidget(self.pending_discard_button, 0, ALIGN_VCENTER)
+        layout.addLayout(pending_actions)
+        self.clear_pending()
 
         points_heading = QtWidgets.QLabel("Time-series points", self)
         points_heading.setObjectName("label_time_series_points_heading")
@@ -141,6 +261,34 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         self.placeholder_label.setSizePolicy(SIZE_POLICY_PREFERRED, SIZE_POLICY_MAXIMUM)
         layout.addWidget(self.placeholder_label)
         layout.addStretch(1)
+
+    def _pending_action_button(self, object_name, icon_path, tooltip, accessible_name):
+        """Create a compact icon-only pending lifecycle action."""
+        button = QtWidgets.QPushButton(self)
+        button.setObjectName(object_name)
+        button.setText("")
+        button.setIcon(QtGui.QIcon(icon_path))
+        button.setToolTip(tooltip)
+        button.setAccessibleName(accessible_name)
+        button.setCheckable(False)
+        button.setAutoDefault(False)
+        button.setDefault(False)
+        button.setFixedSize(PENDING_ACTION_BUTTON_SIZE, PENDING_ACTION_BUTTON_SIZE)
+        button.setIconSize(QSize(PENDING_ACTION_ICON_SIZE, PENDING_ACTION_ICON_SIZE))
+        button.setSizePolicy(SIZE_POLICY_FIXED, SIZE_POLICY_FIXED)
+        return button
+
+    def show_pending(self, record):
+        """Project one pending record into the compact panel controls."""
+        self.pending_model.set_record(record)
+        self.pending_add_button.setEnabled(True)
+        self.pending_discard_button.setEnabled(True)
+
+    def clear_pending(self):
+        """Clear pending controls without affecting selection controls."""
+        self.pending_model.clear()
+        self.pending_add_button.setEnabled(False)
+        self.pending_discard_button.setEnabled(False)
 
     def _configure_tab_order(self):
         buttons = self.selection_buttons

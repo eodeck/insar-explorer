@@ -279,6 +279,7 @@ class TSClickHandler(MapClickHandler):
             settings_model=services.settings_model,
             user_preferences=services.user_preferences,
             project_state_repository=services.project_state_repository,
+            pending_session=services.pending_session,
         )
         self.raster_layer = raster_layer_utils.RasterTimeseries()
         self.selected_field_name = None
