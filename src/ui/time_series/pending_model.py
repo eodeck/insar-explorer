@@ -23,6 +23,10 @@ from .columns import (
     TIME_SERIES_COLUMN_COUNT,
     TimeSeriesColumn,
 )
+from .presentation import (
+    SOURCE_REFERENCE_KINDS, optional_label_display, placeholder_colour,
+    resource_for_selection, selection_kind_value, selection_tooltip,
+)
 
 
 class PendingTimeSeriesModel(QAbstractTableModel):
@@ -40,14 +44,7 @@ class PendingTimeSeriesModel(QAbstractTableModel):
         TimeSeriesColumn.TARGET: "Target type",
         TimeSeriesColumn.REFERENCE: "Reference type",
     }
-    _TARGET_RESOURCES = {
-        "point": ":/icons/icons/select_point.svg",
-        "polygon": ":/icons/icons/polygon_selection.png",
-    }
-    _REFERENCE_RESOURCES = {
-        "point": ":/icons/icons/select_select_reference.svg",
-        "polygon": ":/icons/icons/polygon_reference_selection.png",
-    }
+
 
     def __init__(self, parent=None):
         """Create an empty projection model."""
@@ -84,7 +81,7 @@ class PendingTimeSeriesModel(QAbstractTableModel):
         if column == TimeSeriesColumn.LABEL:
             label = self._record.presentation.label or ""
             if role == DISPLAY_ROLE:
-                return label or "Unnamed"
+                return optional_label_display(label)
             if role == EDIT_ROLE:
                 return label
             if not label and role == FONT_ROLE:
@@ -92,7 +89,7 @@ class PendingTimeSeriesModel(QAbstractTableModel):
                 font.setItalic(True)
                 return font
             if not label and role == FOREGROUND_ROLE:
-                return QtGui.QBrush(self._placeholder_colour())
+                return QtGui.QBrush(placeholder_colour())
             if role == TOOLTIP_ROLE:
                 return "Double-click to edit label"
             if role == TEXT_ALIGNMENT_ROLE:
@@ -105,16 +102,18 @@ class PendingTimeSeriesModel(QAbstractTableModel):
             else self._record.reference
         )
         prefix = "Target" if column == TimeSeriesColumn.TARGET else "Reference"
-        kind = self._selection_kind_value(selection)
+        kind = selection_kind_value(selection)
         if role == DECORATION_ROLE:
-            resource = self._resource_for(column, kind)
+            resource = resource_for_selection(
+                target=column == TimeSeriesColumn.TARGET, kind=kind
+            )
             if resource is not None:
                 return QtGui.QIcon(resource)
             return None
         if role == DISPLAY_ROLE and column == TimeSeriesColumn.REFERENCE:
-            return "Data" if kind in {"source", "source_data", "data"} else None
+            return "Data" if kind in SOURCE_REFERENCE_KINDS else None
         if role == TOOLTIP_ROLE:
-            return self._tooltip(prefix, kind)
+            return selection_tooltip(prefix, kind)
         if role == TEXT_ALIGNMENT_ROLE:
             return ALIGN_CENTER
         return None
@@ -159,37 +158,3 @@ class PendingTimeSeriesModel(QAbstractTableModel):
         self.labelEdited.emit(normalized)
         return True
 
-    @staticmethod
-    def _placeholder_colour():
-        """Return palette-aware secondary text for an empty stored label."""
-        palette = QtGui.QGuiApplication.palette()
-        role_enum = getattr(QtGui.QPalette, "ColorRole", QtGui.QPalette)
-        role = getattr(role_enum, "PlaceholderText", role_enum.Text)
-        return palette.color(role)
-
-    @classmethod
-    def _resource_for(cls, column, kind):
-        resources = (
-            cls._TARGET_RESOURCES
-            if column == TimeSeriesColumn.TARGET
-            else cls._REFERENCE_RESOURCES
-        )
-        return resources.get(kind)
-
-    @staticmethod
-    def _tooltip(prefix, kind):
-        if kind is None:
-            return f"{prefix}: none"
-        if prefix == "Reference" and kind in {"source", "source_data", "data"}:
-            return "Reference: source data"
-        if kind in {"point", "polygon"}:
-            return f"{prefix}: {kind}"
-        return f"{prefix}: unknown"
-
-    @staticmethod
-    def _selection_kind_value(selection):
-        if selection is None:
-            return None
-        kind = getattr(selection, "kind", None)
-        value = getattr(kind, "value", kind)
-        return value if isinstance(value, str) else None

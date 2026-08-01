@@ -185,6 +185,8 @@ class PlotTs():
         self._graphics_by_series_id: Dict[UUID, TimeSeriesGraphics] = {}
         self._pending_graphics_by_series_id: Dict[UUID, TimeSeriesGraphics] = {}
         self.pending_changed_callback = None
+        self.committed_changed_callback = None
+        self._hidden_committed_ids = set()
         self.default_style = None
         self.fit_models = []
         self.fit_seasonal_flag = False
@@ -383,6 +385,7 @@ class PlotTs():
         self._pending_session.clear()
         self._pending_graphics_by_series_id.clear()
         self._notify_pending_changed()
+        self._notify_committed_changed()
         self._set_current_series(None)
         self._draw()
 
@@ -402,13 +405,13 @@ class PlotTs():
         )
         self._set_current_series(record)
 
-    def _buildTimeSeriesData(self, *, dates=None, ts_values=None, ref_values=None) -> TimeSeriesData:
+    def _buildTimeSeriesData(self, *, dates=None, ts_values=None, ref_values=_UNSET) -> TimeSeriesData:
         """Build immutable numeric data without spatial-selection ownership."""
         if dates is None:
             dates = self.dates
         if ts_values is None:
             ts_values = self.ts_values
-        if ref_values is None:
+        if ref_values is _UNSET:
             ref_values = self.ref_values
         if dates is None:
             raise ValueError("dates are required to build time-series data")
@@ -583,6 +586,9 @@ class PlotTs():
         rebuilt_pending = None
         try:
             for record in retained_records:
+                if record.id in self._hidden_committed_ids:
+                    rebuilt_records.append(record)
+                    continue
                 graphics, rebuilt_record, transaction = self._build_record_graphics(record)
                 rebuilt_records.append(rebuilt_record)
                 self._register_series_graphics(rebuilt_record, graphics)
@@ -610,7 +616,7 @@ class PlotTs():
         self._rebuildYDataRanges()
         self.applyYAxisPolicy()
 
-    def plotTs(self, *, dates=None, ts_values=None, ref_values=None, plot_multiple=True, coords=_UNSET, ref_coords=_UNSET,
+    def plotTs(self, *, dates=None, ts_values=None, ref_values=_UNSET, plot_multiple=True, coords=_UNSET, ref_coords=_UNSET,
                update=False, analysis=_UNSET, report_statistics=False):
         """Render under the nested-safe axis guard and normalize first-plot state."""
         initial_plot = self.ax is None
@@ -633,7 +639,7 @@ class PlotTs():
                 self.axis_state_sync_callback()
         return result
 
-    def _plotTsGuarded(self, *, dates=None, ts_values=None, ref_values=None, plot_multiple=True, coords=_UNSET, ref_coords=_UNSET,
+    def _plotTsGuarded(self, *, dates=None, ts_values=None, ref_values=_UNSET, plot_multiple=True, coords=_UNSET, ref_coords=_UNSET,
                update=False, analysis=_UNSET, report_statistics=False):
         # update: flag indicating if the plot should be updated or a new one created
 
@@ -646,7 +652,7 @@ class PlotTs():
             source_data = source_snapshot.data
             dates = source_data.dates if dates is None else dates
             ts_values = source_data.ts_values if ts_values is None else ts_values
-            ref_values = source_data.ref_values if ref_values is None else ref_values
+            ref_values = source_data.ref_values if ref_values is _UNSET else ref_values
             random_marker_color_flag = False
             presentation = source_snapshot.presentation
         else:
@@ -660,7 +666,7 @@ class PlotTs():
         # In particular, a genuine new record's residual intent must determine
         # whether the residual axis exists before any graphics are attached.
         series = self._buildTimeSeriesData(
-            dates=dates, ts_values=ts_values, ref_values=ref_values
+            dates=dates, ts_values=ts_values, ref_values=ref_values,
         )
         if not series.hasFinitePlotValues():
             return
@@ -1668,6 +1674,7 @@ class PlotTs():
         for record in list(self.series_history):
             self._remove_snapshot_graphics(record)
         self._series_store.clear()
+        self._hidden_committed_ids.clear()
         self._graphics_by_series_id.clear()
         self._set_current_series(None)
         self._y_data_ranges = {}
@@ -1907,6 +1914,10 @@ class PlotTs():
         if self.pending_changed_callback is not None:
             self.pending_changed_callback(self.pending_record())
 
+    def _notify_committed_changed(self) -> None:
+        if self.committed_changed_callback is not None:
+            self.committed_changed_callback(self._series_store.records())
+
     def set_pending_record(self, record, *, plot_multiple=True, report_statistics=False):
         """Transactionally render and replace the current pending record."""
         previous = self.pending_record()
@@ -1958,9 +1969,17 @@ class PlotTs():
             self.applyYAxisPolicy()
             self._notify_pending_changed()
             return graphics
-        return self.rerender_record(
+        if record.id in self._hidden_committed_ids:
+            if not self._series_store.replace(record):
+                raise KeyError(f"time-series record not found: {record.id}")
+            self._set_current_series(record)
+            self._notify_committed_changed()
+            return None
+        result = self.rerender_record(
             record, plot_multiple=plot_multiple, report_statistics=report_statistics
         )
+        self._notify_committed_changed()
+        return result
 
     def update_pending_label(self, label: str) -> bool:
         """Trim and replace the pending label without touching committed records."""
@@ -1998,8 +2017,10 @@ class PlotTs():
             self._pending_graphics_by_series_id[record.id] = graphics
             self._pending_session.set(record)
             raise
+        self._hidden_committed_ids.discard(record.id)
         self._set_current_series(record)
         self._notify_pending_changed()
+        self._notify_committed_changed()
         return record
 
     def discard_pending(self) -> Optional[TimeSeriesRecord]:
@@ -2039,12 +2060,56 @@ class PlotTs():
         if record is None:
             return False
         self._remove_snapshot_graphics(record)
+        self._hidden_committed_ids.discard(series_id)
         active = self.current_series()
         self._set_current_series(self.pending_record() or active)
         self._rebuildYDataRanges()
         self.applyYAxisPolicy()
         self._draw()
+        self._notify_committed_changed()
         return True
+
+    def set_committed_visibility(self, series_id: UUID, visible: bool) -> bool:
+        """Show or hide one committed record without changing record state."""
+        record = self._series_store.get(series_id)
+        if record is None:
+            return False
+        if visible:
+            if series_id not in self._hidden_committed_ids:
+                return True
+            graphics, rendered_record, transaction = self._build_record_graphics(record)
+            try:
+                self._graphics_by_series_id[series_id] = graphics
+                self._series_store.replace(rendered_record)
+                transaction.commit()
+            except Exception:
+                self._graphics_by_series_id.pop(series_id, None)
+                transaction.rollback()
+                raise
+            self._hidden_committed_ids.discard(series_id)
+        else:
+            if series_id in self._hidden_committed_ids:
+                return True
+            graphics = self._graphics_by_series_id.pop(series_id, None)
+            if graphics is not None:
+                self._detach_graphics(graphics)
+            self._hidden_committed_ids.add(series_id)
+        self._rebuildYDataRanges()
+        self.applyYAxisPolicy()
+        self._draw()
+        return True
+
+    def is_committed_visible(self, series_id: UUID) -> bool:
+        """Return list/canvas visibility for one committed UUID."""
+        return self._series_store.get(series_id) is not None and series_id not in self._hidden_committed_ids
+
+    def committed_record(self, series_id: UUID) -> Optional[TimeSeriesRecord]:
+        """Return one committed record for read-only list projection."""
+        return self._series_store.get(series_id)
+
+    def committed_records(self):
+        """Return committed records in insertion order."""
+        return self._series_store.records()
 
     def setActiveSeries(self, series_id: UUID) -> bool:
         """Make an existing record active and refresh compatibility views."""

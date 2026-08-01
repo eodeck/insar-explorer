@@ -18,13 +18,24 @@ from ...qt_compat import (
     NO_CONTEXT_MENU,
     NO_DRAG_DROP,
     NO_SELECTION,
+    EXTENDED_SELECTION,
+    SELECT_ROWS,
     SCROLL_BAR_ALWAYS_OFF,
 )
+
+from .committed_columns import (
+    COMMITTED_SEQUENCE_COLUMN_WIDTH, COMMITTED_VISIBLE_COLUMN_WIDTH,
+    CommittedTimeSeriesColumn,
+)
+from .committed_model import CommittedTimeSeriesModel
+from .committed_view import CommittedTimeSeriesView
+from .visibility_header import TimeSeriesVisibilityHeader
 
 from .columns import (
     PENDING_ACTION_BUTTON_SIZE,
     PENDING_ACTION_ICON_SIZE,
     PENDING_ROW_HEIGHT,
+    TIME_SERIES_ROW_HEIGHT,
     TIME_SERIES_TYPE_COLUMN_WIDTH,
     TIME_SERIES_TYPE_ICON_SIZE,
     TimeSeriesColumn,
@@ -46,6 +57,10 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
     addPendingRequested = pyqtSignal()
     discardPendingRequested = pyqtSignal()
     pendingLabelEdited = pyqtSignal(str)
+    committedVisibilityEdited = pyqtSignal(object, bool)
+    committedLabelEdited = pyqtSignal(object, str)
+    committedSelectionChanged = pyqtSignal(tuple)
+    committedVisibilityAllRequested = pyqtSignal(bool)
 
     ICON_SIZE = 18
     BUTTON_SIZE = 26
@@ -245,22 +260,136 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         layout.addLayout(pending_actions)
         self.clear_pending()
 
-        points_heading = QtWidgets.QLabel("Time-series points", self)
-        points_heading.setObjectName("label_time_series_points_heading")
-        heading_font = points_heading.font()
-        heading_font.setBold(True)
-        points_heading.setFont(heading_font)
-        layout.addWidget(points_heading)
-
-        self.placeholder_label = QtWidgets.QLabel(
-            "Point list will be added in a later phase.", self
+        self.committed_model = None
+        self.committed_view = CommittedTimeSeriesView(self)
+        self.committed_view.setObjectName("committed_time_series_view")
+        self.committed_view.setSelectionBehavior(SELECT_ROWS)
+        self.committed_view.setSelectionMode(EXTENDED_SELECTION)
+        self.committed_view.setEditTriggers(
+            EDIT_DOUBLE_CLICKED | EDIT_SELECTED_CLICKED | EDIT_KEY_PRESSED
         )
-        self.placeholder_label.setObjectName("label_time_series_points_placeholder")
-        self.placeholder_label.setWordWrap(True)
-        self.placeholder_label.setEnabled(True)
-        self.placeholder_label.setSizePolicy(SIZE_POLICY_PREFERRED, SIZE_POLICY_MAXIMUM)
-        layout.addWidget(self.placeholder_label)
-        layout.addStretch(1)
+        self.committed_view.setSortingEnabled(False)
+        self.committed_view.setDragDropMode(NO_DRAG_DROP)
+        self.committed_view.setDragEnabled(False)
+        self.committed_view.setAcceptDrops(False)
+        self.committed_view.setContextMenuPolicy(NO_CONTEXT_MENU)
+        self.committed_view.setShowGrid(False)
+        self.committed_view.verticalHeader().hide()
+        self.committed_view.verticalHeader().setDefaultSectionSize(TIME_SERIES_ROW_HEIGHT)
+        self.committed_view.setIconSize(
+            QSize(TIME_SERIES_TYPE_ICON_SIZE, TIME_SERIES_TYPE_ICON_SIZE)
+        )
+        self.committed_header = TimeSeriesVisibilityHeader(
+            self.committed_view.horizontalHeader().orientation(), self.committed_view
+        )
+        self.committed_view.setHorizontalHeader(self.committed_header)
+        self.committed_header.toggleAllRequested.connect(
+            self.committedVisibilityAllRequested.emit
+        )
+        self.committed_label_delegate = PendingLabelDelegate(self.committed_view)
+        self.committed_type_indicator_delegate = TimeSeriesTypeIndicatorDelegate(
+            self.committed_view
+        )
+        self.committed_view.setSizePolicy(SIZE_POLICY_EXPANDING, SIZE_POLICY_EXPANDING)
+        layout.addWidget(self.committed_view, 1)
+
+    def configure_committed_list(self, list_state, record_provider):
+        """Bind the committed projection to authoritative state providers."""
+        if self.committed_model is not None:
+            return self.committed_model
+        self.committed_model = CommittedTimeSeriesModel(
+            list_state, record_provider, self.committed_view
+        )
+        self.committed_view.setModel(self.committed_model)
+        self.committed_model.visibilityEdited.connect(
+            self.committedVisibilityEdited.emit
+        )
+        self.committed_model.labelEdited.connect(self.committedLabelEdited.emit)
+        selection_model = self.committed_view.selectionModel()
+        selection_model.selectionChanged.connect(self._emit_committed_selection)
+        header = self.committed_view.horizontalHeader()
+        header.setSectionResizeMode(CommittedTimeSeriesColumn.VISIBLE, HEADER_FIXED)
+        header.setSectionResizeMode(CommittedTimeSeriesColumn.SEQUENCE, HEADER_FIXED)
+        header.setSectionResizeMode(CommittedTimeSeriesColumn.LABEL, HEADER_STRETCH)
+        header.setSectionResizeMode(CommittedTimeSeriesColumn.TARGET, HEADER_FIXED)
+        header.setSectionResizeMode(CommittedTimeSeriesColumn.REFERENCE, HEADER_FIXED)
+        self.committed_view.setColumnWidth(
+            CommittedTimeSeriesColumn.VISIBLE, COMMITTED_VISIBLE_COLUMN_WIDTH
+        )
+        self.committed_view.setColumnWidth(
+            CommittedTimeSeriesColumn.SEQUENCE, COMMITTED_SEQUENCE_COLUMN_WIDTH
+        )
+        for column in (
+            CommittedTimeSeriesColumn.TARGET,
+            CommittedTimeSeriesColumn.REFERENCE,
+        ):
+            self.committed_view.setColumnWidth(column, TIME_SERIES_TYPE_COLUMN_WIDTH)
+            self.committed_view.setItemDelegateForColumn(
+                column, self.committed_type_indicator_delegate
+            )
+        self.committed_view.setItemDelegateForColumn(
+            CommittedTimeSeriesColumn.LABEL, self.committed_label_delegate
+        )
+        self.refresh_committed_visibility_header()
+        return self.committed_model
+
+    def selected_committed_ids(self):
+        """Return selected committed UUIDs without using row identity."""
+        if self.committed_model is None or self.committed_view.selectionModel() is None:
+            return ()
+        rows = self.committed_view.selectionModel().selectedRows()
+        return tuple(
+            record_id for record_id in (
+                self.committed_model.record_id_at(index.row()) for index in rows
+            ) if record_id is not None
+        )
+
+    def select_committed_record(self, record_id):
+        """Select one committed row by UUID."""
+        if self.committed_model is None:
+            return False
+        row = self.committed_model.row_for_id(record_id)
+        if row is None:
+            return False
+        self.committed_view.clearSelection()
+        self.committed_view.selectRow(row)
+        self.committed_view.scrollTo(self.committed_model.index(row, 0))
+        return True
+
+    def refresh_committed_visibility_header(self):
+        """Project checked, unchecked, or partial aggregate visibility."""
+        from ...qt_compat import CHECKED, PARTIALLY_CHECKED, UNCHECKED
+        total, visible_count = (0, 0) if self.committed_model is None else self.committed_model.visibility_summary()
+        if total == 0 or visible_count == 0:
+            state = UNCHECKED
+        elif visible_count == total:
+            state = CHECKED
+        else:
+            state = PARTIALLY_CHECKED
+        self.committed_header.set_visibility_state(state, bool(total))
+
+    def refresh_committed_model(self):
+        """Refresh the projection while preserving selected UUIDs."""
+        if self.committed_model is None:
+            return
+        selected = self.selected_committed_ids()
+        self.committed_model.refresh()
+        self.restore_committed_selection(selected)
+        self.refresh_committed_visibility_header()
+
+    def restore_committed_selection(self, record_ids):
+        """Restore whole-row selection by UUID after a model reset."""
+        if self.committed_model is None or self.committed_view.selectionModel() is None:
+            return
+        selection_model = self.committed_view.selectionModel()
+        selection_model.clearSelection()
+        for record_id in record_ids:
+            row = self.committed_model.row_for_id(record_id)
+            if row is not None:
+                self.committed_view.selectRow(row)
+
+    def _emit_committed_selection(self, *_):
+        self.committedSelectionChanged.emit(self.selected_committed_ids())
 
     def _pending_action_button(self, object_name, icon_path, tooltip, accessible_name):
         """Create a compact icon-only pending lifecycle action."""
@@ -308,7 +437,7 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         event_type = event.type()
         if (
             event_type in self._palette_refresh_event_types()
-            and hasattr(self, "placeholder_label")
+            and hasattr(self, "target_label")
         ):
             self._refresh_secondary_text_palettes()
 
@@ -347,7 +476,6 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         for label, emphasis in (
             (self.target_label, self.SUBGROUP_TEXT_EMPHASIS),
             (self.reference_label, self.SUBGROUP_TEXT_EMPHASIS),
-            (self.placeholder_label, self.PLACEHOLDER_TEXT_EMPHASIS),
         ):
             palette = QtGui.QPalette(source_palette)
             for group in (active, inactive):
