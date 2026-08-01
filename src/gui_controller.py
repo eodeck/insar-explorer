@@ -28,6 +28,7 @@ from .qt_compat import (
     screen_aware_popup_position,
 )
 from .time_series.fit_state import TimeSeriesFitState
+from .time_series.list_state import TimeSeriesListState
 from .time_series.analysis_defaults import StickyAnalysisDefaultsCoordinator
 from .models.time_series import FitConfiguration, ReplicaConfiguration, TimeSeriesAnalysis
 from .time_series.fit_style_controller import FitStyleController
@@ -139,6 +140,11 @@ class GuiController(QObject):
         plotter.fit_success_callback = self._handleTimeSeriesFitSuccess
         plotter.analysis_state_sync_callback = self._syncActiveAnalysisControls
         plotter.pending_changed_callback = self._syncPendingTimeSeriesPanel
+        plotter.committed_changed_callback = self._syncCommittedTimeSeriesList
+        self.time_series_list_state = TimeSeriesListState()
+        self.ui.time_series_point_panel.configure_committed_list(
+            self.time_series_list_state, plotter.committed_record
+        )
         self.click_tool = None  # plugin.click_tool
         self.drawing_tool = None  # for polygon drawing
         self.drawing_tool_reference = None  # for reference polygon drawing
@@ -478,6 +484,10 @@ class GuiController(QObject):
         panel.addPendingRequested.connect(self.addPendingTimeSeries)
         panel.discardPendingRequested.connect(self.discardPendingTimeSeries)
         panel.pendingLabelEdited.connect(self.updatePendingTimeSeriesLabel)
+        panel.committedVisibilityEdited.connect(self.setCommittedTimeSeriesVisibility)
+        panel.committedVisibilityAllRequested.connect(self.setAllCommittedTimeSeriesVisibility)
+        panel.committedLabelEdited.connect(self.updateCommittedTimeSeriesLabel)
+        panel.committedSelectionChanged.connect(self.committedTimeSeriesSelectionChanged)
         self.ui.pb_choose_point.clicked.connect(self.activatePointSelection)
         self.ui.pb_set_reference.clicked.connect(self.activateReferencePointSelection)
         self.ui.pb_reset_reference.clicked.connect(self.resetReferencePoint)
@@ -1363,18 +1373,92 @@ class GuiController(QObject):
         panel = self.ui.time_series_point_panel
         if record is None:
             panel.clear_pending()
+            self.committedTimeSeriesSelectionChanged(panel.selected_committed_ids())
         else:
             panel.show_pending(record)
+            self.ui.time_series_toolbar.setEnabled(True)
 
     def addPendingTimeSeries(self):
-        """Commit the exact pending preview without rerunning extraction."""
+        """Atomically commit pending ownership and create committed-list metadata."""
+        plotter = self.choose_point_click_handler.plot_ts
+        pending = plotter.pending_record()
+        if pending is None:
+            return
         try:
-            self.choose_point_click_handler.plot_ts.commit_pending()
+            self.time_series_list_state.add(pending.id)
+            try:
+                committed = plotter.commit_pending()
+            except Exception:
+                self.time_series_list_state.remove(pending.id)
+                raise
+            panel = self.ui.time_series_point_panel
+            panel.refresh_committed_model()
+            panel.select_committed_record(committed.id)
         except Exception as error:
             if self._plugin_diagnostic is not None:
                 self._plugin_diagnostic("pending_add", error)
             else:
                 self.msg_signal.emit(str(error), "c", 0)
+
+    def _syncCommittedTimeSeriesList(self, records):
+        """Refresh list projection and clear session metadata on full store reset."""
+        panel = self.ui.time_series_point_panel
+        if not records and self.time_series_list_state.entries():
+            self.time_series_list_state.clear()
+        if panel.committed_model is not None:
+            panel.refresh_committed_model()
+
+    def setCommittedTimeSeriesVisibility(self, record_id, visible):
+        """Update explicit list visibility and renderer ownership by UUID."""
+        plotter = self.choose_point_click_handler.plot_ts
+        previous = self.time_series_list_state.entry(record_id)
+        if previous is None or previous.visible == bool(visible):
+            return
+        self.time_series_list_state.set_visible(record_id, visible)
+        try:
+            plotter.set_committed_visibility(record_id, visible)
+        except Exception:
+            self.time_series_list_state.set_visible(record_id, previous.visible)
+            raise
+        panel = self.ui.time_series_point_panel
+        panel.refresh_committed_model()
+
+    def setAllCommittedTimeSeriesVisibility(self, visible):
+        """Apply deterministic show/hide-all without synthesizing cell clicks."""
+        for entry in tuple(self.time_series_list_state.entries()):
+            if entry.visible != bool(visible):
+                self.setCommittedTimeSeriesVisibility(entry.record_id, visible)
+
+    def updateCommittedTimeSeriesLabel(self, record_id, label):
+        """Immutably update one committed optional label without changing visibility."""
+        plotter = self.choose_point_click_handler.plot_ts
+        record = plotter.committed_record(record_id)
+        if record is None:
+            return
+        updated = replace(
+            record,
+            presentation=replace(record.presentation, label=str(label).strip()),
+        )
+        plotter.replace_series_records((updated,))
+        self.ui.time_series_point_panel.refresh_committed_model()
+
+    def committedTimeSeriesSelectionChanged(self, record_ids):
+        """Resolve one selected committed UUID; never fall back to row zero or latest."""
+        plotter = self.choose_point_click_handler.plot_ts
+        toolbar = self.ui.time_series_toolbar
+        if plotter.pending_record() is not None:
+            toolbar.setEnabled(True)
+            return
+        if len(record_ids) == 1:
+            plotter.setActiveSeries(record_ids[0])
+            toolbar.setEnabled(True)
+            self._syncActiveAnalysisControls(plotter.current_series())
+            return
+        plotter._series_store.set_active(None)
+        plotter._set_current_series(None)
+        toolbar.setEnabled(False)
+        if len(record_ids) > 1:
+            self.msg_signal.emit("Multiple time series selected", "i", 0)
 
     def discardPendingTimeSeries(self):
         """Discard only the pending preview and preserve the active reference."""

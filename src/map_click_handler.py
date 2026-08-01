@@ -6,6 +6,7 @@ from qgis.core import QgsProject, QgsCoordinateTransform, QgsCoordinateReference
 from qgis.PyQt.QtGui import QCursor
 
 from .bootstrap import ensure_time_series_services
+from .time_series.target_session import CanonicalTargetSnapshot
 from .time_series.reference_session import ActiveReference
 from .qt_compat import RED, WAIT_CURSOR, YELLOW
 
@@ -274,6 +275,7 @@ class TSClickHandler(MapClickHandler):
         super().__init__(plugin, msg_signal=msg_signal)
         services = ensure_time_series_services(plugin)
         self.reference_session = services.reference_session
+        self.target_session = services.target_session
         self.plot_ts = pts.PlotTs(
             self.ui,
             settings_model=services.settings_model,
@@ -286,6 +288,7 @@ class TSClickHandler(MapClickHandler):
 
     def reset(self):
         self.reference_session.clear()
+        self.target_session.clear()
         self.clearFeatureHighlight()
         self.clearReferenceFeatureHighlight()
         self.raster_layer.reset()
@@ -313,12 +316,69 @@ class TSClickHandler(MapClickHandler):
             return None, None
         return reference.values_array(), reference.selection.value
 
-    def _commitSelectedReference(self, *, dates, values, selection):
-        """Commit workflow state only after extraction/record update succeeds."""
-        reference = ActiveReference.create(
-            dates=dates, values=values, selection=selection
-        )
+    def _commitSelectedReference(self, reference):
+        """Publish reference session state after pending update succeeds."""
         self.reference_session.set(reference)
+
+    def _commitSelectedTarget(self, *, dates, values, selection, plot_multiple=False):
+        """Publish the latest successful target extraction for future pending records."""
+        self.target_session.set(CanonicalTargetSnapshot.create(
+            dates=dates, values=values, selection=selection,
+            plot_multiple=plot_multiple,
+        ))
+
+    def _reconstructPendingFromActiveSelections(self, reference=None):
+        """Rebuild pending data from canonical target and current reference snapshots.
+
+        The active target session stores the unreferenced extraction.  Reference
+        changes therefore never reuse the already-derived pending observations,
+        preventing stale reset values and cumulative reference subtraction.
+        Existing pending identity and user-owned presentation/analysis are
+        preserved by the immutable update path; a missing pending record creates
+        a new record from the accepted new-record defaults.
+        """
+        target = self.target_session.current()
+        if target is None:
+            return False
+        active_reference = reference
+        ref_values = None if active_reference is None else active_reference.values_array()
+        ref_coords = None if active_reference is None else active_reference.selection.value
+        pending_before = self.plot_ts.pending_record()
+        previous_id = None if pending_before is None else pending_before.id
+        self.plot_ts.plotTs(
+            dates=np.asarray(target.dates),
+            ts_values=target.values_array(),
+            ref_values=ref_values,
+            coords=target.selection.value if pending_before is None else None,
+            ref_coords=ref_coords,
+            plot_multiple=target.plot_multiple,
+            update=pending_before is not None,
+            analysis=(
+                self._analysisForNewRecord() if pending_before is None else None
+            ),
+            report_statistics=True,
+        )
+        pending_after = self.plot_ts.pending_record()
+        if pending_after is None:
+            return False
+        if pending_before is None:
+            return pending_after.id != previous_id
+        return pending_after.id == previous_id
+
+    def _createPendingFromActiveSelections(self, reference=None):
+        """Create a new pending record from independent selection sessions."""
+        active_reference = self.reference_session.current() if reference is None else reference
+        return self._reconstructPendingFromActiveSelections(active_reference)
+
+    def _applySelectedReference(self, *, dates, values, selection):
+        """Reconstruct pending from canonical target data for a new reference."""
+        reference = ActiveReference.create(dates=dates, values=values, selection=selection)
+        success = self._reconstructPendingFromActiveSelections(reference)
+        if self.target_session.current() is None:
+            success = True
+        if success:
+            self._commitSelectedReference(reference)
+        return success
 
     def choosePointClickedVector(self, *, point: QgsPointXY, layer: QgsMapLayer = None, ref=False):
         feature = self.identifyClickedFeature(point, layer=layer, ref=ref)
@@ -349,15 +409,24 @@ class TSClickHandler(MapClickHandler):
 
             dates = date_values[:, 0]
             analysis = self._analysisForNewRecord() if not ref else None
-            self.plot_ts.plotTs(
-                dates=dates, ts_values=ts_values, ref_values=ref_values,
-                coords=coords, ref_coords=ref_coords, update=ref,
-                analysis=analysis, report_statistics=True,
-            )
             if ref:
-                self._commitSelectedReference(
+                self._applySelectedReference(
                     dates=dates, values=ref_values, selection=ref_coords
                 )
+            else:
+                previous = self.plot_ts.pending_record()
+                previous_id = None if previous is None else previous.id
+                self.plot_ts.plotTs(
+                    dates=dates, ts_values=ts_values, ref_values=ref_values,
+                    coords=coords, ref_coords=ref_coords, update=False,
+                    analysis=analysis, report_statistics=True,
+                )
+                pending = self.plot_ts.pending_record()
+                if pending is not None and pending.id != previous_id:
+                    self._commitSelectedTarget(
+                        dates=dates, values=ts_values, selection=pending.target,
+                        plot_multiple=False,
+                    )
 
     def choosePointClickedRaster(self, *, point: QgsPointXY, layer: QgsMapLayer = None, ref=False):
         status, message = grd_layer_utils.checkGrdTimeseries(layer)
@@ -392,22 +461,31 @@ class TSClickHandler(MapClickHandler):
 
         dates = date_values[:, 0]
         analysis = self._analysisForNewRecord() if not ref else None
-        self.plot_ts.plotTs(
-            dates=dates, ts_values=ts_values, ref_values=ref_values,
-            coords=coords, ref_coords=ref_coords, update=ref,
-            analysis=analysis, report_statistics=True,
-        )
         if ref:
-            self._commitSelectedReference(
+            self._applySelectedReference(
                 dates=dates, values=ref_values, selection=ref_coords
             )
+        else:
+            previous = self.plot_ts.pending_record()
+            previous_id = None if previous is None else previous.id
+            self.plot_ts.plotTs(
+                dates=dates, ts_values=ts_values, ref_values=ref_values,
+                coords=coords, ref_coords=ref_coords, update=False,
+                analysis=analysis, report_statistics=True,
+            )
+            pending = self.plot_ts.pending_record()
+            if pending is not None and pending.id != previous_id:
+                self._commitSelectedTarget(
+                    dates=dates, values=ts_values, selection=pending.target,
+                    plot_multiple=False,
+                )
 
     def resetReferencePoint(self):
+        """Clear reference state and reconstruct canonical unreferenced pending data."""
         self.reference_session.clear()
         self.clearReferenceFeatureHighlight()
-        self.plot_ts.plotTs(
-            ref_values=0, ref_coords=None, update=True, report_statistics=True
-        )
+        if self.target_session.current() is not None:
+            self._reconstructPendingFromActiveSelections(reference=None)
 
 
 class PolygonClickHandler(MapClickHandler):
@@ -509,15 +587,24 @@ class PolygonClickHandler(MapClickHandler):
                     self.map_reference_clicked_value = np.mean(clicked_values)
 
             analysis = self._analysisForNewRecord() if not ref else None
-            self.plot_ts.plotTs(
-                dates=dates, ts_values=ts_values, ref_values=ref_values,
-                coords=coords, ref_coords=ref_coords, plot_multiple=True,
-                update=ref, analysis=analysis, report_statistics=True,
-            )
             if ref:
-                self._commitSelectedReference(
+                self._applySelectedReference(
                     dates=dates, values=ref_values, selection=ref_coords
                 )
+            else:
+                previous = self.plot_ts.pending_record()
+                previous_id = None if previous is None else previous.id
+                self.plot_ts.plotTs(
+                    dates=dates, ts_values=ts_values, ref_values=ref_values,
+                    coords=coords, ref_coords=ref_coords, plot_multiple=True,
+                    update=False, analysis=analysis, report_statistics=True,
+                )
+                pending = self.plot_ts.pending_record()
+                if pending is not None and pending.id != previous_id:
+                    self._commitSelectedTarget(
+                        dates=dates, values=ts_values, selection=pending.target,
+                        plot_multiple=True,
+                    )
 
 
 class ClickHandler(TSClickHandler, PolygonClickHandler):
