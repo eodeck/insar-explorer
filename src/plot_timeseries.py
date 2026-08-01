@@ -190,7 +190,6 @@ class PlotTs():
         self.fit_seasonal_flag = False
         self.ax_residuals = None
         self.plot_residuals_flag = False
-        self.hold_on_flag = False
         self.random_marker_color_flag = False
         self.parms = {}
         if settings_model is None or user_preferences is None:
@@ -379,13 +378,7 @@ class PlotTs():
 
     def clear(self):
         """Clear all stored series and renderer-owned graphics."""
-        if self.hold_on_flag:
-            for record in list(self.series_history):
-                self._remove_snapshot_graphics(record)
-            for graphics in tuple(self._pending_graphics_by_series_id.values()):
-                self._detach_graphics(graphics)
-        else:
-            self._clearPlotWidget()
+        self._clearPlotWidget()
         self._discardAllSeriesState()
         self._pending_session.clear()
         self._pending_graphics_by_series_id.clear()
@@ -1049,30 +1042,6 @@ class PlotTs():
 
         self.decorateFigure(parms=self.parms.get("figure", {}))
         return items, residuals_values
-
-    def removeLastPlot(self, n=1, update=False):
-        if update:
-            snapshot = self._remove_rendered_snapshot_for_update()
-            return snapshot is not None
-        if len(self.series_history) < n:
-            return False
-
-        for _ in range(n):
-            snapshot = self.remove_series()
-            if snapshot is None:
-                break
-            self._remove_snapshot_graphics(snapshot)
-
-        if self.series_history:
-            restored_snapshot = self.current_series()
-            self.parms = deepcopy(restored_snapshot.style.params)
-        else:
-            restored_snapshot = None
-        self._set_current_series(self.pending_record() or restored_snapshot)
-
-        self._rebuildYDataRanges()
-        self._draw()
-        return True
 
     def plotReplicas(
         self, series: TimeSeriesData, replica_style,
@@ -1753,8 +1722,8 @@ class PlotTs():
         Unlike user-driven remove-last, settings-driven update must preserve the
         freshly loaded settings in ``self.parms`` so the active/latest series is
         re-rendered with the new style. Restoring the previous snapshot style
-        here makes settings changes apply only to future plots when hold-on mode
-        contains multiple series.
+        here would make settings changes apply only to future plots instead of
+        updating the current editable or active record.
         """
         active = self.current_series()
         if active is None:
@@ -2059,6 +2028,23 @@ class PlotTs():
     def remove_series_by_id(self, series_id: UUID) -> Optional[TimeSeriesSnapshot]:
         """Remove and return the record with the supplied stable identity."""
         return self._series_store.remove(series_id)
+
+    def remove_record(self, series_id: UUID) -> bool:
+        """Remove one committed record and its graphics by stable identity.
+
+        This neutral operation is retained for the forthcoming committed-record
+        list. Pending state and active-reference session ownership are unaffected.
+        """
+        record = self.remove_series_by_id(series_id)
+        if record is None:
+            return False
+        self._remove_snapshot_graphics(record)
+        active = self.current_series()
+        self._set_current_series(self.pending_record() or active)
+        self._rebuildYDataRanges()
+        self.applyYAxisPolicy()
+        self._draw()
+        return True
 
     def setActiveSeries(self, series_id: UUID) -> bool:
         """Make an existing record active and refresh compatibility views."""

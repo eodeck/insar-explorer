@@ -62,7 +62,7 @@ class InsarExplorerDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         self.widget_temporal_uw_btemp_plot_2.setMinimumWidth(220)
         self.widget_temporal_uw_btemp_plot_2.setMaximumWidth(330)
         self.scrollArea.setMaximumWidth(330)
-        self.tab_config_panel.setMaximumWidth(320)
+        self.settings_panel.setMaximumWidth(320)
 
         self.splitter.setCollapsible(0, False)
         self.splitter.setCollapsible(1, False)

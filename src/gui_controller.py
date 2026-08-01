@@ -303,16 +303,16 @@ class GuiController(QObject):
                 self.ui.pb_choose_polygon.setEnabled(True)
                 self.ui.pb_set_reference_polygon.setEnabled(True)
             elif layer_type == RASTER_LAYER:
-                self.ui.tab_config_panel.setEnabled(False)
+                self.ui.settings_panel.setEnabled(False)
                 self.ui.pb_choose_polygon.setEnabled(False)
                 self.ui.pb_set_reference_polygon.setEnabled(False)
 
             if layer_type == RASTER_LAYER and not is_local_raster:
-                self.ui.tab_config_panel.setEnabled(False)
+                self.ui.settings_panel.setEnabled(False)
                 self.ui.pb_choose_point.setChecked(False)
                 message = "Unsupported layer selected. Please choose a layer compatible with InSAR Explorer."
             else:
-                self.ui.tab_config_panel.setEnabled(True)
+                self.ui.settings_panel.setEnabled(True)
                 self.ui.pb_choose_point.setChecked(True)
                 message = ""
             self.msg_signal.emit(message, "i", 0)
@@ -557,8 +557,6 @@ class GuiController(QObject):
         self._restoreTimeSeriesXAxisMode()
         self._restoreTimeSeriesYAxisMode()
         self._restoreTimeSeriesReplicaState()
-        self.ui.cb_hold_on_plot.toggled.connect(self.holdOnPlot)
-        self.ui.cb_remove_last_plot.clicked.connect(self.removeLastPlotClicked)
         # TS save
         self.ui.time_series_toolbar.exportSettingsRequested.connect(self.showExportSettingsPopup)
         self.ui.time_series_toolbar.appearanceRequested.connect(self.showAppearancePopup)
@@ -1385,21 +1383,6 @@ class GuiController(QObject):
     def updatePendingTimeSeriesLabel(self, label):
         """Apply a normalized label to the pending record only."""
         self.choose_point_click_handler.plot_ts.update_pending_label(label)
-
-    def holdOnPlot(self, status):
-        self.choose_point_click_handler.plot_ts.hold_on_flag = status
-        if status:
-            self.msg_signal.emit("Hold on plot enabled: new plots will be added to the existing plot.", "i", 0)
-        else:
-            self.msg_signal.emit("Hold on plot disabled.", "i", 0)
-
-    def removeLastPlotClicked(self):
-        # TODO: remove the last plot and show the previous plot polygon/point highlight
-        self.choose_point_click_handler.removeLastPlot()
-        self._refreshTimeSeriesStylePopup()
-        # TODO: move polygon drawing methods to PolygonDrawingTool class
-        self.removePolygonDrawingTool(reference=False)
-        self.removePolygonDrawingTool(reference=True)
 
     def _syncAxisToolbarControls(self):
         """Refresh both axis selectors from authoritative runtime state without drawing."""

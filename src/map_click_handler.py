@@ -524,12 +524,3 @@ class ClickHandler(TSClickHandler, PolygonClickHandler):
     def __init__(self, plugin, msg_signal=None):
         TSClickHandler.__init__(self, plugin, msg_signal=msg_signal)
         PolygonClickHandler.__init__(self, plugin, msg_signal=msg_signal)
-
-    def removeLastPlot(self):
-        self.clearFeatureHighlight()
-        self.clearReferenceFeatureHighlight()
-        removed = self.plot_ts.removeLastPlot()
-        if removed:
-            self.msg_signal.emit("Last plot removed.", "i", 1000)
-        else:
-            self.msg_signal.emit("No plot to remove.", "w", 0)
