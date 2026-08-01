@@ -279,6 +279,7 @@ class TSClickHandler(MapClickHandler):
             settings_model=services.settings_model,
             user_preferences=services.user_preferences,
             project_state_repository=services.project_state_repository,
+            pending_session=services.pending_session,
         )
         self.raster_layer = raster_layer_utils.RasterTimeseries()
         self.selected_field_name = None
@@ -523,12 +524,3 @@ class ClickHandler(TSClickHandler, PolygonClickHandler):
     def __init__(self, plugin, msg_signal=None):
         TSClickHandler.__init__(self, plugin, msg_signal=msg_signal)
         PolygonClickHandler.__init__(self, plugin, msg_signal=msg_signal)
-
-    def removeLastPlot(self):
-        self.clearFeatureHighlight()
-        self.clearReferenceFeatureHighlight()
-        removed = self.plot_ts.removeLastPlot()
-        if removed:
-            self.msg_signal.emit("Last plot removed.", "i", 1000)
-        else:
-            self.msg_signal.emit("No plot to remove.", "w", 0)

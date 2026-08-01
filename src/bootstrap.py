@@ -11,6 +11,7 @@ from .time_series.persistence import (
 )
 from .time_series.settings.model import TimeSeriesSettingsModel
 from .time_series.reference_session import ActiveReferenceSession
+from .time_series.pending_session import PendingTimeSeriesSession
 
 
 @dataclass(frozen=True)
@@ -21,6 +22,7 @@ class TimeSeriesServices:
     project_state_repository: ProjectStateRepository
     settings_model: TimeSeriesSettingsModel
     reference_session: ActiveReferenceSession
+    pending_session: PendingTimeSeriesSession
 
 
 def create_time_series_services(plugin_dir, diagnostic=None):
@@ -45,6 +47,7 @@ def create_time_series_services(plugin_dir, diagnostic=None):
         project_state_repository=NullProjectStateRepository(),
         settings_model=build_runtime_settings(preferences),
         reference_session=ActiveReferenceSession(),
+        pending_session=PendingTimeSeriesSession(),
     )
 
 def _services_are_complete(services):
@@ -56,6 +59,7 @@ def _services_are_complete(services):
             "project_state_repository",
             "settings_model",
             "reference_session",
+            "pending_session",
         )
     )
 

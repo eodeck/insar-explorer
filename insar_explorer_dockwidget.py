@@ -27,6 +27,8 @@ import os
 from qgis.PyQt import QtWidgets, uic
 from qgis.PyQt.QtCore import pyqtSignal
 
+from .src.ui.time_series import TimeSeriesPointPanel
+
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'insar_explorer_dockwidget_base.ui'))
 
@@ -44,6 +46,31 @@ class InsarExplorerDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         # http://doc.qt.io/qt-5/designer-using-a-ui-file.html
         # #widgets-and-dialogs-with-auto-connect
         self.setupUi(self)
+        self._configure_workspace_layout()
+
+    def _configure_workspace_layout(self):
+        """Create independent Settings, Plot, and Points sibling regions."""
+        self.time_series_point_panel = TimeSeriesPointPanel(self.splitter)
+        self.splitter.addWidget(self.time_series_point_panel)
+        for button in self.time_series_point_panel.selection_buttons:
+            setattr(self, button.objectName(), button)
+
+        self.settings_panel_region = self.widget_temporal_uw_btemp_plot_2
+        self.time_series_workspace_region = self.widget_temporal_uw_bperp_plot_2
+        self.settings_panel_region.setObjectName("settings_panel_region")
+        self.time_series_workspace_region.setObjectName("time_series_workspace_region")
+        self.widget_temporal_uw_btemp_plot_2.setMinimumWidth(220)
+        self.widget_temporal_uw_btemp_plot_2.setMaximumWidth(330)
+        self.scrollArea.setMaximumWidth(330)
+        self.settings_panel.setMaximumWidth(320)
+
+        self.splitter.setCollapsible(0, False)
+        self.splitter.setCollapsible(1, False)
+        self.splitter.setCollapsible(2, False)
+        self.splitter.setStretchFactor(0, 0)
+        self.splitter.setStretchFactor(1, 1)
+        self.splitter.setStretchFactor(2, 0)
+        self.splitter.setSizes([280, 700, TimeSeriesPointPanel.PREFERRED_WIDTH])
 
     def closeEvent(self, event):
         self.closingPlugin.emit()

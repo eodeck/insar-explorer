@@ -21,6 +21,7 @@ from .time_series.settings.persistence import build_legacy_plot_params
 from .time_series.persistence import NullProjectStateRepository
 from .time_series.fit_style_controller import FitStyle
 from .time_series.store import TimeSeriesStore
+from .time_series.pending_session import PendingTimeSeriesSession, resolve_editable_record
 from .models.time_series import (
     FitConfiguration,
     ReplicaConfiguration,
@@ -164,7 +165,7 @@ class PlotTs():
 
     def __init__(
         self, ui, settings_model=None, user_preferences=None,
-        project_state_repository=None,
+        project_state_repository=None, pending_session=None,
     ):
         """Create the renderer from injected runtime and persistence dependencies."""
         self.ui = ui
@@ -178,13 +179,17 @@ class PlotTs():
         self.max_plot_values = None
         self.residuals_values = None
         self._series_store = TimeSeriesStore()
+        if pending_session is None:
+            pending_session = PendingTimeSeriesSession()
+        self._pending_session = pending_session
         self._graphics_by_series_id: Dict[UUID, TimeSeriesGraphics] = {}
+        self._pending_graphics_by_series_id: Dict[UUID, TimeSeriesGraphics] = {}
+        self.pending_changed_callback = None
         self.default_style = None
         self.fit_models = []
         self.fit_seasonal_flag = False
         self.ax_residuals = None
         self.plot_residuals_flag = False
-        self.hold_on_flag = False
         self.random_marker_color_flag = False
         self.parms = {}
         if settings_model is None or user_preferences is None:
@@ -373,12 +378,11 @@ class PlotTs():
 
     def clear(self):
         """Clear all stored series and renderer-owned graphics."""
-        if self.hold_on_flag:
-            for record in list(self.series_history):
-                self._remove_snapshot_graphics(record)
-        else:
-            self._clearPlotWidget()
+        self._clearPlotWidget()
         self._discardAllSeriesState()
+        self._pending_session.clear()
+        self._pending_graphics_by_series_id.clear()
+        self._notify_pending_changed()
         self._set_current_series(None)
         self._draw()
 
@@ -444,7 +448,7 @@ class PlotTs():
         report_statistics: bool = False,
     ) -> bool:
         """Transactionally replace active analysis and optionally report fit statistics."""
-        current = self.current_series()
+        current = self.editable_time_series_record()
         if current is None:
             return False
         analysis = current.analysis
@@ -452,7 +456,7 @@ class PlotTs():
             analysis = replace(analysis, fit=fit)
         if replica is not _UNSET:
             analysis = replace(analysis, replica=replica)
-        self.rerender_record(
+        self.rerender_editable_record(
             replace(current, analysis=analysis),
             report_statistics=bool(report_statistics),
         )
@@ -460,7 +464,7 @@ class PlotTs():
 
     def updateActiveReplicaState(self, *, configuration, presentation) -> bool:
         """Replace active Replica calculation and visual state in one rerender."""
-        current = self.current_series()
+        current = self.editable_time_series_record()
         if current is None:
             return False
         updated = replace(
@@ -468,7 +472,7 @@ class PlotTs():
             analysis=replace(current.analysis, replica=configuration),
             presentation=replace(current.presentation, replica=presentation),
         )
-        self.rerender_record(updated)
+        self.rerender_editable_record(updated)
         return True
 
     def _buildTimeSeriesRecord(
@@ -548,7 +552,7 @@ class PlotTs():
         if layout_matches:
             return
 
-        if self._series_store.records():
+        if self._series_store.records() or self.pending_record() is not None:
             self._rebuild_axes_and_rerender_history()
             return
 
@@ -568,17 +572,24 @@ class PlotTs():
     def _rebuild_axes_and_rerender_history(self) -> None:
         """Recreate axes and re-render retained records with stable identity."""
         retained_records = self._series_store.records()
+        retained_pending = self.pending_record()
         active_id = self._series_store.active_id()
         self._clearPlotWidget()
         self._graphics_by_series_id.clear()
+        self._pending_graphics_by_series_id.clear()
         self._createAxesForCurrentLayout()
 
         rebuilt_records = []
+        rebuilt_pending = None
         try:
             for record in retained_records:
                 graphics, rebuilt_record, transaction = self._build_record_graphics(record)
                 rebuilt_records.append(rebuilt_record)
                 self._register_series_graphics(rebuilt_record, graphics)
+                transaction.commit()
+            if retained_pending is not None:
+                graphics, rebuilt_pending, transaction = self._build_record_graphics(retained_pending)
+                self._pending_graphics_by_series_id[rebuilt_pending.id] = graphics
                 transaction.commit()
         except Exception:
             # Clearing the widget destroys any partially created canvas items.
@@ -590,9 +601,11 @@ class PlotTs():
             raise
 
         self._series_store.replace_many(rebuilt_records)
+        if rebuilt_pending is not None:
+            self._pending_session.set(rebuilt_pending)
         if active_id is not None:
             self._series_store.set_active(active_id)
-        active = self.current_series()
+        active = self.editable_time_series_record()
         self._set_current_series(active)
         self._rebuildYDataRanges()
         self.applyYAxisPolicy()
@@ -625,7 +638,7 @@ class PlotTs():
         # update: flag indicating if the plot should be updated or a new one created
 
         self.updateSettings()
-        source_snapshot = self.current_series() if update else None
+        source_snapshot = self.editable_time_series_record() if update else None
 
         if update:
             if source_snapshot is None:
@@ -639,8 +652,6 @@ class PlotTs():
         else:
             random_marker_color_flag = self.random_marker_color_flag
             presentation = self.default_style.snapshotPresentation()
-            if not self.hold_on_flag:
-                self._discardAllSeriesState()
 
         if dates is None and self.dates is None:
             return
@@ -666,6 +677,12 @@ class PlotTs():
             )
 
         record_analysis = _UNSET if update or analysis is None else analysis
+        # explicit update actions may omit one spatial field.  Preserve all
+        # unrelated ownership from the complete source record instead of
+        # interpreting a reference-only update as a target clear.
+        if update and coords is None:
+            coords = _UNSET
+
         record = self._buildTimeSeriesRecord(
             data=series, presentation=presentation, coords=coords, ref_coords=ref_coords,
             record_id=source_snapshot.id if source_snapshot is not None else None,
@@ -675,15 +692,21 @@ class PlotTs():
         self.plot_residuals_flag = bool(fit.enabled and fit.show_residuals)
         self.initializeAxes()
         if update:
-            self.rerender_record(
+            self.rerender_editable_record(
                 record, plot_multiple=plot_multiple,
                 report_statistics=report_statistics,
             )
         else:
-            self._render_and_store_series(
+            if not (record.presentation.label or "").strip():
+                record = replace(
+                    record,
+                    presentation=replace(
+                        record.presentation, label=self._default_pending_label(record)
+                    ),
+                )
+            self.set_pending_record(
                 record, plot_multiple=plot_multiple,
                 report_statistics=report_statistics,
-                replacement=not self.hold_on_flag,
             )
         self.applyYAxisPolicy()
         self._draw()
@@ -1019,30 +1042,6 @@ class PlotTs():
 
         self.decorateFigure(parms=self.parms.get("figure", {}))
         return items, residuals_values
-
-    def removeLastPlot(self, n=1, update=False):
-        if update:
-            snapshot = self._remove_rendered_snapshot_for_update()
-            return snapshot is not None
-        if len(self.series_history) < n:
-            return False
-
-        for _ in range(n):
-            snapshot = self.remove_series()
-            if snapshot is None:
-                break
-            self._remove_snapshot_graphics(snapshot)
-
-        if self.series_history:
-            restored_snapshot = self.current_series()
-            self._set_current_series(restored_snapshot)
-            self.parms = deepcopy(restored_snapshot.style.params)
-        else:
-            self._set_current_series(None)
-
-        self._rebuildYDataRanges()
-        self._draw()
-        return True
 
     def plotReplicas(
         self, series: TimeSeriesData, replica_style,
@@ -1678,7 +1677,7 @@ class PlotTs():
         self, series: TimeSeriesRecord
     ) -> Optional[TimeSeriesGraphics]:
         """Return runtime graphics registered for a stored series."""
-        return self._graphics_by_series_id.get(series.id)
+        return self._graphics_by_series_id.get(series.id) or self._pending_graphics_by_series_id.get(series.id)
 
     def _register_series_graphics(
         self, series: TimeSeriesRecord, graphics: TimeSeriesGraphics
@@ -1723,8 +1722,8 @@ class PlotTs():
         Unlike user-driven remove-last, settings-driven update must preserve the
         freshly loaded settings in ``self.parms`` so the active/latest series is
         re-rendered with the new style. Restoring the previous snapshot style
-        here makes settings changes apply only to future plots when hold-on mode
-        contains multiple series.
+        here would make settings changes apply only to future plots instead of
+        updating the current editable or active record.
         """
         active = self.current_series()
         if active is None:
@@ -1748,12 +1747,16 @@ class PlotTs():
 
     def _rebuildYDataRanges(self):
         self._y_data_ranges = {}
-        for snapshot in self.series_history:
+        records = list(self.series_history)
+        pending = self.pending_record()
+        if pending is not None:
+            records.append(pending)
+        for snapshot in records:
             graphics = self._graphics_for_series(snapshot)
             if graphics is not None:
                 self.updateYlim(ax=self.ax, y_data=graphics.main_y_data)
         if self.ax_residuals is not None:
-            for snapshot in self.series_history:
+            for snapshot in records:
                 graphics = self._graphics_for_series(snapshot)
                 if graphics is not None:
                     self.updateYlim(
@@ -1843,13 +1846,13 @@ class PlotTs():
         """Rerender selected records by UUID without reordering store records."""
         with self.preserveViewport():
             for snapshot in snapshots:
-                self.rerender_record(snapshot)
+                self.rerender_editable_record(snapshot)
         if draw:
             self._draw()
 
     def selectedTimeSeriesSnapshots(self) -> List[TimeSeriesSnapshot]:
-        """Return the snapshots currently targeted for editing."""
-        snapshot = self.current_series()
+        """Return pending first, otherwise the active committed record."""
+        snapshot = self.editable_time_series_record()
         return [snapshot] if snapshot is not None else []
 
     def hasSelectedTimeSeries(self) -> bool:
@@ -1862,7 +1865,7 @@ class PlotTs():
 
     def setCurrentSeriesStyleAsDefault(self) -> bool:
         """Copy the current series style into the new-series default source."""
-        snapshot = self.current_series()
+        snapshot = self.editable_time_series_record()
         if snapshot is None:
             return False
         if self.default_style is None:
@@ -1892,6 +1895,128 @@ class PlotTs():
         """Store a time-series record and make it active."""
         self._series_store.add(snapshot, make_active=True)
 
+    def pending_record(self) -> Optional[TimeSeriesRecord]:
+        """Return the uncommitted record, if any."""
+        return self._pending_session.record()
+
+    def editable_time_series_record(self) -> Optional[TimeSeriesRecord]:
+        """Return pending first, otherwise the active committed record."""
+        return resolve_editable_record(self.pending_record(), self.current_series())
+
+    def _notify_pending_changed(self) -> None:
+        if self.pending_changed_callback is not None:
+            self.pending_changed_callback(self.pending_record())
+
+    def set_pending_record(self, record, *, plot_multiple=True, report_statistics=False):
+        """Transactionally render and replace the current pending record."""
+        previous = self.pending_record()
+        previous_graphics = None if previous is None else self._pending_graphics_by_series_id.get(previous.id)
+        graphics, rendered_record, transaction = self._build_record_graphics(
+            record, plot_multiple=plot_multiple, report_statistics=report_statistics
+        )
+        try:
+            self._pending_session.set(rendered_record)
+            self._pending_graphics_by_series_id = {rendered_record.id: graphics}
+        except Exception:
+            transaction.rollback()
+            raise
+        transaction.commit()
+        if previous_graphics is not None:
+            self._detach_graphics(previous_graphics)
+        self._set_current_series(rendered_record)
+        self._rebuildYDataRanges()
+        self._notify_pending_changed()
+        return rendered_record
+
+    def rerender_editable_record(self, record, *, plot_multiple=True, report_statistics=False):
+        """Replace the correct pending or committed owner by UUID."""
+        pending = self.pending_record()
+        if pending is not None and pending.id == record.id:
+            old_graphics = self._pending_graphics_by_series_id.get(record.id)
+            if old_graphics is None:
+                raise KeyError(f"pending graphics not found: {record.id}")
+            graphics, rendered_record, transaction = self._build_record_graphics(
+                record, plot_multiple=plot_multiple, report_statistics=report_statistics
+            )
+
+            # Publish session and registry ownership together while the new
+            # graphics transaction is still rollback-capable.  The existing
+            # graphics remain attached until ownership and commit both succeed.
+            try:
+                self._pending_session.set(rendered_record)
+                self._pending_graphics_by_series_id[record.id] = graphics
+                transaction.commit()
+            except Exception:
+                self._pending_session.set(pending)
+                self._pending_graphics_by_series_id[record.id] = old_graphics
+                transaction.rollback()
+                raise
+
+            self._detach_graphics(old_graphics)
+            self._set_current_series(rendered_record)
+            self._rebuildYDataRanges()
+            self.applyYAxisPolicy()
+            self._notify_pending_changed()
+            return graphics
+        return self.rerender_record(
+            record, plot_multiple=plot_multiple, report_statistics=report_statistics
+        )
+
+    def update_pending_label(self, label: str) -> bool:
+        """Trim and replace the pending label without touching committed records."""
+        record = self.pending_record()
+        if record is None:
+            return False
+        normalized = str(label).strip()
+        updated = replace(record, presentation=replace(record.presentation, label=normalized))
+        self._pending_session.set(updated)
+        self._set_current_series(updated)
+        self._notify_pending_changed()
+        return True
+
+    @staticmethod
+    def _default_pending_label(record):
+        kind = record.target.kind.value.title() if record.target is not None else "Time series"
+        return kind
+
+    def commit_pending(self) -> Optional[TimeSeriesRecord]:
+        """Transfer the exact pending record and graphics into committed ownership."""
+        record = self.pending_record()
+        if record is None:
+            return None
+        graphics = self._pending_graphics_by_series_id.get(record.id)
+        if graphics is None:
+            raise KeyError(f"pending graphics not found: {record.id}")
+        self._series_store.add(record, make_active=True)
+        try:
+            self._graphics_by_series_id[record.id] = graphics
+            self._pending_graphics_by_series_id.pop(record.id, None)
+            self._pending_session.clear()
+        except Exception:
+            self._series_store.remove(record.id)
+            self._graphics_by_series_id.pop(record.id, None)
+            self._pending_graphics_by_series_id[record.id] = graphics
+            self._pending_session.set(record)
+            raise
+        self._set_current_series(record)
+        self._notify_pending_changed()
+        return record
+
+    def discard_pending(self) -> Optional[TimeSeriesRecord]:
+        """Remove only pending state and graphics."""
+        record = self._pending_session.clear()
+        if record is None:
+            return None
+        graphics = self._pending_graphics_by_series_id.pop(record.id, None)
+        if graphics is not None:
+            self._detach_graphics(graphics)
+        self._set_current_series(self.current_series())
+        self._rebuildYDataRanges()
+        self.applyYAxisPolicy()
+        self._draw()
+        self._notify_pending_changed()
+        return record
+
     def current_series(self) -> Optional[TimeSeriesSnapshot]:
         """Return the explicitly active stored record, if available."""
         return self._series_store.active_record()
@@ -1903,6 +2028,23 @@ class PlotTs():
     def remove_series_by_id(self, series_id: UUID) -> Optional[TimeSeriesSnapshot]:
         """Remove and return the record with the supplied stable identity."""
         return self._series_store.remove(series_id)
+
+    def remove_record(self, series_id: UUID) -> bool:
+        """Remove one committed record and its graphics by stable identity.
+
+        This neutral operation is retained for the forthcoming committed-record
+        list. Pending state and active-reference session ownership are unaffected.
+        """
+        record = self.remove_series_by_id(series_id)
+        if record is None:
+            return False
+        self._remove_snapshot_graphics(record)
+        active = self.current_series()
+        self._set_current_series(self.pending_record() or active)
+        self._rebuildYDataRanges()
+        self.applyYAxisPolicy()
+        self._draw()
+        return True
 
     def setActiveSeries(self, series_id: UUID) -> bool:
         """Make an existing record active and refresh compatibility views."""
@@ -1942,7 +2084,7 @@ class PlotTs():
     def exportAscii(self, filename=None):
         if filename is None:
             return
-        record = self.current_series()
+        record = self.editable_time_series_record()
         if record is None:
             if self.dates is None or self.plot_values is None:
                 return
