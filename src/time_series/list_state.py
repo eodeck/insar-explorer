@@ -1,7 +1,7 @@
 """Session-local metadata for committed time-series list presentation."""
 
 from dataclasses import dataclass, replace
-from typing import Dict, Iterable, Optional, Tuple
+from typing import Dict, Optional, Tuple
 from uuid import UUID
 
 

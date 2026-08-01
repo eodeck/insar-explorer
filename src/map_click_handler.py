@@ -365,11 +365,6 @@ class TSClickHandler(MapClickHandler):
             return pending_after.id != previous_id
         return pending_after.id == previous_id
 
-    def _createPendingFromActiveSelections(self, reference=None):
-        """Create a new pending record from independent selection sessions."""
-        active_reference = self.reference_session.current() if reference is None else reference
-        return self._reconstructPendingFromActiveSelections(active_reference)
-
     def _applySelectedReference(self, *, dates, values, selection):
         """Reconstruct pending from canonical target data for a new reference."""
         reference = ActiveReference.create(dates=dates, values=values, selection=selection)
