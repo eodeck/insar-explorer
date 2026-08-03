@@ -1,5 +1,9 @@
 """Dedicated time-series point panel for selection controls and future records."""
 
+from dataclasses import dataclass
+from typing import Optional, Tuple
+from uuid import UUID
+
 from qgis.PyQt import QtGui, QtWidgets
 from qgis.PyQt.QtCore import QEvent, QSize, pyqtSignal
 
@@ -20,6 +24,9 @@ from ...qt_compat import (
     EXTENDED_SELECTION,
     SELECT_ROWS,
     SCROLL_BAR_ALWAYS_OFF,
+    NO_UPDATE_CURRENT,
+    SELECT_ROWS_SELECTION,
+    SELECT_SELECTION,
 )
 
 from .committed_columns import (
@@ -44,6 +51,16 @@ from .pending_model import PendingTimeSeriesModel
 from .type_indicator_delegate import TimeSeriesTypeIndicatorDelegate
 
 
+@dataclass(frozen=True)
+class CommittedSelectionSnapshot:
+    """UUID-based committed selection, current row, and viewport position."""
+
+    selected_record_ids: Tuple[UUID, ...]
+    current_record_id: Optional[UUID]
+    vertical_scroll: int
+    horizontal_scroll: int
+
+
 PENDING_ACTION_ICONS = {
     "add": ":/icons/icons/item_add.svg",
     "discard": ":/icons/icons/item_discard.svg",
@@ -61,6 +78,8 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
     committedSelectionChanged = pyqtSignal(tuple)
     committedVisibilityAllRequested = pyqtSignal(bool)
     removeSelectedCommittedRequested = pyqtSignal()
+    copyCommittedSettingsRequested = pyqtSignal()
+    pasteCommittedRequested = pyqtSignal(object)
 
     ICON_SIZE = 18
     BUTTON_SIZE = 26
@@ -169,6 +188,7 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         self.pending_model.labelEdited.connect(self.pendingLabelEdited.emit)
         self.pending_view = QtWidgets.QTableView(self)
         self.pending_view.setObjectName("pending_time_series_view")
+        self.pending_view.setAccessibleDescription("Current pending time series")
         self.pending_view.setModel(self.pending_model)
         self.pending_view.setIconSize(
             QSize(TIME_SERIES_TYPE_ICON_SIZE, TIME_SERIES_TYPE_ICON_SIZE)
@@ -199,10 +219,6 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
             "}"
             "QTableView#pending_time_series_view::item {"
             " border: none;"
-            " background: transparent;"
-            "}"
-            "QTableView#pending_time_series_view::item:hover {"
-            " background: transparent;"
             "}"
         )
         self.pending_view.verticalHeader().hide()
@@ -263,6 +279,9 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         self.committed_model = None
         self.committed_view = CommittedTimeSeriesView(self)
         self.committed_view.setObjectName("committed_time_series_view")
+        self.committed_view.setAccessibleDescription(
+            "Committed selection is retained while a pending time series is active"
+        )
         self.committed_view.setSelectionBehavior(SELECT_ROWS)
         self.committed_view.setSelectionMode(EXTENDED_SELECTION)
         self.committed_view.setEditTriggers(
@@ -309,6 +328,11 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         self.committed_view.removeSelectedRequested.connect(
             self.removeSelectedCommittedRequested.emit
         )
+        self.committed_view.copySettingsRequested.connect(
+            self.copyCommittedSettingsRequested.emit
+        )
+        self.committed_view.pasteRequested.connect(self.pasteCommittedRequested.emit)
+        self._clipboard_categories = ()
         self.refresh_removal_actions()
 
     def configure_committed_list(self, list_state, record_provider):
@@ -397,8 +421,24 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         self.refresh_committed_visibility_header()
         self.refresh_removal_actions()
 
-    def restore_committed_selection(self, record_ids):
-        """Restore whole-row selection by UUID after a model reset."""
+    def capture_committed_selection(self):
+        """Capture UUID selection/current state and viewport position atomically."""
+        current_id = None
+        current_index = self.committed_view.currentIndex()
+        if current_index.isValid() and self.committed_model is not None:
+            current_id = self.committed_model.record_id_at(current_index.row())
+        return CommittedSelectionSnapshot(
+            selected_record_ids=self.selected_committed_ids(),
+            current_record_id=current_id,
+            vertical_scroll=self.committed_view.verticalScrollBar().value(),
+            horizontal_scroll=self.committed_view.horizontalScrollBar().value(),
+        )
+
+    def restore_committed_selection(
+        self, record_ids, current_record_id=None, vertical_scroll=None,
+        horizontal_scroll=None,
+    ):
+        """Restore UUID selection/current/scroll without changing selection via current."""
         if self.committed_model is None or self.committed_view.selectionModel() is None:
             return
         selection_model = self.committed_view.selectionModel()
@@ -406,7 +446,20 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         for record_id in record_ids:
             row = self.committed_model.row_for_id(record_id)
             if row is not None:
-                self.committed_view.selectRow(row)
+                index = self.committed_model.index(row, 0)
+                selection_model.select(
+                    index, SELECT_SELECTION | SELECT_ROWS_SELECTION
+                )
+        if current_record_id is not None:
+            current_row = self.committed_model.row_for_id(current_record_id)
+            if current_row is not None:
+                selection_model.setCurrentIndex(
+                    self.committed_model.index(current_row, 0), NO_UPDATE_CURRENT
+                )
+        if vertical_scroll is not None:
+            self.committed_view.verticalScrollBar().setValue(vertical_scroll)
+        if horizontal_scroll is not None:
+            self.committed_view.horizontalScrollBar().setValue(horizontal_scroll)
 
     def selected_committed_rows(self):
         """Return selected model row numbers in ascending order."""
@@ -414,11 +467,21 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
             return ()
         return tuple(sorted(index.row() for index in self.committed_view.selectionModel().selectedRows()))
 
+    def set_clipboard_categories(self, categories):
+        """Project session clipboard availability without owning clipboard state."""
+        self._clipboard_categories = tuple(categories)
+        self.refresh_removal_actions()
+
     def refresh_removal_actions(self):
-        """Enable committed-removal actions from authoritative model/selection state."""
-        selected = bool(self.selected_committed_ids())
+        """Enable committed-list commands from selection and clipboard projection."""
+        selected_ids = self.selected_committed_ids()
+        selected = bool(selected_ids)
         self.remove_selected_button.setEnabled(selected)
         self.committed_view.remove_action.setEnabled(selected)
+        self.committed_view.set_copy_paste_enabled(
+            copy_enabled=len(selected_ids) == 1,
+            paste_categories=self._clipboard_categories if selected else (),
+        )
 
     def _emit_committed_selection(self, *_):
         self.refresh_removal_actions()
@@ -441,14 +504,19 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         return button
 
     def show_pending(self, record):
-        """Project one pending record into the compact panel controls."""
+        """Project pending ownership without mutating committed selection."""
         self.pending_model.set_record(record)
+        self.pending_model.set_toolbar_target_active(True)
+        self.committed_view.set_selection_active(False)
         self.pending_add_button.setEnabled(True)
         self.pending_discard_button.setEnabled(True)
 
     def clear_pending(self):
-        """Clear pending controls without affecting selection controls."""
+        """Clear pending presentation and restore committed selection styling."""
+        self.pending_model.set_toolbar_target_active(False)
         self.pending_model.clear()
+        if hasattr(self, "committed_view"):
+            self.committed_view.set_selection_active(True)
         self.pending_add_button.setEnabled(False)
         self.pending_discard_button.setEnabled(False)
 

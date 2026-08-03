@@ -44,6 +44,11 @@ from .time_series.settings.model import (
 )
 from .time_series.settings.persistence import build_legacy_plot_params
 from .time_series.persistence import PreferencesPersistenceError
+from .time_series.copy_paste import (
+    CopyPasteCategory, TimeSeriesSettingsClipboard,
+    apply_fit_snapshot, apply_replica_snapshot, apply_style_snapshot,
+    capture_fit, capture_replica, capture_style,
+)
 
 
 class GuiController(QObject):
@@ -142,9 +147,11 @@ class GuiController(QObject):
         plotter.pending_changed_callback = self._syncPendingTimeSeriesPanel
         plotter.committed_changed_callback = self._syncCommittedTimeSeriesList
         self.time_series_list_state = TimeSeriesListState()
+        self.time_series_clipboard = None
         self.ui.time_series_point_panel.configure_committed_list(
             self.time_series_list_state, plotter.committed_record
         )
+        self._refreshTimeSeriesClipboardProjection()
         self.click_tool = None  # plugin.click_tool
         self.drawing_tool = None  # for polygon drawing
         self.drawing_tool_reference = None  # for reference polygon drawing
@@ -289,12 +296,17 @@ class GuiController(QObject):
         elif self.selection_type == "reference polygon":
             self.initializePolygonDrawingTool(reference=True)
 
+    def resetTimeSeriesWorkspaceForDataset(self):
+        """Clear dataset-scoped time-series state and the session clipboard."""
+        self.choose_point_click_handler.reset()
+        self.clearTimeSeriesClipboard()
+
     def onLayerChanged(self, layer=None):
-        """Reset the click handler and the map when the active layer changes."""
+        """Reset the time-series workspace and map for a confirmed layer change."""
         if layer is None:
             layer = self.iface.activeLayer()
         if layer:
-            self.choose_point_click_handler.reset()
+            self.resetTimeSeriesWorkspaceForDataset()
             self._restoreTimeSeriesFitState()
             self._restoreTimeSeriesYAxisMode()
             self._restoreTimeSeriesReplicaState()
@@ -491,6 +503,10 @@ class GuiController(QObject):
         panel.removeSelectedCommittedRequested.connect(
             self.removeSelectedCommittedTimeSeries
         )
+        panel.copyCommittedSettingsRequested.connect(
+            self.copyCommittedTimeSeriesSettings
+        )
+        panel.pasteCommittedRequested.connect(self.pasteCommittedTimeSeriesSettings)
         self.ui.pb_choose_point.clicked.connect(self.activatePointSelection)
         self.ui.pb_set_reference.clicked.connect(self.activateReferencePointSelection)
         self.ui.pb_reset_reference.clicked.connect(self.resetReferencePoint)
@@ -1410,6 +1426,135 @@ class GuiController(QObject):
             self.time_series_list_state.clear()
         if panel.committed_model is not None:
             panel.refresh_committed_model()
+
+    def _clipboard_available_categories(self):
+        """Return all paste categories when one coherent clipboard exists."""
+        if self.time_series_clipboard is None:
+            return ()
+        return (
+            CopyPasteCategory.STYLE,
+            CopyPasteCategory.FIT,
+            CopyPasteCategory.REPLICA,
+            CopyPasteCategory.ALL_PRESENTATION,
+        )
+
+    def _refreshTimeSeriesClipboardProjection(self):
+        """Project controller-owned clipboard availability into the list menu."""
+        self.ui.time_series_point_panel.set_clipboard_categories(
+            self._clipboard_available_categories()
+        )
+
+    def clearTimeSeriesClipboard(self):
+        """Clear the dataset-scoped, non-persistent settings clipboard."""
+        self.time_series_clipboard = None
+        self._refreshTimeSeriesClipboardProjection()
+
+    def copyCommittedTimeSeriesSettings(self):
+        """Atomically capture Style, Fit, and Replica from one committed source."""
+        panel = self.ui.time_series_point_panel
+        selected = panel.selected_committed_ids()
+        if len(selected) != 1:
+            return
+        record = self.choose_point_click_handler.plot_ts.committed_record(
+            selected[0]
+        )
+        if record is None:
+            self._reportCopyPasteFailure(
+                "copy", KeyError("selected committed time series no longer exists")
+            )
+            return
+        try:
+            clipboard = TimeSeriesSettingsClipboard(
+                source_record_id=record.id,
+                style=capture_style(record),
+                fit=capture_fit(record),
+                replica=capture_replica(record),
+            )
+        except Exception as error:
+            self._reportCopyPasteFailure("copy", error)
+            return
+        self.time_series_clipboard = clipboard
+        self._refreshTimeSeriesClipboardProjection()
+        self.setMessageBar("Copied style, Fit and Replica", "done", 3000)
+
+    def pasteCommittedTimeSeriesSettings(self, category):
+        """Atomically paste one typed category to selected committed destinations."""
+        try:
+            category = CopyPasteCategory(category)
+        except ValueError:
+            return
+        clipboard = self.time_series_clipboard
+        if clipboard is None or not clipboard.has(category):
+            return
+        panel = self.ui.time_series_point_panel
+        selection_snapshot = panel.capture_committed_selection()
+        requested = selection_snapshot.selected_record_ids
+        if not requested:
+            return
+        # Preserve model order and remove duplicate UUIDs before preflight.
+        requested_set = set(requested)
+        record_ids = tuple(
+            entry.record_id for entry in self.time_series_list_state.entries()
+            if entry.record_id in requested_set
+        )
+        plotter = self.choose_point_click_handler.plot_ts
+        try:
+            originals = tuple(
+                plotter.committed_record(record_id) for record_id in record_ids
+            )
+            if any(record is None for record in originals):
+                raise KeyError("one or more selected committed time series no longer exist")
+            replacements = []
+            for record in originals:
+                updated = record
+                if category in (CopyPasteCategory.STYLE, CopyPasteCategory.ALL_PRESENTATION):
+                    updated = apply_style_snapshot(updated, clipboard.style)
+                if category in (CopyPasteCategory.FIT, CopyPasteCategory.ALL_PRESENTATION):
+                    updated = apply_fit_snapshot(updated, clipboard.fit)
+                if category in (CopyPasteCategory.REPLICA, CopyPasteCategory.ALL_PRESENTATION):
+                    updated = apply_replica_snapshot(updated, clipboard.replica)
+                replacements.append(updated)
+            plotter.rerender_records(replacements, notify=True, draw=True)
+        except Exception as error:
+            self._reportCopyPasteFailure("paste", error)
+            panel.restore_committed_selection(
+                selection_snapshot.selected_record_ids,
+                current_record_id=selection_snapshot.current_record_id,
+                vertical_scroll=selection_snapshot.vertical_scroll,
+                horizontal_scroll=selection_snapshot.horizontal_scroll,
+            )
+            self.committedTimeSeriesSelectionChanged(
+                panel.selected_committed_ids()
+            )
+            return
+
+        panel.restore_committed_selection(
+            selection_snapshot.selected_record_ids,
+            current_record_id=selection_snapshot.current_record_id,
+            vertical_scroll=selection_snapshot.vertical_scroll,
+            horizontal_scroll=selection_snapshot.horizontal_scroll,
+        )
+        self.committedTimeSeriesSelectionChanged(panel.selected_committed_ids())
+        labels = {
+            CopyPasteCategory.STYLE: "style",
+            CopyPasteCategory.FIT: "Fit",
+            CopyPasteCategory.REPLICA: "Replica",
+            CopyPasteCategory.ALL_PRESENTATION: "style, Fit and Replica",
+        }
+        count = len(record_ids)
+        self.setMessageBar(
+            "Pasted {} to {} time series".format(labels[category], count),
+            "done", 3000,
+        )
+
+    def _reportCopyPasteFailure(self, operation, error):
+        """Report one diagnostic without exposing record UUIDs to normal feedback."""
+        if self._plugin_diagnostic is not None:
+            self._plugin_diagnostic("committed_{}".format(operation), error)
+        else:
+            self.msg_signal.emit(
+                "Unable to {} time-series settings: {}".format(operation, error), "c", 0
+            )
 
     def removeSelectedCommittedTimeSeries(self):
         """Remove the selected committed UUIDs through the shared batch command."""

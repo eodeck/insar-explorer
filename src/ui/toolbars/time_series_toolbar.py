@@ -22,6 +22,9 @@ from ..styles import (
     set_toolbar_control_role,
 )
 from ..widgets import SplitToolButton
+from ..time_series.action_icons import (
+    REPLICA_ACTION_ICON, STYLE_ACTION_ICON,
+)
 
 
 class TimeSeriesToolbar(QToolBar):
@@ -184,7 +187,7 @@ class TimeSeriesToolbar(QToolBar):
         self._updateYAxisSelector(self.y_axis_actions["from_data"])
 
         self.replica_button = SplitToolButton(
-            icon=QIcon(":/icons/icons/replica.svg"),
+            icon=QIcon(REPLICA_ACTION_ICON),
             primary_checkable=True,
             parent=self,
             object_name="tool_ts_replica",
@@ -201,7 +204,7 @@ class TimeSeriesToolbar(QToolBar):
             "Open Replica settings."
         )
         self.plot_style_action = self._createAction(
-            ":/icons/icons/plot_settings.svg",
+            STYLE_ACTION_ICON,
             "Plot style",
             "Edit the style of the current time series",
             "action_ts_plot_style",

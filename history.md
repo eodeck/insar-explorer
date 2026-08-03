@@ -1,6 +1,7 @@
 ### History
 
 v2.8.0
+- Added copy/paste to context menu of time series record list.
 - Added remove button/context menu to remove records from the time series record list.
 - Added time series record list.
 - Retire hold on options and TS and Settings tabs.
