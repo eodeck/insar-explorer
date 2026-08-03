@@ -65,10 +65,27 @@ class TimeSeriesStore:
 
     def remove(self, record_id: UUID) -> Optional[TimeSeriesRecord]:
         """Remove and return a record by UUID."""
-        index = self.index_of(record_id)
-        if index is None:
-            return None
-        return self.remove_at(index)
+        removed = self.remove_many((record_id,))
+        return removed[0] if removed else None
+
+    def remove_many(self, record_ids: Iterable[UUID]) -> Tuple[TimeSeriesRecord, ...]:
+        """Remove existing UUIDs in requested order without reordering survivors."""
+        requested = []
+        seen = set()
+        for value in record_ids:
+            record_id = value if isinstance(value, UUID) else UUID(str(value))
+            if record_id not in seen:
+                seen.add(record_id)
+                requested.append(record_id)
+        by_id = {record.id: record for record in self._records}
+        removed = tuple(by_id[record_id] for record_id in requested if record_id in by_id)
+        if not removed:
+            return ()
+        removed_ids = {record.id for record in removed}
+        self._records = [record for record in self._records if record.id not in removed_ids]
+        if self._active_id in removed_ids:
+            self._active_id = None
+        return removed
 
     def remove_at(self, index: int = -1) -> Optional[TimeSeriesRecord]:
         """Remove and return a record by ordered index."""

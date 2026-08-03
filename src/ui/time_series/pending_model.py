@@ -1,7 +1,7 @@
 """Zero-or-one-row projection model for the pending time-series record."""
 
 from qgis.PyQt import QtGui
-from qgis.PyQt.QtCore import QAbstractTableModel, QModelIndex, QSize, pyqtSignal
+from qgis.PyQt.QtCore import QAbstractTableModel, QModelIndex, pyqtSignal
 
 from ...qt_compat import (
     ALIGN_CENTER,

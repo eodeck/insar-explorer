@@ -1,6 +1,7 @@
 ### History
 
 v2.8.0
+- Added remove button/context menu to remove records from the time series record list.
 - Added time series record list.
 - Retire hold on options and TS and Settings tabs.
 - Move sync offset button to the map settings panel.
