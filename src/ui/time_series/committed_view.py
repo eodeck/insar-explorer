@@ -150,10 +150,10 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
         self._prepare_context_selection(self.indexAt(position))
         self._update_remove_action_enabled()
         menu = QtWidgets.QMenu(self)
-        menu.addAction(self.remove_action)
-        menu.addSeparator()
         menu.addAction(self.copy_settings_action)
         menu.addMenu(self.paste_menu)
+        menu.addSeparator()
+        menu.addAction(self.remove_action)
         global_position = self.viewport().mapToGlobal(position)
         if hasattr(menu, "exec"):
             menu.exec(global_position)
