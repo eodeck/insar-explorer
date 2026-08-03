@@ -2050,24 +2050,48 @@ class PlotTs():
         """Remove and return the record with the supplied stable identity."""
         return self._series_store.remove(series_id)
 
-    def remove_record(self, series_id: UUID) -> bool:
-        """Remove one committed record and its graphics by stable identity.
+    def remove_records(self, record_ids, *, notify=True):
+        """Remove committed records by UUID and redraw exactly once.
 
-        This neutral operation is retained for the forthcoming committed-record
-        list. Pending state and active-reference session ownership are unaffected.
+        Valid UUIDs are removed as one domain command. Stale UUIDs are ignored.
+        Graphics detachment is best-effort after authoritative store removal;
+        axes are rebuilt from surviving ownership before the single redraw.
         """
-        record = self.remove_series_by_id(series_id)
-        if record is None:
-            return False
-        self._remove_snapshot_graphics(record)
-        self._hidden_committed_ids.discard(series_id)
-        active = self.current_series()
-        self._set_current_series(self.pending_record() or active)
+        requested = []
+        seen = set()
+        for value in record_ids:
+            record_id = value if isinstance(value, UUID) else UUID(str(value))
+            if record_id not in seen:
+                seen.add(record_id)
+                requested.append(record_id)
+        records = tuple(
+            record for record_id in requested
+            for record in (self._series_store.get(record_id),)
+            if record is not None
+        )
+        if not records:
+            return ()
+        removed = self._series_store.remove_many(record.id for record in records)
+        detach_errors = []
+        for record in removed:
+            try:
+                self._remove_snapshot_graphics(record)
+            except Exception as error:
+                detach_errors.append(error)
+            self._graphics_by_series_id.pop(record.id, None)
+            self._hidden_committed_ids.discard(record.id)
+        self._set_current_series(self.pending_record() or self.current_series())
         self._rebuildYDataRanges()
         self.applyYAxisPolicy()
         self._draw()
-        self._notify_committed_changed()
-        return True
+        if notify:
+            self._notify_committed_changed()
+        self._last_record_removal_errors = tuple(detach_errors)
+        return tuple(record.id for record in removed)
+
+    def remove_record(self, series_id: UUID) -> bool:
+        """Remove one committed record through the shared batch boundary."""
+        return bool(self.remove_records((series_id,)))
 
     def set_committed_visibility(self, series_id: UUID, visible: bool) -> bool:
         """Show or hide one committed record without changing record state."""

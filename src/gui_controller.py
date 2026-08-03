@@ -488,6 +488,9 @@ class GuiController(QObject):
         panel.committedVisibilityAllRequested.connect(self.setAllCommittedTimeSeriesVisibility)
         panel.committedLabelEdited.connect(self.updateCommittedTimeSeriesLabel)
         panel.committedSelectionChanged.connect(self.committedTimeSeriesSelectionChanged)
+        panel.removeSelectedCommittedRequested.connect(
+            self.removeSelectedCommittedTimeSeries
+        )
         self.ui.pb_choose_point.clicked.connect(self.activatePointSelection)
         self.ui.pb_set_reference.clicked.connect(self.activateReferencePointSelection)
         self.ui.pb_reset_reference.clicked.connect(self.resetReferencePoint)
@@ -1407,6 +1410,73 @@ class GuiController(QObject):
             self.time_series_list_state.clear()
         if panel.committed_model is not None:
             panel.refresh_committed_model()
+
+    def removeSelectedCommittedTimeSeries(self):
+        """Remove the selected committed UUIDs through the shared batch command."""
+        panel = self.ui.time_series_point_panel
+        record_ids = panel.selected_committed_ids()
+        if not record_ids:
+            return
+        self._removeCommittedTimeSeries(
+            record_ids,
+            removed_rows=panel.selected_committed_rows(),
+        )
+
+    def _removeCommittedTimeSeries(self, record_ids, *, removed_rows=()):
+        """Synchronize store, renderer, list metadata, selection, and toolbar once."""
+        panel = self.ui.time_series_point_panel
+        plotter = self.choose_point_click_handler.plot_ts
+        requested = tuple(record_ids)
+        if not requested:
+            return ()
+        smallest_row = min(removed_rows) if removed_rows else 0
+        try:
+            removed_ids = plotter.remove_records(requested, notify=False)
+        except Exception as error:
+            if self._plugin_diagnostic is not None:
+                self._plugin_diagnostic("committed_remove", error)
+            else:
+                self.msg_signal.emit(str(error), "c", 0)
+            panel.refresh_committed_model()
+            return ()
+        if not removed_ids:
+            panel.refresh_committed_model()
+            return ()
+
+        for record_id in removed_ids:
+            self.time_series_list_state.remove(record_id)
+
+        plotter._notify_committed_changed()
+        remaining_entries = self.time_series_list_state.entries()
+        surviving_requested = tuple(
+            record_id for record_id in requested
+            if record_id not in set(removed_ids)
+            and self.time_series_list_state.entry(record_id) is not None
+        )
+        if surviving_requested:
+            repaired_selection = surviving_requested
+        elif remaining_entries:
+            repaired_row = min(smallest_row, len(remaining_entries) - 1)
+            repaired_selection = (remaining_entries[repaired_row].record_id,)
+        else:
+            repaired_selection = ()
+        panel.restore_committed_selection(repaired_selection)
+        panel.refresh_removal_actions()
+        if remaining_entries:
+            panel.committed_view.setFocus()
+        self.committedTimeSeriesSelectionChanged(panel.selected_committed_ids())
+
+        errors = getattr(plotter, "_last_record_removal_errors", ())
+        if errors:
+            error = errors[0]
+            if self._plugin_diagnostic is not None:
+                self._plugin_diagnostic("committed_remove_graphics", error)
+            else:
+                self.msg_signal.emit(str(error), "c", 0)
+        count = len(removed_ids)
+        message = "Removed {} time series".format(count)
+        self.setMessageBar(message, "done", 3000)
+        return removed_ids
 
     def setCommittedTimeSeriesVisibility(self, record_id, visible):
         """Update explicit list visibility and renderer ownership by UUID."""

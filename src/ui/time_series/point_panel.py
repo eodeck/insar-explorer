@@ -60,6 +60,7 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
     committedLabelEdited = pyqtSignal(object, str)
     committedSelectionChanged = pyqtSignal(tuple)
     committedVisibilityAllRequested = pyqtSignal(bool)
+    removeSelectedCommittedRequested = pyqtSignal()
 
     ICON_SIZE = 18
     BUTTON_SIZE = 26
@@ -271,7 +272,6 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         self.committed_view.setDragDropMode(NO_DRAG_DROP)
         self.committed_view.setDragEnabled(False)
         self.committed_view.setAcceptDrops(False)
-        self.committed_view.setContextMenuPolicy(NO_CONTEXT_MENU)
         self.committed_view.setShowGrid(False)
         self.committed_view.verticalHeader().hide()
         self.committed_view.verticalHeader().setDefaultSectionSize(TIME_SERIES_ROW_HEIGHT)
@@ -291,6 +291,25 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         )
         self.committed_view.setSizePolicy(SIZE_POLICY_EXPANDING, SIZE_POLICY_EXPANDING)
         layout.addWidget(self.committed_view, 1)
+
+        removal_actions = QtWidgets.QHBoxLayout()
+        removal_actions.setContentsMargins(0, 0, 0, 0)
+        self.remove_selected_button = self._pending_action_button(
+            "pb_remove_selected_time_series",
+            ":/icons/icons/item_remove.svg",
+            "Remove selected time series",
+            "Remove selected time series",
+        )
+        self.remove_selected_button.clicked.connect(
+            self.removeSelectedCommittedRequested.emit
+        )
+        removal_actions.addWidget(self.remove_selected_button)
+        removal_actions.addStretch(1)
+        layout.addLayout(removal_actions)
+        self.committed_view.removeSelectedRequested.connect(
+            self.removeSelectedCommittedRequested.emit
+        )
+        self.refresh_removal_actions()
 
     def configure_committed_list(self, list_state, record_provider):
         """Bind the committed projection to authoritative state providers."""
@@ -330,6 +349,7 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
             CommittedTimeSeriesColumn.LABEL, self.committed_label_delegate
         )
         self.refresh_committed_visibility_header()
+        self.refresh_removal_actions()
         return self.committed_model
 
     def selected_committed_ids(self):
@@ -375,6 +395,7 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         self.committed_model.refresh()
         self.restore_committed_selection(selected)
         self.refresh_committed_visibility_header()
+        self.refresh_removal_actions()
 
     def restore_committed_selection(self, record_ids):
         """Restore whole-row selection by UUID after a model reset."""
@@ -387,7 +408,20 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
             if row is not None:
                 self.committed_view.selectRow(row)
 
+    def selected_committed_rows(self):
+        """Return selected model row numbers in ascending order."""
+        if self.committed_view.selectionModel() is None:
+            return ()
+        return tuple(sorted(index.row() for index in self.committed_view.selectionModel().selectedRows()))
+
+    def refresh_removal_actions(self):
+        """Enable committed-removal actions from authoritative model/selection state."""
+        selected = bool(self.selected_committed_ids())
+        self.remove_selected_button.setEnabled(selected)
+        self.committed_view.remove_action.setEnabled(selected)
+
     def _emit_committed_selection(self, *_):
+        self.refresh_removal_actions()
         self.committedSelectionChanged.emit(self.selected_committed_ids())
 
     def _pending_action_button(self, object_name, icon_path, tooltip, accessible_name):

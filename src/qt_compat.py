@@ -5,7 +5,7 @@ of branching on Qt binding versions or using enum aliases directly.
 """
 
 try:
-    from qgis.PyQt.QtCore import QEvent, QPoint, QRect, QSize, Qt
+    from qgis.PyQt.QtCore import QEvent, QItemSelectionModel, QPoint, QRect, QSize, Qt
     try:
         from qgis.PyQt.QtGui import QAction, QActionGroup, QGuiApplication
     except ImportError:
@@ -13,7 +13,7 @@ try:
         from qgis.PyQt.QtGui import QGuiApplication
     from qgis.PyQt.QtWidgets import QApplication, QAbstractItemView, QColorDialog, QFrame, QHeaderView, QMessageBox, QSizePolicy, QStyle, QToolButton
 except ImportError:
-    from PySide6.QtCore import QEvent, QPoint, QRect, QSize, Qt
+    from PySide6.QtCore import QEvent, QItemSelectionModel, QPoint, QRect, QSize, Qt
     from PySide6.QtGui import QAction, QActionGroup, QGuiApplication
     from PySide6.QtWidgets import QApplication, QAbstractItemView, QColorDialog, QFrame, QHeaderView, QMessageBox, QSizePolicy, QStyle, QToolButton
 
@@ -50,6 +50,8 @@ RED = _enum_value(Qt, "GlobalColor", "red")
 WAIT_CURSOR = _enum_value(Qt, "CursorShape", "WaitCursor")
 LEFT_MOUSE_BUTTON = _enum_value(Qt, "MouseButton", "LeftButton")
 KEY_SPACE = _enum_value(Qt, "Key", "Key_Space")
+KEY_DELETE = _enum_value(Qt, "Key", "Key_Delete")
+KEY_BACKSPACE = _enum_value(Qt, "Key", "Key_Backspace")
 RIGHT_MOUSE_BUTTON = _enum_value(Qt, "MouseButton", "RightButton")
 DOWN_ARROW = _enum_value(Qt, "ArrowType", "DownArrow")
 ITEM_IS_EDITABLE = _enum_value(Qt, "ItemFlag", "ItemIsEditable")
@@ -70,6 +72,7 @@ PARTIALLY_CHECKED = _enum_value(Qt, "CheckState", "PartiallyChecked")
 HORIZONTAL = _enum_value(Qt, "Orientation", "Horizontal")
 SCROLL_BAR_ALWAYS_OFF = _enum_value(Qt, "ScrollBarPolicy", "ScrollBarAlwaysOff")
 NO_CONTEXT_MENU = _enum_value(Qt, "ContextMenuPolicy", "NoContextMenu")
+CUSTOM_CONTEXT_MENU = _enum_value(Qt, "ContextMenuPolicy", "CustomContextMenu")
 DASH_LINE = _enum_value(Qt, "PenStyle", "DashLine")
 DOT_LINE = _enum_value(Qt, "PenStyle", "DotLine")
 DASH_DOT_LINE = _enum_value(Qt, "PenStyle", "DashDotLine")
@@ -83,6 +86,11 @@ PEN_STYLE_BY_NAME = {
 POPUP_WINDOW_FLAG = _enum_value(Qt, "WindowType", "Popup")
 
 
+# QItemSelectionModel enums
+CLEAR_AND_SELECT = _enum_value(QItemSelectionModel, "SelectionFlag", "ClearAndSelect")
+SELECT_ROWS_SELECTION = _enum_value(QItemSelectionModel, "SelectionFlag", "Rows")
+CURRENT_SELECTION = _enum_value(QItemSelectionModel, "SelectionFlag", "Current")
+
 # QAbstractItemView / QHeaderView enums
 NO_SELECTION = _enum_value(QAbstractItemView, "SelectionMode", "NoSelection")
 EXTENDED_SELECTION = _enum_value(QAbstractItemView, "SelectionMode", "ExtendedSelection")
@@ -90,6 +98,7 @@ SELECT_ROWS = _enum_value(QAbstractItemView, "SelectionBehavior", "SelectRows")
 EDIT_DOUBLE_CLICKED = _enum_value(QAbstractItemView, "EditTrigger", "DoubleClicked")
 EDIT_SELECTED_CLICKED = _enum_value(QAbstractItemView, "EditTrigger", "SelectedClicked")
 EDIT_KEY_PRESSED = _enum_value(QAbstractItemView, "EditTrigger", "EditKeyPressed")
+EDITING_STATE = _enum_value(QAbstractItemView, "State", "EditingState")
 NO_DRAG_DROP = _enum_value(QAbstractItemView, "DragDropMode", "NoDragDrop")
 HEADER_STRETCH = _enum_value(QHeaderView, "ResizeMode", "Stretch")
 HEADER_FIXED = _enum_value(QHeaderView, "ResizeMode", "Fixed")
@@ -125,6 +134,9 @@ MESSAGE_ICON_INFORMATION = _enum_value(QMessageBox, "Icon", "Information")
 MESSAGE_ICON_CRITICAL = _enum_value(QMessageBox, "Icon", "Critical")
 MESSAGE_ICON_WARNING = _enum_value(QMessageBox, "Icon", "Warning")
 MESSAGE_BUTTON_OK = _enum_value(QMessageBox, "StandardButton", "Ok")
+MESSAGE_BUTTON_CANCEL = _enum_value(QMessageBox, "StandardButton", "Cancel")
+MESSAGE_ROLE_DESTRUCTIVE = _enum_value(QMessageBox, "ButtonRole", "DestructiveRole")
+MESSAGE_ROLE_REJECT = _enum_value(QMessageBox, "ButtonRole", "RejectRole")
 
 # QColorDialog enums
 DONT_USE_NATIVE_DIALOG = _enum_value(QColorDialog, "ColorDialogOption", "DontUseNativeDialog")
