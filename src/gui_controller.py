@@ -1622,7 +1622,7 @@ class GuiController(QObject):
             return ()
         smallest_row = min(removed_rows) if removed_rows else 0
         try:
-            removed_ids = plotter.remove_records(requested, notify=False)
+            removal_result = plotter.remove_records(requested, notify=False)
         except Exception as error:
             if self._plugin_diagnostic is not None:
                 self._plugin_diagnostic("committed_remove", error)
@@ -1630,6 +1630,7 @@ class GuiController(QObject):
                 self.msg_signal.emit(str(error), "c", 0)
             panel.refresh_committed_model()
             return ()
+        removed_ids = removal_result.removed_record_ids
         if not removed_ids:
             panel.refresh_committed_model()
             return ()
@@ -1637,7 +1638,7 @@ class GuiController(QObject):
         for record_id in removed_ids:
             self.time_series_list_state.remove(record_id)
 
-        plotter._notify_committed_changed()
+        plotter.notify_committed_changed()
         remaining_entries = self.time_series_list_state.entries()
         surviving_requested = tuple(
             record_id for record_id in requested
@@ -1657,9 +1658,8 @@ class GuiController(QObject):
             panel.committed_view.setFocus()
         self.committedTimeSeriesSelectionChanged(panel.selected_committed_ids())
 
-        errors = getattr(plotter, "_last_record_removal_errors", ())
-        if errors:
-            error = errors[0]
+        if removal_result.graphics_errors:
+            error = removal_result.graphics_errors[0]
             if self._plugin_diagnostic is not None:
                 self._plugin_diagnostic("committed_remove_graphics", error)
             else:
