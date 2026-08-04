@@ -239,6 +239,7 @@ class InsarExplorer:
         if click_handler is not None:
             click_handler.clearReferenceFeatureHighlight()
         if controller is not None:
+            controller.clearTimeSeriesMapOverlays()
             controller.clearTimeSeriesClipboard()
             controller.removePolygonDrawingTool(reference=True)
 

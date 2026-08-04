@@ -28,6 +28,9 @@ from .qt_compat import (
 )
 from .time_series.fit_state import TimeSeriesFitState
 from .time_series.list_state import TimeSeriesListState
+from .time_series.map_overlays import (
+    CommittedSelectionOverlayController, PendingTimeSeriesMapOverlayController,
+)
 from .time_series.analysis_defaults import StickyAnalysisDefaultsCoordinator
 from .models.time_series import FitConfiguration, ReplicaConfiguration
 from .time_series.fit_style_controller import FitStyleController
@@ -154,6 +157,12 @@ class GuiController(QObject):
         plotter.pending_changed_callback = self._syncPendingTimeSeriesPanel
         plotter.committed_changed_callback = self._syncCommittedTimeSeriesList
         self.time_series_list_state = TimeSeriesListState()
+        self.time_series_map_overlays = CommittedSelectionOverlayController(
+            self.iface.mapCanvas(), diagnostic=self._plugin_diagnostic
+        )
+        self.pending_time_series_map_overlays = PendingTimeSeriesMapOverlayController(
+            self.iface.mapCanvas(), diagnostic=self._plugin_diagnostic
+        )
         self.time_series_clipboard = None
         self.ui.time_series_point_panel.configure_committed_list(
             self.time_series_list_state, plotter.committed_record
@@ -304,7 +313,10 @@ class GuiController(QObject):
             self.initializePolygonDrawingTool(reference=True)
 
     def resetTimeSeriesWorkspaceForDataset(self):
-        """Clear dataset-scoped time-series state and the session clipboard."""
+        """Clear dataset-scoped time-series state, overlays, and clipboard."""
+        self.time_series_map_overlays.clear_all()
+        self.pending_time_series_map_overlays.clear()
+        self.clear_all_pending_drawing_feedback()
         self.choose_point_click_handler.reset()
         self.clearTimeSeriesClipboard()
 
@@ -408,8 +420,8 @@ class GuiController(QObject):
             if not self.drawing_tool_reference:
                 self.drawing_tool_reference = (
                     PolygonDrawingTool(self.iface.mapCanvas(), callback=self.polygonDrawnCallback,
-                                       start_callback=self.choose_point_click_handler.clearReferenceFeatureHighlight))
-                self.drawing_tool_reference.polygon_marker.setStyle(color=(255, 100, 100, 80))
+                                       start_callback=self.choose_point_click_handler.clearReferenceFeatureHighlight,
+                                       role="reference"))
             self.iface.mapCanvas().setMapTool(self.drawing_tool_reference)
 
     def deactivatePolygonDrawingTool(self, reference=False):
@@ -426,6 +438,21 @@ class GuiController(QObject):
         elif reference and self.drawing_tool_reference:
             self.drawing_tool_reference.clear()
             self.drawing_tool_reference = None
+
+    def clear_target_drawing_feedback(self) -> None:
+        """Clear temporary target-polygon feedback without clearing target state."""
+        if self.drawing_tool is not None:
+            self.drawing_tool.clear_feedback()
+
+    def clear_reference_drawing_feedback(self) -> None:
+        """Clear temporary reference-polygon feedback without clearing reference state."""
+        if self.drawing_tool_reference is not None:
+            self.drawing_tool_reference.clear_feedback()
+
+    def clear_all_pending_drawing_feedback(self) -> None:
+        """Clear all temporary polygon-tool feedback safely and idempotently."""
+        self.clear_target_drawing_feedback()
+        self.clear_reference_drawing_feedback()
 
     def polygonDrawnCallback(self, polygon):
         self.choose_point_click_handler.choosePolygonDrawn(polygon=polygon,
@@ -1434,14 +1461,27 @@ class GuiController(QObject):
         self.time_series_style_popup.raise_()
 
     def _syncPendingTimeSeriesPanel(self, record):
-        """Project pending session state into the right-side panel."""
+        """Project pending panel and complete pending map geometry from the record."""
         panel = self.ui.time_series_point_panel
         if record is None:
             panel.clear_pending()
+            self.pending_time_series_map_overlays.clear()
+            self.choose_point_click_handler.clearFeatureHighlight()
+            self.choose_point_click_handler.clearReferenceFeatureHighlight()
+            self.clear_all_pending_drawing_feedback()
+            self.time_series_map_overlays.set_pending_active(False)
             self.committedTimeSeriesSelectionChanged(panel.selected_committed_ids())
-        else:
-            panel.show_pending(record)
-            self.ui.time_series_toolbar.setEnabled(True)
+            return
+
+        panel.show_pending(record)
+        # Stable pending presentation is authoritative from the complete record
+        # snapshot, not from whichever point/polygon tool ran most recently.
+        self.pending_time_series_map_overlays.project_record(record)
+        self.choose_point_click_handler.clearFeatureHighlight()
+        self.choose_point_click_handler.clearReferenceFeatureHighlight()
+        self.clear_all_pending_drawing_feedback()
+        self.time_series_map_overlays.set_pending_active(True)
+        self.ui.time_series_toolbar.setEnabled(True)
 
     def addPendingTimeSeries(self):
         """Atomically commit pending ownership and create committed-list metadata."""
@@ -1468,8 +1508,10 @@ class GuiController(QObject):
     def _syncCommittedTimeSeriesList(self, records):
         """Refresh list projection and clear session metadata on full store reset."""
         panel = self.ui.time_series_point_panel
-        if not records and self.time_series_list_state.entries():
-            self.time_series_list_state.clear()
+        if not records:
+            self.time_series_map_overlays.clear_committed()
+            if self.time_series_list_state.entries():
+                self.time_series_list_state.clear()
         if panel.committed_model is not None:
             panel.refresh_committed_model()
 
@@ -1622,7 +1664,8 @@ class GuiController(QObject):
             return ()
         smallest_row = min(removed_rows) if removed_rows else 0
         try:
-            removal_result = plotter.remove_records(requested, notify=False)
+            result = plotter.remove_records(requested, notify=False)
+            removed_ids = result.removed_record_ids
         except Exception as error:
             if self._plugin_diagnostic is not None:
                 self._plugin_diagnostic("committed_remove", error)
@@ -1630,12 +1673,12 @@ class GuiController(QObject):
                 self.msg_signal.emit(str(error), "c", 0)
             panel.refresh_committed_model()
             return ()
-        removed_ids = removal_result.removed_record_ids
         if not removed_ids:
             panel.refresh_committed_model()
             return ()
 
         for record_id in removed_ids:
+            self.time_series_map_overlays.hide_record(record_id)
             self.time_series_list_state.remove(record_id)
 
         plotter.notify_committed_changed()
@@ -1658,8 +1701,8 @@ class GuiController(QObject):
             panel.committed_view.setFocus()
         self.committedTimeSeriesSelectionChanged(panel.selected_committed_ids())
 
-        if removal_result.graphics_errors:
-            error = removal_result.graphics_errors[0]
+        if result.graphics_errors:
+            error = result.graphics_errors[0]
             if self._plugin_diagnostic is not None:
                 self._plugin_diagnostic("committed_remove_graphics", error)
             else:
@@ -1704,8 +1747,11 @@ class GuiController(QObject):
         self.ui.time_series_point_panel.refresh_committed_model()
 
     def committedTimeSeriesSelectionChanged(self, record_ids):
-        """Resolve one selected committed UUID; never fall back to row zero or latest."""
+        """Project selected UUIDs to map overlays and the single-record toolbar."""
         plotter = self.choose_point_click_handler.plot_ts
+        self.time_series_map_overlays.update_selection(
+            record_ids, plotter.committed_record
+        )
         toolbar = self.ui.time_series_toolbar
         if plotter.pending_record() is not None:
             toolbar.setEnabled(True)
@@ -2517,8 +2563,14 @@ class GuiController(QObject):
             f"Replica pairs set to {self.time_series_replica_pair_count}.", "i", 0
         )
 
+    def clearTimeSeriesMapOverlays(self):
+        """Release all stable pending and committed map indicators."""
+        self.pending_time_series_map_overlays.clear()
+        self.time_series_map_overlays.clear_all()
+
     def handleUiClose(self, visible):
         if not visible:
+            self.clearTimeSeriesMapOverlays()
             self.choose_point_click_handler.clearFeatureHighlight()
             self.choose_point_click_handler.clearReferenceFeatureHighlight()
             self.removeClickTool()

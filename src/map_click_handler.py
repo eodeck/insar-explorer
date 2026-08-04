@@ -3,12 +3,15 @@ from qgis.PyQt.QtWidgets import QApplication
 from qgis.core import QgsPointXY, QgsGeometry, QgsMapLayer, QgsRectangle, QgsFeatureRequest, QgsSettings, Qgis
 from qgis.gui import QgsHighlight
 from qgis.core import QgsProject, QgsCoordinateTransform, QgsCoordinateReferenceSystem
-from qgis.PyQt.QtGui import QCursor
+from qgis.PyQt.QtGui import QColor, QCursor
 
 from .bootstrap import ensure_time_series_services
 from .time_series.target_session import CanonicalTargetSnapshot
 from .time_series.reference_session import ActiveReference
-from .qt_compat import RED, WAIT_CURSOR, YELLOW
+from .qt_compat import WAIT_CURSOR
+from .time_series.map_indicator_style import (
+    semantic_indicator_color,
+)
 
 import numpy as np
 
@@ -190,7 +193,11 @@ class MapClickHandler:
             layer = self.iface.activeLayer()
         self.clearFeatureHighlight()
         self.highlight = QgsHighlight(self.iface.mapCanvas(), geometry, layer)
-        self.highlight.setColor(YELLOW)
+        color = semantic_indicator_color("target")
+        fill = QColor(0, 0, 0, 0)
+        self.highlight.setColor(color)
+        if hasattr(self.highlight, "setFillColor"):
+            self.highlight.setFillColor(fill)
         self.highlight.show()
 
     def highlightSelectedReferenceFeature(self, geometry: QgsGeometry, layer: QgsMapLayer = None) -> None:
@@ -198,7 +205,11 @@ class MapClickHandler:
             layer = self.iface.activeLayer()
         self.clearReferenceFeatureHighlight()
         self.reference_highlight = QgsHighlight(self.iface.mapCanvas(), geometry, layer)
-        self.reference_highlight.setColor(RED)
+        color = semantic_indicator_color("reference")
+        fill = QColor(0, 0, 0, 0)
+        self.reference_highlight.setColor(color)
+        if hasattr(self.reference_highlight, "setFillColor"):
+            self.reference_highlight.setFillColor(fill)
         self.reference_highlight.show()
 
     def clearFeatureHighlight(self) -> None:
