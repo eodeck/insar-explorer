@@ -46,10 +46,15 @@ class ResidualStyle:
 
     def asParams(self):
         return {
-            "marker": self.marker, "marker color": self.marker_color,
-            "marker edge color": self.marker_edge_color, "marker size": self.marker_size, "marker alpha": self.marker_alpha,
-            "line style": self.line_style, "line color": self.line_color,
-            "line width": self.line_width, "line alpha": self.line_alpha,
+            "marker": self.marker,
+            "marker color": self.marker_color,
+            "marker edge color": self.marker_edge_color,
+            "marker size": self.marker_size,
+            "marker alpha": self.marker_alpha,
+            "line style": self.line_style,
+            "line color": self.line_color,
+            "line width": self.line_width,
+            "line alpha": self.line_alpha,
         }
 
 
@@ -89,18 +94,27 @@ class ResidualStyleController:
 
     def randomizeColor(self, snapshots):
         from random import randint
-        color = "#{:02x}{:02x}{:02x}".format(randint(0,255), randint(0,255), randint(0,255))
+        color = "#{:02x}{:02x}{:02x}".format(randint(0, 255), randint(0, 255), randint(0, 255))
         return self.applyValues(snapshots, {"marker color": color, "line color": color})
 
     @staticmethod
     def _normalize(key, value):
-        if key == "marker": return normalize_residual_marker(value, "o")
-        if key == "marker size": return normalize_number(value, RESIDUAL_MARKER_SIZE_RANGE, 5.0)
-        if key == "line style": return normalize_residual_line_style(value, "")
-        if key == "line width": return normalize_number(value, RESIDUAL_LINE_WIDTH_RANGE, 1.0)
-        if key == "marker color": return normalize_color(value, RESIDUAL_DEFAULT_COLOR)
-        if key == "marker edge color": return normalize_color(value, "black")
-        if key == "line color": return normalize_color(value, RESIDUAL_DEFAULT_COLOR)
-        if key == "marker alpha": return normalize_alpha(value, 0.8)
-        if key == "line alpha": return normalize_alpha(value, 0.8)
+        if key == "marker":
+            return normalize_residual_marker(value, "o")
+        if key == "marker size":
+            return normalize_number(value, RESIDUAL_MARKER_SIZE_RANGE, 5.0)
+        if key == "line style":
+            return normalize_residual_line_style(value, "")
+        if key == "line width":
+            return normalize_number(value, RESIDUAL_LINE_WIDTH_RANGE, 1.0)
+        if key == "marker color":
+            return normalize_color(value, RESIDUAL_DEFAULT_COLOR)
+        if key == "marker edge color":
+            return normalize_color(value, "black")
+        if key == "line color":
+            return normalize_color(value, RESIDUAL_DEFAULT_COLOR)
+        if key == "marker alpha":
+            return normalize_alpha(value, 0.8)
+        if key == "line alpha":
+            return normalize_alpha(value, 0.8)
         return value

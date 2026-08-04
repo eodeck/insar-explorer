@@ -53,6 +53,7 @@ def create_time_series_services(plugin_dir, diagnostic=None):
         target_session=ActiveTargetSession(),
     )
 
+
 def _services_are_complete(services):
     """Return whether an object exposes the complete service bundle contract."""
     return all(
@@ -89,4 +90,3 @@ def ensure_time_series_services(plugin):
     services = create_time_series_services(plugin_dir, diagnostic=diagnostic)
     plugin.time_series_services = services
     return services
-

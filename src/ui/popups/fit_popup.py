@@ -4,7 +4,7 @@ from qgis.PyQt.QtCore import QSize, pyqtSignal
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import (
     QButtonGroup, QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout, QGridLayout,
-    QGroupBox, QHBoxLayout, QPushButton, QRadioButton, QSpinBox, QTabWidget,
+    QGroupBox, QHBoxLayout, QRadioButton, QSpinBox, QTabWidget,
     QToolButton,
     QVBoxLayout, QWidget,
 )
@@ -350,7 +350,6 @@ class FitPopup(QWidget):
             self.residual_line_width, self.residual_line_opacity,
         )
         self.tabs.addTab(tab, "Residual style")
-
 
     def setFitStyleAvailable(self, available):
         """Toggle Fit appearance contents while keeping its tab selectable."""

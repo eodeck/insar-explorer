@@ -1,7 +1,7 @@
 """Zero-or-one-row projection model for the pending time-series record."""
 
 from qgis.PyQt import QtGui, QtWidgets
-from qgis.PyQt.QtCore import QAbstractTableModel, QModelIndex, QSize, pyqtSignal
+from qgis.PyQt.QtCore import QAbstractTableModel, QModelIndex, pyqtSignal
 
 from ...qt_compat import (
     ALIGN_CENTER,
@@ -48,7 +48,6 @@ class PendingTimeSeriesModel(QAbstractTableModel):
         TimeSeriesColumn.TARGET: "Target type",
         TimeSeriesColumn.REFERENCE: "Reference type",
     }
-
 
     def __init__(self, parent=None):
         """Create an empty projection model."""
@@ -196,4 +195,3 @@ class PendingTimeSeriesModel(QAbstractTableModel):
             return True
         self.labelEdited.emit(normalized)
         return True
-

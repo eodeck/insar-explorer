@@ -189,7 +189,6 @@ def fitExponential(x, y):
     return _fitExponentialPrepared(x_fit, y_fit)
 
 
-
 def _fitLogarithmicPrepared(x_fit, y_fit):
     """Fit already prepared, normalized logarithmic inputs."""
     finite_count = len(x_fit)

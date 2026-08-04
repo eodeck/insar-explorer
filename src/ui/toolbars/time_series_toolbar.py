@@ -3,7 +3,6 @@
 from qgis.PyQt.QtCore import QSize, pyqtSignal
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import (
-    QInputDialog,
     QMenu,
     QToolBar,
     QToolButton,
@@ -382,14 +381,16 @@ class TimeSeriesToolbar(QToolBar):
         self.x_axis_button.setWhatsThis(tooltip)
         self.x_axis_button.setAccessibleName(f"Selected X-axis mode: {action.text()}")
 
-    def setSelectedYAxisMode(self, mode, lower=None, upper=None, residual_lower=None, residual_upper=None, residual_active=True, custom_view=False):
+    def setSelectedYAxisMode(self, mode, lower=None, upper=None, residual_lower=None, residual_upper=None,
+                             residual_active=True, custom_view=False):
         """Update the selected Y-axis mode without emitting a user-change signal."""
         self.refreshYAxisPresentation(
             mode, lower, upper, residual_lower, residual_upper, residual_active,
             custom_view,
         )
 
-    def refreshYAxisPresentation(self, mode, lower=None, upper=None, residual_lower=None, residual_upper=None, residual_active=True, custom_view=False):
+    def refreshYAxisPresentation(self, mode, lower=None, upper=None, residual_lower=None, residual_upper=None,
+                                 residual_active=True, custom_view=False):
         """Refresh checked policy and aggregate visible viewport presentation."""
         action = self.y_axis_actions[mode]
         if mode == "manual":

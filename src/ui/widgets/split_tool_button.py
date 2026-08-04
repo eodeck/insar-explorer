@@ -324,6 +324,7 @@ class SplitToolButton(QWidget):
         if not self.primary_button.isEnabled() and not self.secondary_button.isEnabled():
             self._setUnifiedHover(False)
 
+
 class SplitButtonPopupHoverReconciler(QObject):
     """Reconcile one split button after an associated popup disappears."""
 
@@ -337,4 +338,3 @@ class SplitButtonPopupHoverReconciler(QObject):
         if event.type() in (EVENT_HIDE, EVENT_CLOSE):
             QTimer.singleShot(0, self._split_button.reconcileHoverFromCursor)
         return super().eventFilter(watched, event)
-

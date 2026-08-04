@@ -4,7 +4,7 @@ from copy import deepcopy
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime
-from typing import Any, Callable, ClassVar, Dict, List, Optional
+from typing import Callable, ClassVar, List, Optional
 
 from ..style_schema import (
     FIT_LINE_STYLE_DEFAULT, FIT_LINE_WIDTH_DEFAULT, FIT_LINE_WIDTH_RANGE,
@@ -570,7 +570,6 @@ class TimeSeriesSettingsModel:
         else:
             self.notify(change)
         return change
-
 
     def notify(self, change):
         """Notify listeners once for one completed logical update."""

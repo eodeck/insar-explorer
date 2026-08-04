@@ -151,7 +151,6 @@ class ManualYAxisPopup(QFrame):
         self._editors["residual"]["use_current_view"].setEnabled(active)
         self.residual_message.setVisible(not active)
 
-
     def setCurrentView(self, axis_name, lower, upper):
         """Populate one tab from its visible Y-range without previewing or persisting."""
         if axis_name not in self._editors:
@@ -179,7 +178,6 @@ class ManualYAxisPopup(QFrame):
             None if controls[name][0].isChecked() else float(controls[name][1].value())
             for name in ("lower", "upper")
         )
-
 
     def retainedBounds(self, axis_name):
         """Return both numeric editor drafts regardless of Auto checkbox state."""

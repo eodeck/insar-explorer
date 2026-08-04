@@ -9,6 +9,7 @@ from ..persistence.qsettings import QSettingsUserPreferencesRepository
 # Transitional forwarding alias for downstream imports. New code uses the protocol.
 TimeSeriesSettingsPersistence = QSettingsUserPreferencesRepository
 
+
 def build_legacy_plot_params(model, existing=None):
     """Build the temporary legacy ``PlotTs.parms`` view from runtime settings.
 

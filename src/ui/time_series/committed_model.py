@@ -108,7 +108,9 @@ class CommittedTimeSeriesModel(QAbstractTableModel):
             if role == TEXT_ALIGNMENT_ROLE:
                 return ALIGN_LEFT | ALIGN_VCENTER
             if not label and role == FONT_ROLE:
-                font = QtGui.QFont(); font.setItalic(True); return font
+                font = QtGui.QFont()
+                font.setItalic(True)
+                return font
             if not label and role == FOREGROUND_ROLE:
                 return QtGui.QBrush(placeholder_colour())
             return None
