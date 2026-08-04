@@ -98,6 +98,7 @@ def normalize_number(value, limits, fallback):
         return float(fallback)
     return max(float(limits[0]), min(float(limits[1]), number))
 
+
 OPACITY_PERCENT_MIN = 0
 OPACITY_PERCENT_MAX = 100
 OPACITY_PERCENT_STEP = 5

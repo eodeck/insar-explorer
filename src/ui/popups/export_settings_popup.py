@@ -1,6 +1,6 @@
 """Compact popup for persistent plot-export defaults."""
 
-from qgis.PyQt.QtCore import Qt, pyqtSignal
+from qgis.PyQt.QtCore import pyqtSignal
 from qgis.PyQt.QtWidgets import (
     QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout, QHBoxLayout, QLabel,
     QVBoxLayout, QWidget,
@@ -24,7 +24,11 @@ class ExportSettingsPopup(QWidget):
         super().__init__(parent)
         self.setObjectName("exportSettingsPopup")
         self.setWindowTitle("Export settings")
-        window_type = getattr(__import__('qgis.PyQt.QtCore', fromlist=['Qt']).Qt, 'WindowType', __import__('qgis.PyQt.QtCore', fromlist=['Qt']).Qt)
+        window_type = getattr(
+            __import__('qgis.PyQt.QtCore', fromlist=['Qt']).Qt,
+            'WindowType',
+            __import__('qgis.PyQt.QtCore', fromlist=['Qt']).Qt
+        )
         self.setWindowFlags(window_type.Popup)
 
         layout = QVBoxLayout(self)

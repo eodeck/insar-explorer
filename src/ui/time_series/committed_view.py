@@ -36,7 +36,7 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
         self.remove_action.setEnabled(False)
         self.remove_action.triggered.connect(self._request_selected_removal)
         from ...time_series.copy_paste import CopyPasteCategory
-        self.copy_settings_action = QAction("Copy style, Fit and Replica", self)
+        self.copy_settings_action = QAction("Copy Style, Fit and Replica", self)
         self.copy_settings_action.setObjectName("action_copy_time_series_settings")
         self.copy_settings_action.setToolTip(
             "Copy style, Fit and Replica from the selected time series"

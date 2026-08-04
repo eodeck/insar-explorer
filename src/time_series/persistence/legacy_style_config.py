@@ -141,15 +141,24 @@ class TimeSeriesStyleConfig:
         return dict(values)
 
     def normalize_residual_property(self, key, value):
-        if key == "marker": return normalize_residual_marker(value, "o")
-        if key == "marker size": return normalize_number(value, RESIDUAL_MARKER_SIZE_RANGE, 5.0)
-        if key == "line style": return normalize_residual_line_style(value, "")
-        if key == "line width": return normalize_number(value, RESIDUAL_LINE_WIDTH_RANGE, 1.0)
-        if key == "marker color": return normalize_color(value, RESIDUAL_DEFAULT_COLOR)
-        if key == "marker edge color": return normalize_color(value, "black")
-        if key == "line color": return normalize_color(value, RESIDUAL_DEFAULT_COLOR)
-        if key == "marker alpha": return normalize_number(value, (0.0, 1.0), 0.8)
-        if key == "line alpha": return normalize_number(value, (0.0, 1.0), 0.8)
+        if key == "marker":
+            return normalize_residual_marker(value, "o")
+        if key == "marker size":
+            return normalize_number(value, RESIDUAL_MARKER_SIZE_RANGE, 5.0)
+        if key == "line style":
+            return normalize_residual_line_style(value, "")
+        if key == "line width":
+            return normalize_number(value, RESIDUAL_LINE_WIDTH_RANGE, 1.0)
+        if key == "marker color":
+            return normalize_color(value, RESIDUAL_DEFAULT_COLOR)
+        if key == "marker edge color":
+            return normalize_color(value, "black")
+        if key == "line color":
+            return normalize_color(value, RESIDUAL_DEFAULT_COLOR)
+        if key == "marker alpha":
+            return normalize_number(value, (0.0, 1.0), 0.8)
+        if key == "line alpha":
+            return normalize_number(value, (0.0, 1.0), 0.8)
         return value
 
     def normalize_fit_property(self, key, value):

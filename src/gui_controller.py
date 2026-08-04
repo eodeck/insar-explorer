@@ -1,6 +1,5 @@
 import os
 from dataclasses import replace
-from datetime import datetime
 
 from qgis.gui import QgsMapToolEmitPoint
 from qgis.PyQt.QtWidgets import QFileDialog, QMenu, QComboBox
@@ -30,7 +29,7 @@ from .qt_compat import (
 from .time_series.fit_state import TimeSeriesFitState
 from .time_series.list_state import TimeSeriesListState
 from .time_series.analysis_defaults import StickyAnalysisDefaultsCoordinator
-from .models.time_series import FitConfiguration, ReplicaConfiguration, TimeSeriesAnalysis
+from .models.time_series import FitConfiguration, ReplicaConfiguration
 from .time_series.fit_style_controller import FitStyleController
 from .time_series.ensemble_style import EnsembleStyleController
 from .time_series.residual_style_controller import ResidualStyleController
@@ -71,7 +70,9 @@ class GuiController(QObject):
     @time_series_manual_y_lower.setter
     def time_series_manual_y_lower(self, value):
         axis = self.time_series_settings.y_axis
-        self.time_series_settings.replace_domain("y_axis", replace(axis, series_manual=replace(axis.series_manual, lower=value)))
+        self.time_series_settings.replace_domain(
+            "y_axis", replace(axis, series_manual=replace(axis.series_manual, lower=value))
+        )
 
     @property
     def time_series_manual_y_upper(self):
@@ -80,7 +81,9 @@ class GuiController(QObject):
     @time_series_manual_y_upper.setter
     def time_series_manual_y_upper(self, value):
         axis = self.time_series_settings.y_axis
-        self.time_series_settings.replace_domain("y_axis", replace(axis, series_manual=replace(axis.series_manual, upper=value)))
+        self.time_series_settings.replace_domain(
+            "y_axis", replace(axis, series_manual=replace(axis.series_manual, upper=value))
+        )
 
     @property
     def residual_manual_y_lower(self):
@@ -89,7 +92,9 @@ class GuiController(QObject):
     @residual_manual_y_lower.setter
     def residual_manual_y_lower(self, value):
         axis = self.time_series_settings.y_axis
-        self.time_series_settings.replace_domain("y_axis", replace(axis, residual_manual=replace(axis.residual_manual, lower=value)))
+        self.time_series_settings.replace_domain(
+            "y_axis", replace(axis, residual_manual=replace(axis.residual_manual, lower=value))
+        )
 
     @property
     def residual_manual_y_upper(self):
@@ -98,7 +103,9 @@ class GuiController(QObject):
     @residual_manual_y_upper.setter
     def residual_manual_y_upper(self, value):
         axis = self.time_series_settings.y_axis
-        self.time_series_settings.replace_domain("y_axis", replace(axis, residual_manual=replace(axis.residual_manual, upper=value)))
+        self.time_series_settings.replace_domain(
+            "y_axis", replace(axis, residual_manual=replace(axis.residual_manual, upper=value))
+        )
 
     @property
     def time_series_replica_enabled(self):
@@ -541,18 +548,42 @@ class GuiController(QObject):
         fit_popup.modelChanged.connect(toolbar.selectFitModel)
         fit_popup.seasonalEnabledChanged.connect(toolbar.seasonalEnabledChanged.emit)
         fit_popup.residualEnabledChanged.connect(toolbar.residualEnabledChanged.emit)
-        fit_popup.fitLineTypeChanged.connect(lambda value: self._applySelectedFitStyle("line_type", value))
-        fit_popup.fitLineColorChanged.connect(lambda value: self._applySelectedFitStyle("line_color", value))
-        fit_popup.fitLineWidthChanged.connect(lambda value: self._applySelectedFitStyle("line_width", value))
-        fit_popup.fitOpacityChanged.connect(lambda value: self._applySelectedFitStyle("line_opacity", percent_to_alpha(value)))
-        fit_popup.residualMarkerTypeChanged.connect(lambda value: self._applySelectedResidualStyle("marker_type", value))
-        fit_popup.residualMarkerColorChanged.connect(lambda value: self._applySelectedResidualStyle("marker_color", value))
-        fit_popup.residualMarkerSizeChanged.connect(lambda value: self._applySelectedResidualStyle("marker_size", value))
-        fit_popup.residualMarkerOpacityChanged.connect(lambda value: self._applySelectedResidualStyle("marker_opacity", percent_to_alpha(value)))
-        fit_popup.residualLineTypeChanged.connect(lambda value: self._applySelectedResidualStyle("line_type", value))
-        fit_popup.residualLineColorChanged.connect(lambda value: self._applySelectedResidualStyle("line_color", value))
-        fit_popup.residualLineWidthChanged.connect(lambda value: self._applySelectedResidualStyle("line_width", value))
-        fit_popup.residualLineOpacityChanged.connect(lambda value: self._applySelectedResidualStyle("line_opacity", percent_to_alpha(value)))
+        fit_popup.fitLineTypeChanged.connect(
+            lambda value: self._applySelectedFitStyle("line_type", value)
+        )
+        fit_popup.fitLineColorChanged.connect(
+            lambda value: self._applySelectedFitStyle("line_color", value)
+        )
+        fit_popup.fitLineWidthChanged.connect(
+            lambda value: self._applySelectedFitStyle("line_width", value)
+        )
+        fit_popup.fitOpacityChanged.connect(
+            lambda value: self._applySelectedFitStyle("line_opacity", percent_to_alpha(value))
+        )
+        fit_popup.residualMarkerTypeChanged.connect(
+            lambda value: self._applySelectedResidualStyle("marker_type", value)
+        )
+        fit_popup.residualMarkerColorChanged.connect(
+            lambda value: self._applySelectedResidualStyle("marker_color", value)
+        )
+        fit_popup.residualMarkerSizeChanged.connect(
+            lambda value: self._applySelectedResidualStyle("marker_size", value)
+        )
+        fit_popup.residualMarkerOpacityChanged.connect(
+            lambda value: self._applySelectedResidualStyle("marker_opacity", percent_to_alpha(value))
+        )
+        fit_popup.residualLineTypeChanged.connect(
+            lambda value: self._applySelectedResidualStyle("line_type", value)
+        )
+        fit_popup.residualLineColorChanged.connect(
+            lambda value: self._applySelectedResidualStyle("line_color", value)
+        )
+        fit_popup.residualLineWidthChanged.connect(
+            lambda value: self._applySelectedResidualStyle("line_width", value)
+        )
+        fit_popup.residualLineOpacityChanged.connect(
+            lambda value: self._applySelectedResidualStyle("line_opacity", percent_to_alpha(value))
+        )
         fit_popup.randomizeResidualColorRequested.connect(self.randomizeSelectedResidualColor)
         fit_popup.applySavedFitDefaultRequested.connect(self.restoreFitStyleDefaults)
         fit_popup.applyFactoryFitDefaultRequested.connect(self.applyFactoryFitStyleDefaults)
@@ -561,23 +592,43 @@ class GuiController(QObject):
         fit_popup.applyFactoryResidualDefaultRequested.connect(self.applyFactoryResidualStyleDefaults)
         fit_popup.saveCurrentResidualAsDefaultRequested.connect(self.setCurrentResidualStyleAsDefault)
         popup = self.time_series_style_popup
-        popup.markerTypeChanged.connect(lambda value: self._applySelectedSeriesStyle("marker_type", value))
-        popup.markerColorChanged.connect(lambda value: self._applySelectedSeriesStyle("marker_color", value))
-        popup.markerSizeChanged.connect(lambda value: self._applySelectedSeriesStyle("marker_size", value))
-        popup.markerOpacityChanged.connect(lambda value: self._applySelectedSeriesStyle("marker_opacity", percent_to_alpha(value)))
+        popup.markerTypeChanged.connect(
+            lambda value: self._applySelectedSeriesStyle("marker_type", value)
+        )
+        popup.markerColorChanged.connect(
+            lambda value: self._applySelectedSeriesStyle("marker_color", value)
+        )
+        popup.markerSizeChanged.connect(
+            lambda value: self._applySelectedSeriesStyle("marker_size", value)
+        )
+        popup.markerOpacityChanged.connect(
+            lambda value: self._applySelectedSeriesStyle("marker_opacity", percent_to_alpha(value))
+        )
         popup.lineTypeChanged.connect(lambda value: self._applySelectedSeriesStyle("line_type", value))
         popup.lineColorChanged.connect(lambda value: self._applySelectedSeriesStyle("line_color", value))
         popup.lineWidthChanged.connect(lambda value: self._applySelectedSeriesStyle("line_width", value))
-        popup.lineOpacityChanged.connect(lambda value: self._applySelectedSeriesStyle("line_opacity", percent_to_alpha(value)))
+        popup.lineOpacityChanged.connect(
+            lambda value: self._applySelectedSeriesStyle("line_opacity", percent_to_alpha(value))
+        )
         popup.randomizeColorRequested.connect(self.randomizeSelectedTimeSeriesColor)
         popup.applySavedSeriesDefaultRequested.connect(self.restoreSeriesStyleDefaults)
         popup.applyFactorySeriesDefaultRequested.connect(self.applyFactorySeriesStyleDefaults)
         popup.saveCurrentSeriesAsDefaultRequested.connect(self.setCurrentSeriesStyleAsDefault)
-        popup.ensembleMemberColorChanged.connect(lambda value: self._applySelectedEnsembleStyle("member_color", value))
-        popup.ensembleMemberWidthChanged.connect(lambda value: self._applySelectedEnsembleStyle("member_width", value))
-        popup.ensembleMemberOpacityChanged.connect(lambda value: self._applySelectedEnsembleStyle("member_opacity", percent_to_alpha(value)))
-        popup.ensembleFillColorChanged.connect(lambda value: self._applySelectedEnsembleStyle("fill_color", value))
-        popup.ensembleFillOpacityChanged.connect(lambda value: self._applySelectedEnsembleStyle("fill_opacity", percent_to_alpha(value)))
+        popup.ensembleMemberColorChanged.connect(
+            lambda value: self._applySelectedEnsembleStyle("member_color", value)
+        )
+        popup.ensembleMemberWidthChanged.connect(
+            lambda value: self._applySelectedEnsembleStyle("member_width", value)
+        )
+        popup.ensembleMemberOpacityChanged.connect(
+            lambda value: self._applySelectedEnsembleStyle("member_opacity", percent_to_alpha(value))
+        )
+        popup.ensembleFillColorChanged.connect(
+            lambda value: self._applySelectedEnsembleStyle("fill_color", value)
+        )
+        popup.ensembleFillOpacityChanged.connect(
+            lambda value: self._applySelectedEnsembleStyle("fill_opacity", percent_to_alpha(value))
+        )
         popup.applySavedEnsembleDefaultRequested.connect(self.restoreEnsembleStyleDefaults)
         popup.applyFactoryEnsembleDefaultRequested.connect(self.applyFactoryEnsembleStyleDefaults)
         popup.saveCurrentEnsembleAsDefaultRequested.connect(self.setCurrentEnsembleStyleAsDefault)
@@ -1006,7 +1057,6 @@ class GuiController(QObject):
                 )
         self._refreshTimeSeriesStylePopup()
 
-
     def _applySelectedEnsembleStyle(self, property_name, value):
         """Apply one Ensemble property to applicable selected snapshots and redraw once."""
         snapshots = self._selectedTimeSeriesSnapshots()
@@ -1049,7 +1099,6 @@ class GuiController(QObject):
             if self.timeSeriesStyleAvailability(snapshots).residual_available:
                 self.choose_point_click_handler.plot_ts.rerenderTimeSeriesSnapshots(changed)
         self._refreshTimeSeriesStylePopup()
-
 
     def restoreEnsembleStyleDefaults(self):
         """Apply the persisted ensemble defaults to the selected ensemble series."""
@@ -1227,8 +1276,6 @@ class GuiController(QObject):
             self.fit_popup.setResidualStyle(self._currentResidualStyle())
             popup.setMixedProperties(set())
 
-
-
     def syncAppearancePopup(self):
         """Refresh the Appearance popup from the authoritative runtime model."""
         self.appearance_popup.setSettings(
@@ -1369,7 +1416,6 @@ class GuiController(QObject):
 
     def showTimeSeriesStylePopup(self):
         """Open the style popup anchored below the Plot style toolbar action."""
-        plotter = self.choose_point_click_handler.plot_ts
         self._refreshTimeSeriesStylePopup()
         toolbar = self.ui.time_series_toolbar
         action_widget = toolbar.widgetForAction(toolbar.plot_style_action)
@@ -1833,7 +1879,9 @@ class GuiController(QObject):
         self.manual_x_axis_popup.move(
             screen_aware_popup_position(anchor_rect, self.manual_x_axis_popup.sizeHint(), geometry)
         )
-        self.manual_x_axis_popup.show(); self.manual_x_axis_popup.raise_(); self.manual_x_axis_popup.activateWindow()
+        self.manual_x_axis_popup.show()
+        self.manual_x_axis_popup.raise_()
+        self.manual_x_axis_popup.activateWindow()
 
     def _draftXAxisState(self, start_policy, end_policy, manual_start, manual_end):
         """Build and validate one per-bound X-axis draft against current data."""
@@ -2071,8 +2119,9 @@ class GuiController(QObject):
         anchor = QRect(top_left, button.size())
         geometry = available_screen_geometry(top_left, popup)
         popup.move(screen_aware_popup_position(anchor, popup.sizeHint(), geometry))
-        popup.show(); popup.raise_(); popup.activateWindow()
-
+        popup.show()
+        popup.raise_()
+        popup.activateWindow()
 
     def captureCurrentManualYAxisView(self, axis_name):
         """Commit one visible Y viewport as Manual without touching its sibling."""
@@ -2192,7 +2241,6 @@ class GuiController(QObject):
     def _loadReplicaPairCount(self):
         """Load the symmetric Replica pair count from the canonical JSON config."""
         return self.choose_point_click_handler.plot_ts.settings_model.replica.pair_count
-
 
     def _applicableReplicaTargets(self):
         """Return current plotted targets eligible for Replica rerendering."""
@@ -2566,7 +2614,6 @@ class GuiController(QObject):
         for layer in selected_layers:
             self.ui.lw_layers.takeItem(self.ui.lw_layers.row(layer))
 
-
     def _initialExportDirectory(self):
         """Return the initial directory used by plot and data export dialogs."""
         saved_path = self.settings.value('insar_explorer/export_directory', '', type=str)
@@ -2594,7 +2641,6 @@ class GuiController(QObject):
             return
         self.last_save_path = export_dir
         self.settings.setValue('insar_explorer/export_directory', export_dir)
-
 
     @staticmethod
     def _extensionFromFilter(selected_filter):

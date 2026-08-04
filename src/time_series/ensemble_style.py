@@ -43,7 +43,9 @@ class EnsembleStyle:
         values = params.get("time series plot", {}) if isinstance(params, dict) else {}
         return cls(
             member_line_color=normalize_color(values.get(ENSEMBLE_MEMBER_LINE_COLOR), "gray"),
-            member_line_width=normalize_number(values.get(ENSEMBLE_MEMBER_LINE_WIDTH), ENSEMBLE_MEMBER_WIDTH_RANGE, ENSEMBLE_MEMBER_WIDTH_DEFAULT),
+            member_line_width=normalize_number(
+                values.get(ENSEMBLE_MEMBER_LINE_WIDTH), ENSEMBLE_MEMBER_WIDTH_RANGE, ENSEMBLE_MEMBER_WIDTH_DEFAULT
+            ),
             member_line_alpha=normalize_number(values.get(ENSEMBLE_MEMBER_LINE_ALPHA), ENSEMBLE_OPACITY_RANGE, 0.5),
             fill_color=normalize_color(values.get(ENSEMBLE_FILL_COLOR), "#1f77b4"),
             fill_alpha=normalize_number(values.get(ENSEMBLE_FILL_ALPHA), ENSEMBLE_OPACITY_RANGE, 0.2),

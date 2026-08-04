@@ -13,13 +13,11 @@ from qgis.PyQt.QtGui import QColor, QFont
 
 from .model_fitting import calculateFitStatistics, FittingModels, ModelFitError
 from .export_plot import TimeSeriesPlotExporter
-from .time_series.settings.model import AxisManualRange, ResidualStyleSettings
 from .time_series.y_axis_range import (
     resolve_manual_y_range, resolve_y_axis_display_range,
 )
 from .time_series.settings.persistence import build_legacy_plot_params
 from .time_series.persistence import NullProjectStateRepository
-from .time_series.fit_style_controller import FitStyle
 from .time_series.store import TimeSeriesStore
 from .time_series.pending_session import PendingTimeSeriesSession, resolve_editable_record
 from .models.time_series import (
@@ -35,7 +33,6 @@ from .models.time_series import (
     DefaultTimeSeriesStyle,
     TimeSeriesStyle,
     TimeSeriesPresentation,
-    presentation_from_legacy_params,
     buildTimeSeriesData,
     randomTimeSeriesColor,
 )
@@ -131,7 +128,6 @@ class FormattedDateAxisItem(pg.DateAxisItem):
         return [(nominal_spacing, ticks)]
 
 
-
 @dataclass
 class _GraphicsRenderTransaction:
     """Track canvas attachments so a failed render can remove them completely."""
@@ -220,7 +216,6 @@ class PlotTs():
         self._last_axis_ranges = {}
         self._new_record_analysis = self._snapshotAnalysisDefaults()
 
-
     @contextmanager
     def axisViewUpdateGuard(self):
         """Ignore ViewBox range signals caused by application-driven updates."""
@@ -259,7 +254,6 @@ class PlotTs():
         if not self._axisViewChangeAllowed() or self.axis_view_changed_callback is None:
             return
         self.axis_view_changed_callback(axis_name)
-
 
     @property
     def series_history(self) -> List[TimeSeriesRecord]:
@@ -305,7 +299,9 @@ class PlotTs():
     @manual_y_lower.setter
     def manual_y_lower(self, value):
         axis = self.settings_model.y_axis
-        self.settings_model.replace_domain("y_axis", replace(axis, series_manual=replace(axis.series_manual, lower=value)))
+        self.settings_model.replace_domain(
+            "y_axis", replace(axis, series_manual=replace(axis.series_manual, lower=value))
+        )
 
     @property
     def manual_y_upper(self):
@@ -314,7 +310,9 @@ class PlotTs():
     @manual_y_upper.setter
     def manual_y_upper(self, value):
         axis = self.settings_model.y_axis
-        self.settings_model.replace_domain("y_axis", replace(axis, series_manual=replace(axis.series_manual, upper=value)))
+        self.settings_model.replace_domain(
+            "y_axis", replace(axis, series_manual=replace(axis.series_manual, upper=value))
+        )
 
     @property
     def residual_manual_y_lower(self):
@@ -323,7 +321,9 @@ class PlotTs():
     @residual_manual_y_lower.setter
     def residual_manual_y_lower(self, value):
         axis = self.settings_model.y_axis
-        self.settings_model.replace_domain("y_axis", replace(axis, residual_manual=replace(axis.residual_manual, lower=value)))
+        self.settings_model.replace_domain(
+            "y_axis", replace(axis, residual_manual=replace(axis.residual_manual, lower=value))
+        )
 
     @property
     def residual_manual_y_upper(self):
@@ -332,7 +332,9 @@ class PlotTs():
     @residual_manual_y_upper.setter
     def residual_manual_y_upper(self, value):
         axis = self.settings_model.y_axis
-        self.settings_model.replace_domain("y_axis", replace(axis, residual_manual=replace(axis.residual_manual, upper=value)))
+        self.settings_model.replace_domain(
+            "y_axis", replace(axis, residual_manual=replace(axis.residual_manual, upper=value))
+        )
 
     @staticmethod
     def _validateReplicaPairCount(value):
@@ -616,8 +618,8 @@ class PlotTs():
         self._rebuildYDataRanges()
         self.applyYAxisPolicy()
 
-    def plotTs(self, *, dates=None, ts_values=None, ref_values=_UNSET, plot_multiple=True, coords=_UNSET, ref_coords=_UNSET,
-               update=False, analysis=_UNSET, report_statistics=False):
+    def plotTs(self, *, dates=None, ts_values=None, ref_values=_UNSET, plot_multiple=True, coords=_UNSET,
+               ref_coords=_UNSET, update=False, analysis=_UNSET, report_statistics=False):
         """Render under the nested-safe axis guard and normalize first-plot state."""
         initial_plot = self.ax is None
         with self.axisViewUpdateGuard():
@@ -639,8 +641,8 @@ class PlotTs():
                 self.axis_state_sync_callback()
         return result
 
-    def _plotTsGuarded(self, *, dates=None, ts_values=None, ref_values=_UNSET, plot_multiple=True, coords=_UNSET, ref_coords=_UNSET,
-               update=False, analysis=_UNSET, report_statistics=False):
+    def _plotTsGuarded(self, *, dates=None, ts_values=None, ref_values=_UNSET, plot_multiple=True, coords=_UNSET,
+                       ref_coords=_UNSET, update=False, analysis=_UNSET, report_statistics=False):
         # update: flag indicating if the plot should be updated or a new one created
 
         self.updateSettings()
@@ -1276,7 +1278,12 @@ class PlotTs():
             items = TimeSeriesGraphics()
         if residuals_values is None:
             residuals_values = series.residuals_values
-        if fit_config.show_residuals and fit_config.enabled and self.ax_residuals is not None and residuals_values is not None:
+        if (
+                fit_config.show_residuals
+                and fit_config.enabled
+                and self.ax_residuals is not None
+                and residuals_values is not None
+        ):
             residual_style = self._normalizedResidualStyle(presentation)
             marker = residual_style.marker
             marker_size = residual_style.marker_size
@@ -1311,7 +1318,6 @@ class PlotTs():
                 transaction.add_item(self.ax_residuals, items.residual_line)
             items.residual_y_data = [residuals_values]
             self.decoratePlot(ax=self.ax_residuals, parms=parms)
-
 
     def decorateFigure(self, parms={}):
         self.setFigureStyle(parms=parms)
@@ -1355,12 +1361,10 @@ class PlotTs():
         if parms['ylabel'] != "":
             ax.setLabel('left', parms['ylabel'], **{'font-size': font_size})
 
-
     def setXticks(self, ax=None, parms={}):
         if not ax:
             ax = self.ax
         self._applyDateFormat(ax=ax, parms=parms)
-
 
     def resolveXAxisRange(self, state=None, *, use_data_xlim=True, padding=30):
         """Resolve the effective X limits used by preview and committed rendering."""
@@ -1697,7 +1701,6 @@ class PlotTs():
         plot_item.showButtons()
         self.ui.plot_widget.plot_items.append(plot_item)
         return plot_item
-
 
     def _connectAxisViewSignals(self, plot_item, *, row):
         """Track interactive ViewBox changes while ignoring guarded updates."""

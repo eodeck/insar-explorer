@@ -6,23 +6,14 @@ from qgis.PyQt.QtGui import QColor, QIcon
 from ...ui_windows.color_picker import ColorPicker
 from ...time_series.ensemble_style import (
     ENSEMBLE_MEMBER_WIDTH_RANGE,
-    ENSEMBLE_OPACITY_RANGE,
 )
 from ...time_series.style_schema import (
-    FIT_LINE_STYLE_OPTIONS,
-    FIT_LINE_WIDTH_DECIMALS,
-    FIT_LINE_WIDTH_RANGE,
-    FIT_LINE_WIDTH_STEP,
     LINE_STYLE_OPTIONS,
     LINE_WIDTH_RANGE,
     MARKER_OPTIONS,
     MARKER_SIZE_RANGE,
     NUMERIC_DECIMALS,
     NUMERIC_STEP,
-    RESIDUAL_LINE_STYLE_OPTIONS,
-    RESIDUAL_LINE_WIDTH_RANGE,
-    RESIDUAL_MARKER_OPTIONS,
-    RESIDUAL_MARKER_SIZE_RANGE,
     OPACITY_PERCENT_MIN, OPACITY_PERCENT_MAX, OPACITY_PERCENT_STEP,
     alpha_to_percent,
 )
@@ -200,14 +191,23 @@ class TimeSeriesStylePopup(QWidget):
 
         self.marker_type.currentTextChanged.connect(self._emitMarkerType)
         self.marker_size.valueChanged.connect(self._emitMarkerSize)
-        self.marker_opacity.valueChanged.connect(lambda v: None if self._loading else self.markerOpacityChanged.emit(int(v)))
+        self.marker_opacity.valueChanged.connect(
+            lambda v: None if self._loading else self.markerOpacityChanged.emit(int(v))
+        )
         self.line_type.currentTextChanged.connect(self._emitLineType)
         self.line_width.valueChanged.connect(self._emitLineWidth)
-        self.line_opacity.valueChanged.connect(lambda v: None if self._loading else self.lineOpacityChanged.emit(int(v)))
+        self.line_opacity.valueChanged.connect(
+            lambda v: None if self._loading else self.lineOpacityChanged.emit(int(v))
+        )
         self.marker_color.colorChanged.connect(self.markerColorChanged.emit)
         self.line_color.colorChanged.connect(self.lineColorChanged.emit)
         self.randomize_button.clicked.connect(self.randomizeColorRequested.emit)
-        for editor in (self.marker_type, self.marker_size, self.marker_opacity, self.line_type, self.line_width, self.line_opacity):
+        for editor in (self.marker_type,
+                       self.marker_size,
+                       self.marker_opacity,
+                       self.line_type, self.line_width,
+                       self.line_opacity
+                       ):
             editor.setMaximumWidth(110)
         self.marker_group.setSizePolicy(SIZE_POLICY_MAXIMUM, SIZE_POLICY_PREFERRED)
         self.line_group.setSizePolicy(SIZE_POLICY_MAXIMUM, SIZE_POLICY_PREFERRED)
@@ -264,10 +264,16 @@ class TimeSeriesStylePopup(QWidget):
         layout.addStretch(1)
 
         self.ensemble_member_color.colorChanged.connect(self.ensembleMemberColorChanged.emit)
-        self.ensemble_member_width.valueChanged.connect(lambda v: None if self._loading else self.ensembleMemberWidthChanged.emit(float(v)))
-        self.ensemble_member_opacity.valueChanged.connect(lambda v: None if self._loading else self.ensembleMemberOpacityChanged.emit(int(v)))
+        self.ensemble_member_width.valueChanged.connect(
+            lambda v: None if self._loading else self.ensembleMemberWidthChanged.emit(float(v))
+        )
+        self.ensemble_member_opacity.valueChanged.connect(
+            lambda v: None if self._loading else self.ensembleMemberOpacityChanged.emit(int(v))
+        )
         self.ensemble_fill_color.colorChanged.connect(self.ensembleFillColorChanged.emit)
-        self.ensemble_fill_opacity.valueChanged.connect(lambda v: None if self._loading else self.ensembleFillOpacityChanged.emit(int(v)))
+        self.ensemble_fill_opacity.valueChanged.connect(
+            lambda v: None if self._loading else self.ensembleFillOpacityChanged.emit(int(v))
+        )
         for editor in (self.ensemble_member_width, self.ensemble_member_opacity, self.ensemble_fill_opacity):
             editor.setMaximumWidth(90)
         self.tabs.addTab(tab, "Ensemble")
@@ -309,7 +315,6 @@ class TimeSeriesStylePopup(QWidget):
 
     def setLayerAvailability(self, availability):
         """Apply centralized layer availability without emitting edit signals."""
-        selected_count = int(availability.selected_count)
         configurations = (
             (
                 self.target_label,
