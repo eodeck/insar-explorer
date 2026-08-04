@@ -1,12 +1,13 @@
 """Zero-or-one-row projection model for the pending time-series record."""
 
-from qgis.PyQt import QtGui
-from qgis.PyQt.QtCore import QAbstractTableModel, QModelIndex, pyqtSignal
+from qgis.PyQt import QtGui, QtWidgets
+from qgis.PyQt.QtCore import QAbstractTableModel, QModelIndex, QSize, pyqtSignal
 
 from ...qt_compat import (
     ALIGN_CENTER,
     ALIGN_LEFT,
     ALIGN_VCENTER,
+    BACKGROUND_ROLE,
     DECORATION_ROLE,
     DISPLAY_ROLE,
     EDIT_ROLE,
@@ -18,6 +19,9 @@ from ...qt_compat import (
     ITEM_IS_SELECTABLE,
     TEXT_ALIGNMENT_ROLE,
     TOOLTIP_ROLE,
+    PALETTE_ACTIVE,
+    PALETTE_BASE,
+    PALETTE_HIGHLIGHT,
 )
 from .columns import (
     TIME_SERIES_COLUMN_COUNT,
@@ -50,6 +54,39 @@ class PendingTimeSeriesModel(QAbstractTableModel):
         """Create an empty projection model."""
         super(PendingTimeSeriesModel, self).__init__(parent)
         self._record = None
+        self._toolbar_target_active = False
+
+    def set_toolbar_target_active(self, active):
+        """Render the pending row as the current toolbar target."""
+        active = bool(active)
+        if self._toolbar_target_active == active:
+            return
+        self._toolbar_target_active = active
+        if self._record is not None:
+            first = self.index(0, 0)
+            last = self.index(0, TIME_SERIES_COLUMN_COUNT - 1)
+            self.dataChanged.emit(first, last, [BACKGROUND_ROLE])
+
+    def toolbar_target_is_active(self):
+        """Return the presentation state for tests."""
+        return self._toolbar_target_active
+
+    @staticmethod
+    def _blend_colour(foreground, background, emphasis=0.16):
+        """Return a restrained palette-derived accent colour."""
+        inverse = 1.0 - emphasis
+        return QtGui.QColor(
+            round(foreground.red() * emphasis + background.red() * inverse),
+            round(foreground.green() * emphasis + background.green() * inverse),
+            round(foreground.blue() * emphasis + background.blue() * inverse),
+            background.alpha(),
+        )
+
+    def _toolbar_target_brush(self):
+        palette = QtWidgets.QApplication.palette()
+        highlight = palette.color(PALETTE_ACTIVE, PALETTE_HIGHLIGHT)
+        base = palette.color(PALETTE_ACTIVE, PALETTE_BASE)
+        return QtGui.QBrush(self._blend_colour(highlight, base))
 
     def rowCount(self, parent=QModelIndex()):
         """Return zero or one projected row."""
@@ -77,6 +114,8 @@ class PendingTimeSeriesModel(QAbstractTableModel):
         """Return data for the single pending row."""
         if not index.isValid() or self._record is None or index.row() != 0:
             return None
+        if role == BACKGROUND_ROLE and self._toolbar_target_active:
+            return self._toolbar_target_brush()
         column = TimeSeriesColumn(index.column())
         if column == TimeSeriesColumn.LABEL:
             label = self._record.presentation.label or ""

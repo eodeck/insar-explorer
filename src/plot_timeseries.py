@@ -865,6 +865,104 @@ class PlotTs():
         self.applyYAxisPolicy()
         return new_graphics
 
+    def replace_and_rerender_records(self, records, *, notify=True, draw=True):
+        """Atomically replace all records and rerender visible records once.
+
+        Visibility controls canvas ownership only. Hidden replacements are
+        committed to the authoritative store without constructing graphics;
+        their Fit residual cache remains invalidated and is recomputed when the
+        record is shown. Visible replacements are fully rendered before any
+        store mutation, preserving all-or-nothing domain semantics.
+        """
+        replacements = tuple(records)
+        if not replacements:
+            return ()
+        ids = [record.id for record in replacements]
+        if len(set(ids)) != len(ids):
+            raise ValueError("duplicate time-series replacement UUID")
+
+        previous = []
+        visible_records = []
+        old_visible_graphics = {}
+        old_hidden_graphics = {}
+        for record in replacements:
+            current = self._series_store.get(record.id)
+            if current is None:
+                raise KeyError(
+                    "committed time-series record not found: {}".format(record.id)
+                )
+            previous.append(current)
+            if record.id not in self._hidden_committed_ids:
+                graphics = self._graphics_by_series_id.get(record.id)
+                if graphics is None:
+                    raise KeyError(
+                        "visible committed time-series graphics not found: {}".format(
+                            record.id
+                        )
+                    )
+                visible_records.append(record)
+                old_visible_graphics[record.id] = graphics
+            else:
+                stale = self._graphics_by_series_id.get(record.id)
+                if stale is not None:
+                    old_hidden_graphics[record.id] = stale
+
+        built_by_id = {}
+        try:
+            for record in visible_records:
+                built_by_id[record.id] = self._build_record_graphics(record)
+        except Exception:
+            for _graphics, _record, transaction in built_by_id.values():
+                transaction.rollback()
+            raise
+
+        rendered_by_id = {
+            record_id: built[1] for record_id, built in built_by_id.items()
+        }
+        committed_replacements = tuple(
+            rendered_by_id.get(record.id, record) for record in replacements
+        )
+        try:
+            self._series_store.replace_many(committed_replacements)
+            for record_id, (graphics, _record, _transaction) in built_by_id.items():
+                self._graphics_by_series_id[record_id] = graphics
+            # Hidden records must never retain renderer ownership. Registry
+            # cleanup is committed here; physical detachment follows after the
+            # replacement transaction can no longer roll back.
+            for record_id in old_hidden_graphics:
+                self._graphics_by_series_id.pop(record_id, None)
+        except Exception:
+            self._series_store.replace_many(previous)
+            for record_id, graphics in old_visible_graphics.items():
+                self._graphics_by_series_id[record_id] = graphics
+            for record_id, graphics in old_hidden_graphics.items():
+                self._graphics_by_series_id[record_id] = graphics
+            for _graphics, _record, transaction in built_by_id.values():
+                transaction.rollback()
+            raise
+
+        for _graphics, _record, transaction in built_by_id.values():
+            transaction.commit()
+        for graphics in old_visible_graphics.values():
+            self._detach_graphics(graphics)
+        for graphics in old_hidden_graphics.values():
+            self._detach_graphics(graphics)
+        active = self.current_series()
+        self._set_current_series(active)
+        self._rebuildYDataRanges()
+        self.applyYAxisPolicy()
+        if draw:
+            self._draw()
+        if notify:
+            self._notify_committed_changed()
+        return committed_replacements
+
+    def rerender_records(self, records, *, notify=True, draw=True):
+        """Compatibility wrapper for atomic replacement and visible rerendering."""
+        return self.replace_and_rerender_records(
+            records, notify=notify, draw=draw
+        )
+
     @staticmethod
     def _graphics_items(graphics: TimeSeriesGraphics):
         """Yield every renderer-owned item in one graphics bundle."""

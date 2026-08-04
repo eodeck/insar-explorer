@@ -7,14 +7,14 @@ of branching on Qt binding versions or using enum aliases directly.
 try:
     from qgis.PyQt.QtCore import QEvent, QItemSelectionModel, QPoint, QRect, QSize, Qt
     try:
-        from qgis.PyQt.QtGui import QAction, QActionGroup, QGuiApplication
+        from qgis.PyQt.QtGui import QAction, QActionGroup, QGuiApplication, QPalette
     except ImportError:
         from qgis.PyQt.QtWidgets import QAction, QActionGroup
-        from qgis.PyQt.QtGui import QGuiApplication
+        from qgis.PyQt.QtGui import QGuiApplication, QPalette
     from qgis.PyQt.QtWidgets import QApplication, QAbstractItemView, QColorDialog, QFrame, QHeaderView, QMessageBox, QSizePolicy, QStyle, QToolButton
 except ImportError:
     from PySide6.QtCore import QEvent, QItemSelectionModel, QPoint, QRect, QSize, Qt
-    from PySide6.QtGui import QAction, QActionGroup, QGuiApplication
+    from PySide6.QtGui import QAction, QActionGroup, QGuiApplication, QPalette
     from PySide6.QtWidgets import QApplication, QAbstractItemView, QColorDialog, QFrame, QHeaderView, QMessageBox, QSizePolicy, QStyle, QToolButton
 
 try:
@@ -65,6 +65,7 @@ TOOLTIP_ROLE = _enum_value(Qt, "ItemDataRole", "ToolTipRole")
 TEXT_ALIGNMENT_ROLE = _enum_value(Qt, "ItemDataRole", "TextAlignmentRole")
 FONT_ROLE = _enum_value(Qt, "ItemDataRole", "FontRole")
 FOREGROUND_ROLE = _enum_value(Qt, "ItemDataRole", "ForegroundRole")
+BACKGROUND_ROLE = _enum_value(Qt, "ItemDataRole", "BackgroundRole")
 CHECK_STATE_ROLE = _enum_value(Qt, "ItemDataRole", "CheckStateRole")
 CHECKED = _enum_value(Qt, "CheckState", "Checked")
 UNCHECKED = _enum_value(Qt, "CheckState", "Unchecked")
@@ -90,6 +91,8 @@ POPUP_WINDOW_FLAG = _enum_value(Qt, "WindowType", "Popup")
 CLEAR_AND_SELECT = _enum_value(QItemSelectionModel, "SelectionFlag", "ClearAndSelect")
 SELECT_ROWS_SELECTION = _enum_value(QItemSelectionModel, "SelectionFlag", "Rows")
 CURRENT_SELECTION = _enum_value(QItemSelectionModel, "SelectionFlag", "Current")
+SELECT_SELECTION = _enum_value(QItemSelectionModel, "SelectionFlag", "Select")
+NO_UPDATE_CURRENT = _enum_value(QItemSelectionModel, "SelectionFlag", "NoUpdate")
 
 # QAbstractItemView / QHeaderView enums
 NO_SELECTION = _enum_value(QAbstractItemView, "SelectionMode", "NoSelection")
@@ -102,6 +105,13 @@ EDITING_STATE = _enum_value(QAbstractItemView, "State", "EditingState")
 NO_DRAG_DROP = _enum_value(QAbstractItemView, "DragDropMode", "NoDragDrop")
 HEADER_STRETCH = _enum_value(QHeaderView, "ResizeMode", "Stretch")
 HEADER_FIXED = _enum_value(QHeaderView, "ResizeMode", "Fixed")
+
+# QPalette enums
+PALETTE_ACTIVE = _enum_value(QPalette, "ColorGroup", "Active")
+PALETTE_INACTIVE = _enum_value(QPalette, "ColorGroup", "Inactive")
+PALETTE_BASE = _enum_value(QPalette, "ColorRole", "Base")
+PALETTE_HIGHLIGHT = _enum_value(QPalette, "ColorRole", "Highlight")
+PALETTE_HIGHLIGHTED_TEXT = _enum_value(QPalette, "ColorRole", "HighlightedText")
 
 # QStyle state flags
 STYLE_STATE_SELECTED = _enum_value(QStyle, "StateFlag", "State_Selected", "State_Selected")
@@ -118,6 +128,16 @@ SIZE_POLICY_EXPANDING = _enum_value(QSizePolicy, "Policy", "Expanding")
 SIZE_POLICY_PREFERRED = _enum_value(QSizePolicy, "Policy", "Preferred")
 
 # QToolButton enums
+TOOL_BUTTON_ICON_ONLY = _enum_value(
+    Qt,
+    "ToolButtonStyle",
+    "ToolButtonIconOnly",
+)
+TOOL_BUTTON_TEXT_ONLY = _enum_value(
+    Qt,
+    "ToolButtonStyle",
+    "ToolButtonTextOnly",
+)
 TOOL_BUTTON_INSTANT_POPUP = _enum_value(
     QToolButton,
     "ToolButtonPopupMode",
