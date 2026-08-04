@@ -128,6 +128,16 @@ SIZE_POLICY_EXPANDING = _enum_value(QSizePolicy, "Policy", "Expanding")
 SIZE_POLICY_PREFERRED = _enum_value(QSizePolicy, "Policy", "Preferred")
 
 # QToolButton enums
+TOOL_BUTTON_ICON_ONLY = _enum_value(
+    Qt,
+    "ToolButtonStyle",
+    "ToolButtonIconOnly",
+)
+TOOL_BUTTON_TEXT_ONLY = _enum_value(
+    Qt,
+    "ToolButtonStyle",
+    "ToolButtonTextOnly",
+)
 TOOL_BUTTON_INSTANT_POPUP = _enum_value(
     QToolButton,
     "ToolButtonPopupMode",

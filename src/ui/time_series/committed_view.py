@@ -44,8 +44,8 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
         self.copy_settings_action.triggered.connect(
             self.copySettingsRequested.emit
         )
-        self.paste_menu = QtWidgets.QMenu("Paste", self)
         self.paste_actions = {}
+        self._paste_menus = []
         labels = (
             (CopyPasteCategory.STYLE, "Style", STYLE_ACTION_ICON),
             (CopyPasteCategory.FIT, "Fit", FIT_ACTION_ICON),
@@ -61,10 +61,25 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
             paste_action.triggered.connect(
                 lambda checked=False, value=category: self.pasteRequested.emit(value)
             )
-            self.paste_menu.addAction(paste_action)
             self.paste_actions[category] = paste_action
+        self.paste_menu = self._create_paste_menu(self)
         self.setContextMenuPolicy(CUSTOM_CONTEXT_MENU)
         self.customContextMenuRequested.connect(self._show_context_menu)
+
+    def _create_paste_menu(self, parent):
+        """Create a Paste container that reuses the shared leaf actions."""
+        menu = QtWidgets.QMenu("Paste", parent)
+        for action in self.paste_actions.values():
+            menu.addAction(action)
+        self._paste_menus.append(menu)
+        return menu
+
+    def create_copy_paste_menu(self, parent=None):
+        """Return a menu using the existing Copy and Paste action registry."""
+        menu = QtWidgets.QMenu(parent or self)
+        menu.addAction(self.copy_settings_action)
+        menu.addMenu(self._create_paste_menu(menu))
+        return menu
 
     def set_selection_active(self, active):
         """Render selected rows as active or inactive without changing selection."""
@@ -141,7 +156,8 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
         """Project controller-owned clipboard/selection availability onto actions."""
         available = set(paste_categories)
         self.copy_settings_action.setEnabled(bool(copy_enabled))
-        self.paste_menu.setEnabled(bool(available))
+        for paste_menu in self._paste_menus:
+            paste_menu.setEnabled(bool(available))
         for category, action in self.paste_actions.items():
             action.setEnabled(category in available)
 

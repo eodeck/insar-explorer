@@ -12,6 +12,7 @@ from ...qt_compat import (
     ALIGN_VCENTER,
     SIZE_POLICY_EXPANDING,
     SIZE_POLICY_FIXED,
+    SIZE_POLICY_MAXIMUM,
     SIZE_POLICY_PREFERRED,
     EDIT_DOUBLE_CLICKED,
     EDIT_KEY_PRESSED,
@@ -27,6 +28,8 @@ from ...qt_compat import (
     NO_UPDATE_CURRENT,
     SELECT_ROWS_SELECTION,
     SELECT_SELECTION,
+    TOOL_BUTTON_INSTANT_POPUP,
+    TOOL_BUTTON_ICON_ONLY,
 )
 
 from .committed_columns import (
@@ -312,7 +315,35 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         layout.addWidget(self.committed_view, 1)
 
         removal_actions = QtWidgets.QHBoxLayout()
+        removal_actions.setObjectName("committed_time_series_actions_layout")
         removal_actions.setContentsMargins(0, 0, 0, 0)
+        removal_actions.setSpacing(3)
+        self.copy_paste_button = QtWidgets.QToolButton(self)
+        self.copy_paste_button.setObjectName("tb_copy_paste_time_series")
+        self.copy_paste_button.setText("")
+        self.copy_paste_button.setIcon(
+            QtGui.QIcon(":/icons/icons/clipboard.svg")
+        )
+        self.copy_paste_button.setIconSize(
+            QSize(self.ICON_SIZE, self.ICON_SIZE)
+        )
+        self.copy_paste_button.setToolTip(
+            "Copy or paste time-series settings"
+        )
+        self.copy_paste_button.setAccessibleName(
+            "Copy and paste time-series settings"
+        )
+        self.copy_paste_button.setCheckable(False)
+        self.copy_paste_button.setToolButtonStyle(TOOL_BUTTON_ICON_ONLY)
+        self.copy_paste_button.setPopupMode(TOOL_BUTTON_INSTANT_POPUP)
+        self.copy_paste_button.setMenu(
+            self.committed_view.create_copy_paste_menu(self.copy_paste_button)
+        )
+        self.copy_paste_button.setFixedSize(self.BUTTON_SIZE, self.BUTTON_SIZE)
+        self.copy_paste_button.setSizePolicy(
+            SIZE_POLICY_FIXED, SIZE_POLICY_FIXED
+        )
+        removal_actions.addWidget(self.copy_paste_button, 0, ALIGN_VCENTER)
         self.remove_selected_button = self._pending_action_button(
             "pb_remove_selected_time_series",
             ":/icons/icons/item_remove.svg",
@@ -322,7 +353,9 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         self.remove_selected_button.clicked.connect(
             self.removeSelectedCommittedRequested.emit
         )
-        removal_actions.addWidget(self.remove_selected_button)
+        removal_actions.addWidget(
+            self.remove_selected_button, 0, ALIGN_VCENTER
+        )
         removal_actions.addStretch(1)
         layout.addLayout(removal_actions)
         self.committed_view.removeSelectedRequested.connect(
@@ -477,6 +510,10 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         selected_ids = self.selected_committed_ids()
         selected = bool(selected_ids)
         self.remove_selected_button.setEnabled(selected)
+        committed_count = (
+            0 if self.committed_model is None else self.committed_model.rowCount()
+        )
+        self.copy_paste_button.setEnabled(committed_count > 0)
         self.committed_view.remove_action.setEnabled(selected)
         self.committed_view.set_copy_paste_enabled(
             copy_enabled=len(selected_ids) == 1,
