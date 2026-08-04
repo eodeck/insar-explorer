@@ -12,6 +12,7 @@ from qgis.gui import QgsRubberBand, QgsVertexMarker
 
 from ..models.time_series import SpatialSelection, SpatialSelectionKind, TimeSeriesRecord
 from ..qt_compat import POLYGON_GEOMETRY
+from .map_indicator_settings import factory_map_indicator_settings
 from .map_indicator_style import (
     COMMITTED_COLOR_ALPHA,
     COMMITTED_COLOR_ALPHA_WHILE_PENDING,
@@ -105,8 +106,9 @@ class PendingTimeSeriesMapOverlayController:
     _ROLE_TARGET = "target"
     _ROLE_REFERENCE = "reference"
 
-    def __init__(self, canvas, diagnostic: Optional[Callable[[str, Exception], None]] = None):
+    def __init__(self, canvas, diagnostic: Optional[Callable[[str, Exception], None]] = None, settings_provider=None):
         self._canvas = canvas
+        self._settings_provider = settings_provider or factory_map_indicator_settings
         self._diagnostic = diagnostic
         self._record: Optional[TimeSeriesRecord] = None
         self._items = RecordOverlayItems()
@@ -131,6 +133,11 @@ class PendingTimeSeriesMapOverlayController:
             record.reference, self._ROLE_REFERENCE
         )
         self._items = RecordOverlayItems(target_items, reference_items)
+
+    def refresh_style(self) -> None:
+        """Restyle owned pending items from one current settings snapshot."""
+        for overlay in self._items.all_items():
+            self._apply_style(overlay)
 
     def clear(self) -> None:
         """Remove every stable pending target/reference indicator."""
@@ -201,11 +208,13 @@ class PendingTimeSeriesMapOverlayController:
         return band
 
     def _apply_style(self, overlay: OverlayItem) -> None:
-        color = semantic_indicator_color(overlay.role, alpha=PENDING_COLOR_ALPHA)
+        settings = self._settings_provider()
+        alpha = round(255 * settings.opacity_percent / 100.0)
+        color = semantic_indicator_color(overlay.role, settings, alpha=alpha)
         if overlay.geometry_kind == SpatialSelectionKind.POINT:
             is_outer = overlay.presentation_part == _POINT_OUTER_RING
             overlay.item.setColor(
-                point_indicator_outer_color(alpha=PENDING_COLOR_ALPHA)
+                point_indicator_outer_color(settings, alpha=alpha)
                 if is_outer
                 else color
             )
@@ -216,7 +225,7 @@ class PendingTimeSeriesMapOverlayController:
             )
             return
         fill = QColor(color)
-        fill.setAlpha(PENDING_FILL_ALPHA)
+        fill.setAlpha(round(PENDING_FILL_ALPHA * settings.opacity_percent / 100.0))
         overlay.item.setStrokeColor(color)
         overlay.item.setFillColor(fill)
         overlay.item.setWidth(PENDING_LINE_WIDTH)
@@ -255,8 +264,9 @@ class CommittedSelectionOverlayController:
     _ROLE_TARGET = "target"
     _ROLE_REFERENCE = "reference"
 
-    def __init__(self, canvas, diagnostic: Optional[Callable[[str, Exception], None]] = None):
+    def __init__(self, canvas, diagnostic: Optional[Callable[[str, Exception], None]] = None, settings_provider=None):
         self._canvas = canvas
+        self._settings_provider = settings_provider or factory_map_indicator_settings
         self._diagnostic = diagnostic
         self._registry = TimeSeriesMapOverlayRegistry()
         self._records_by_id: Dict[UUID, TimeSeriesRecord] = {}
@@ -323,6 +333,12 @@ class CommittedSelectionOverlayController:
         self._records_by_id.pop(record_id, None)
         if owned is not None:
             self._remove_owned_items(owned)
+
+    def refresh_style(self) -> None:
+        """Restyle every selected committed overlay."""
+        for record_items in self._registry.values():
+            for overlay in record_items.all_items():
+                self._apply_style(overlay)
 
     def set_pending_active(self, active: bool) -> None:
         """Subdue committed overlays further while pending geometry is active."""
@@ -433,11 +449,13 @@ class CommittedSelectionOverlayController:
             if self._pending_active
             else COMMITTED_COLOR_ALPHA
         )
-        color = semantic_indicator_color(overlay.role, alpha=alpha)
+        settings = self._settings_provider()
+        alpha = round(alpha * settings.opacity_percent / 100.0)
+        color = semantic_indicator_color(overlay.role, settings, alpha=alpha)
         if overlay.geometry_kind == SpatialSelectionKind.POINT:
             is_outer = overlay.presentation_part == _POINT_OUTER_RING
             overlay.item.setColor(
-                point_indicator_outer_color(alpha=alpha) if is_outer else color
+                point_indicator_outer_color(settings, alpha=alpha) if is_outer else color
             )
             overlay.item.setFillColor(transparent_point_fill())
             overlay.item.setPenWidth(COMMITTED_POINT_PEN_WIDTH)
@@ -446,11 +464,12 @@ class CommittedSelectionOverlayController:
             overlay.item.setIconSize(outer_size if is_outer else inner_size)
             return
         fill = QColor(color)
-        fill.setAlpha(
+        fill_alpha = (
             max(8, COMMITTED_FILL_ALPHA - 6)
             if self._pending_active
             else COMMITTED_FILL_ALPHA
         )
+        fill.setAlpha(round(fill_alpha * settings.opacity_percent / 100.0))
         overlay.item.setStrokeColor(color)
         overlay.item.setFillColor(fill)
         overlay.item.setWidth(COMMITTED_LINE_WIDTH)

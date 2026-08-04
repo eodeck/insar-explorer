@@ -4,10 +4,11 @@ from dataclasses import replace
 from qgis.gui import QgsMapToolEmitPoint
 from qgis.PyQt.QtWidgets import QFileDialog, QMenu, QComboBox
 from qgis.PyQt.QtCore import QObject, QPoint, QRect, QSettings, QStandardPaths, QTimer, QVariant, pyqtSignal
-from qgis.PyQt.QtGui import QIcon, QTransform
+from qgis.PyQt.QtGui import QColor, QIcon, QTransform
 
 from . import map_click_handler as cph
 from . import setup_frames
+from .bootstrap import ensure_time_series_services
 from .map_setting import InsarMap
 from .layer_utils import vector_layer as vector_layer_utils
 from .about import about as insar_explorer_about
@@ -19,6 +20,7 @@ from .ui.popups.manual_x_axis_popup import ManualXAxisPopup
 from .ui.popups.export_settings_popup import ExportSettingsPopup
 from .ui.popups.appearance_popup import AppearancePopup
 from .ui.popups.replica_popup import ReplicaPopup
+from .ui.popups.map_indicator_settings_popup import MapIndicatorSettingsPopup
 from .ui.widgets.split_tool_button import SplitButtonPopupHoverReconciler
 from .qt_compat import (
     RASTER_LAYER,
@@ -142,7 +144,13 @@ class GuiController(QObject):
             plugin, "report_time_series_diagnostic", None
         )
         self._last_fit_statistics_message = None
-        self.choose_point_click_handler = cph.ClickHandler(plugin, msg_signal=self.msg_signal)
+        services = ensure_time_series_services(plugin)
+        self.map_indicator_settings = services.map_indicator_settings
+        self.choose_point_click_handler = cph.ClickHandler(
+            plugin,
+            msg_signal=self.msg_signal,
+            indicator_settings_service=self.map_indicator_settings,
+        )
         self.choose_point_click_handler.new_record_analysis_provider = (
             self.choose_point_click_handler.plot_ts.analysisForNewRecord
         )
@@ -157,11 +165,14 @@ class GuiController(QObject):
         plotter.pending_changed_callback = self._syncPendingTimeSeriesPanel
         plotter.committed_changed_callback = self._syncCommittedTimeSeriesList
         self.time_series_list_state = TimeSeriesListState()
+        settings_provider = lambda: self.map_indicator_settings.active
         self.time_series_map_overlays = CommittedSelectionOverlayController(
-            self.iface.mapCanvas(), diagnostic=self._plugin_diagnostic
+            self.iface.mapCanvas(), diagnostic=self._plugin_diagnostic,
+            settings_provider=settings_provider,
         )
         self.pending_time_series_map_overlays = PendingTimeSeriesMapOverlayController(
-            self.iface.mapCanvas(), diagnostic=self._plugin_diagnostic
+            self.iface.mapCanvas(), diagnostic=self._plugin_diagnostic,
+            settings_provider=settings_provider,
         )
         self.time_series_clipboard = None
         self.ui.time_series_point_panel.configure_committed_list(
@@ -213,6 +224,7 @@ class GuiController(QObject):
         self.export_settings_popup = ExportSettingsPopup(self.ui)
         self.appearance_popup = AppearancePopup(self.ui)
         self.replica_popup = ReplicaPopup(self.ui)
+        self.map_indicator_settings_popup = MapIndicatorSettingsPopup(self.ui)
         self._installSplitButtonPopupHoverReconciliation()
         self._manual_y_axis_session = None
         self.time_series_style_controller = TimeSeriesStyleController()
@@ -413,7 +425,8 @@ class GuiController(QObject):
             if not self.drawing_tool:
                 self.drawing_tool = (
                     PolygonDrawingTool(self.iface.mapCanvas(), callback=self.polygonDrawnCallback,
-                                       start_callback=self.choose_point_click_handler.clearFeatureHighlight))
+                                       start_callback=self.choose_point_click_handler.clearFeatureHighlight,
+                                       settings_provider=lambda: self.map_indicator_settings.active))
             # FIXME: when push button is reactivated, current polygon is removed
             self.iface.mapCanvas().setMapTool(self.drawing_tool)
         else:
@@ -421,7 +434,7 @@ class GuiController(QObject):
                 self.drawing_tool_reference = (
                     PolygonDrawingTool(self.iface.mapCanvas(), callback=self.polygonDrawnCallback,
                                        start_callback=self.choose_point_click_handler.clearReferenceFeatureHighlight,
-                                       role="reference"))
+                                       role="reference", settings_provider=lambda: self.map_indicator_settings.active))
             self.iface.mapCanvas().setMapTool(self.drawing_tool_reference)
 
     def deactivatePolygonDrawingTool(self, reference=False):
@@ -541,6 +554,7 @@ class GuiController(QObject):
             self.copyCommittedTimeSeriesSettings
         )
         panel.pasteCommittedRequested.connect(self.pasteCommittedTimeSeriesSettings)
+        panel.indicatorSettingsRequested.connect(self.showMapIndicatorSettingsPopup)
         self.ui.pb_choose_point.clicked.connect(self.activatePointSelection)
         self.ui.pb_set_reference.clicked.connect(self.activateReferencePointSelection)
         self.ui.pb_reset_reference.clicked.connect(self.resetReferencePoint)
@@ -682,6 +696,17 @@ class GuiController(QObject):
         self.replica_popup.applySavedDefaultRequested.connect(self.restoreReplicaDefaults)
         self.replica_popup.applyFactoryDefaultRequested.connect(self.applyFactoryReplicaDefaults)
         self.replica_popup.saveCurrentAsDefaultRequested.connect(self.setCurrentReplicaAsDefault)
+        indicator_popup = self.map_indicator_settings_popup
+        indicator_popup.settingsChanged.connect(self.updateMapIndicatorSettings)
+        indicator_popup.applySavedDefaultRequested.connect(
+            self.restoreMapIndicatorDefaults
+        )
+        indicator_popup.applyFactoryDefaultRequested.connect(
+            self.applyFactoryMapIndicatorDefaults
+        )
+        indicator_popup.saveCurrentAsDefaultRequested.connect(
+            self.setCurrentMapIndicatorsAsDefault
+        )
 
     def connectMapSignals(self):
         self.ui.cb_select_field.currentTextChanged.connect(self.selectVectorFieldChanged)
@@ -2561,6 +2586,84 @@ class GuiController(QObject):
 
         self.msg_signal.emit(
             f"Replica pairs set to {self.time_series_replica_pair_count}.", "i", 0
+        )
+
+
+    def syncMapIndicatorSettingsPopup(self):
+        """Project active global settings into the popup without side effects."""
+        self.map_indicator_settings_popup.setSettings(
+            self.map_indicator_settings.active
+        )
+
+    def updateMapIndicatorSettings(self, settings):
+        """Normalize and apply one complete active map-indicator value."""
+        normalized = type(settings)(
+            QColor(settings.target_color),
+            QColor(settings.reference_color),
+            QColor(settings.point_outer_color),
+            int(settings.opacity_percent),
+        )
+        self.applyMapIndicatorSettings(normalized)
+        self.syncMapIndicatorSettingsPopup()
+
+    def restoreMapIndicatorDefaults(self):
+        """Apply the persisted user defaults immediately."""
+        self.applyMapIndicatorSettings(self.map_indicator_settings.load_defaults())
+        self.syncMapIndicatorSettingsPopup()
+
+    def setCurrentMapIndicatorsAsDefault(self):
+        """Persist the current active settings as the user default."""
+        self.map_indicator_settings.save_defaults(
+            self.map_indicator_settings.active
+        )
+
+    def applyFactoryMapIndicatorDefaults(self):
+        """Apply factory settings without overwriting saved defaults."""
+        self.applyMapIndicatorSettings(
+            self.map_indicator_settings.factory_defaults()
+        )
+        self.syncMapIndicatorSettingsPopup()
+
+    def showMapIndicatorSettingsPopup(self):
+        """Open the synchronized indicator-settings popup beside its button."""
+        self.syncMapIndicatorSettingsPopup()
+        popup = self.map_indicator_settings_popup
+        popup.adjustSize()
+        button = self.ui.time_series_point_panel.indicator_settings_button
+        top_left = button.mapToGlobal(QPoint(0, 0))
+        anchor = QRect(top_left, button.size())
+        geometry = available_screen_geometry(top_left, popup)
+        popup.move(
+            screen_aware_popup_position(anchor, popup.sizeHint(), geometry)
+        )
+        popup.show()
+        popup.raise_()
+
+    def applyMapIndicatorSettings(self, settings):
+        """Apply global presentation and refresh owned overlays."""
+        self.map_indicator_settings.apply(settings, notify=False)
+        if self.drawing_tool is not None:
+            self.drawing_tool.refresh_style()
+        if self.drawing_tool_reference is not None:
+            self.drawing_tool_reference.refresh_style()
+        self.pending_time_series_map_overlays.refresh_style()
+        self.time_series_map_overlays.refresh_style()
+        active = self.map_indicator_settings.active
+        for highlight, role in (
+            (self.choose_point_click_handler.highlight, "target"),
+            (self.choose_point_click_handler.reference_highlight, "reference"),
+        ):
+            if highlight is not None:
+                from .time_series.map_indicator_style import semantic_indicator_color
+                color = semantic_indicator_color(
+                    role, active,
+                    alpha=round(255 * active.opacity_percent / 100.0),
+                )
+                highlight.setColor(color)
+        self.iface.mapCanvas().refresh()
+        # Publish only after every owned presentation consumer is restyled.
+        self.map_indicator_settings.settingsChanged.emit(
+            self.map_indicator_settings.active
         )
 
     def clearTimeSeriesMapOverlays(self):

@@ -4,40 +4,35 @@ from typing import Optional
 
 from qgis.PyQt.QtGui import QColor
 
-REFERENCE_INDICATOR_COLOR = QColor(220, 45, 45)
-TARGET_INDICATOR_COLOR = QColor(0, 190, 230)
-POINT_INDICATOR_OUTER_COLOR = QColor(0, 0, 0)
 POINT_INDICATOR_TRANSPARENT_FILL = QColor(0, 0, 0, 0)
 
-PENDING_POINT_OUTER_SIZE = 10
+PENDING_POINT_OUTER_SIZE = 11
 PENDING_POINT_INNER_SIZE = 9
-COMMITTED_POINT_OUTER_SIZE = 9
-COMMITTED_POINT_INNER_SIZE = 8
+COMMITTED_POINT_OUTER_SIZE = 11
+COMMITTED_POINT_INNER_SIZE = 9
 PENDING_POINT_PEN_WIDTH = 2
 COMMITTED_POINT_PEN_WIDTH = 2
 
 PENDING_LINE_WIDTH = 2
 COMMITTED_LINE_WIDTH = 1
-PENDING_FILL_ALPHA = 42
-COMMITTED_FILL_ALPHA = 18
-PENDING_COLOR_ALPHA = 235
-COMMITTED_COLOR_ALPHA = 145
+PENDING_FILL_ALPHA = 90
+COMMITTED_FILL_ALPHA = 60
+PENDING_COLOR_ALPHA = 255
+COMMITTED_COLOR_ALPHA = 200
 COMMITTED_COLOR_ALPHA_WHILE_PENDING = 95
 
 
-def semantic_indicator_color(role: str, *, alpha: Optional[int] = None) -> QColor:
-    """Return a detached target/reference color for safe caller mutation."""
-    color = QColor(
-        TARGET_INDICATOR_COLOR if role == "target" else REFERENCE_INDICATOR_COLOR
-    )
+def semantic_indicator_color(role: str, settings, *, alpha: Optional[int] = None) -> QColor:
+    """Return a detached configured target/reference color."""
+    color = QColor(settings.target_color if role == "target" else settings.reference_color)
     if alpha is not None:
         color.setAlpha(alpha)
     return color
 
 
-def point_indicator_outer_color(*, alpha: Optional[int] = None) -> QColor:
-    """Return a detached black point-ring casing color."""
-    color = QColor(POINT_INDICATOR_OUTER_COLOR)
+def point_indicator_outer_color(settings, *, alpha: Optional[int] = None) -> QColor:
+    """Return a detached configured point-ring casing color."""
+    color = QColor(settings.point_outer_color)
     if alpha is not None:
         color.setAlpha(alpha)
     return color

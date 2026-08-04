@@ -108,7 +108,9 @@ class MapClickHandler:
         highlight: The QgsHighlight object used to highlight selected features.
 
     """
-    def __init__(self, plugin, msg_signal=None):
+    def __init__(
+        self, plugin, msg_signal=None, indicator_settings_service=None
+    ):
         self.ui = plugin.dockwidget
         self.iface = plugin.iface
         self.msg_signal = msg_signal
@@ -116,6 +118,11 @@ class MapClickHandler:
         self.reference_highlight = None
         self.map_reference_clicked_value = 0
         self.new_record_analysis_provider = None
+        if indicator_settings_service is None:
+            indicator_settings_service = (
+                ensure_time_series_services(plugin).map_indicator_settings
+            )
+        self._indicator_settings = indicator_settings_service
 
     def _analysisForNewRecord(self):
         """Capture controller-facing analysis immediately before new record creation."""
@@ -193,7 +200,8 @@ class MapClickHandler:
             layer = self.iface.activeLayer()
         self.clearFeatureHighlight()
         self.highlight = QgsHighlight(self.iface.mapCanvas(), geometry, layer)
-        color = semantic_indicator_color("target")
+        settings = self._indicator_settings.active
+        color = semantic_indicator_color("target", settings, alpha=round(255 * settings.opacity_percent / 100.0))
         fill = QColor(0, 0, 0, 0)
         self.highlight.setColor(color)
         if hasattr(self.highlight, "setFillColor"):
@@ -205,7 +213,8 @@ class MapClickHandler:
             layer = self.iface.activeLayer()
         self.clearReferenceFeatureHighlight()
         self.reference_highlight = QgsHighlight(self.iface.mapCanvas(), geometry, layer)
-        color = semantic_indicator_color("reference")
+        settings = self._indicator_settings.active
+        color = semantic_indicator_color("reference", settings, alpha=round(255 * settings.opacity_percent / 100.0))
         fill = QColor(0, 0, 0, 0)
         self.reference_highlight.setColor(color)
         if hasattr(self.reference_highlight, "setFillColor"):
@@ -282,7 +291,9 @@ class MapClickHandler:
 
 class TSClickHandler(MapClickHandler):
     # TODO: separate PointClickHandler from TSClickHandler
-    def __init__(self, plugin, msg_signal=None):
+    def __init__(
+        self, plugin, msg_signal=None, indicator_settings_service=None
+    ):
         super().__init__(plugin, msg_signal=msg_signal)
         services = ensure_time_series_services(plugin)
         self.reference_session = services.reference_session
@@ -495,7 +506,9 @@ class TSClickHandler(MapClickHandler):
 
 
 class PolygonClickHandler(MapClickHandler):
-    def __init__(self, plugin, msg_signal=None):
+    def __init__(
+        self, plugin, msg_signal=None, indicator_settings_service=None
+    ):
         super().__init__(plugin, msg_signal=msg_signal)
         self.polygon = None
 
@@ -614,6 +627,8 @@ class PolygonClickHandler(MapClickHandler):
 
 
 class ClickHandler(TSClickHandler, PolygonClickHandler):
-    def __init__(self, plugin, msg_signal=None):
+    def __init__(
+        self, plugin, msg_signal=None, indicator_settings_service=None
+    ):
         TSClickHandler.__init__(self, plugin, msg_signal=msg_signal)
         PolygonClickHandler.__init__(self, plugin, msg_signal=msg_signal)
