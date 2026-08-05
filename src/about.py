@@ -8,7 +8,7 @@ about = f"""
         <h3>InSAR Explorer</h3>
         <p>  {__version__} ({__date__}) </p>
         <p style="text-align: justify;">
-            <span style="margin-left: 10em;">InSAR Explorer is designed for interactive visualization and analysis of 
+            <span style="margin-left: 10em;">InSAR Explorer is designed for interactive visualization and analysis of
             InSAR time series.
             </span>
         </p>

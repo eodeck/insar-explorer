@@ -2588,7 +2588,6 @@ class GuiController(QObject):
             f"Replica pairs set to {self.time_series_replica_pair_count}.", "i", 0
         )
 
-
     def syncMapIndicatorSettingsPopup(self):
         """Project active global settings into the popup without side effects."""
         self.map_indicator_settings_popup.setSettings(

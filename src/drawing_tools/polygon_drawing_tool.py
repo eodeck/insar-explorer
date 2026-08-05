@@ -27,7 +27,9 @@ class PolygonMarker(QgsMapTool):
         settings = self._settings_provider()
         alpha = round(255 * settings.opacity_percent / 100.0)
         stroke = semantic_indicator_color(self.role, settings, alpha=alpha)
-        fill = semantic_indicator_color(self.role, settings, alpha=round(PENDING_FILL_ALPHA * settings.opacity_percent / 100.0))
+        fill = semantic_indicator_color(
+            self.role, settings, alpha=round(PENDING_FILL_ALPHA * settings.opacity_percent / 100.0)
+        )
         self.rubber_band.setFillColor(fill)
         self.rubber_band.setStrokeColor(stroke)
         self.rubber_band.setWidth(PENDING_LINE_WIDTH)
