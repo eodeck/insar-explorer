@@ -56,12 +56,16 @@ class TimeSeriesStore:
         return True
 
     def replace_many(self, records: Iterable[TimeSeriesRecord]) -> None:
-        """Replace matching records by UUID without reordering."""
+        """Atomically replace matching records by UUID without reordering."""
         replacements = {record.id: record for record in records}
-        for index, current in enumerate(self._records):
-            replacement = replacements.get(current.id)
-            if replacement is not None:
-                self._records[index] = replacement
+        missing = tuple(
+            record_id for record_id in replacements
+            if self.index_of(record_id) is None
+        )
+        if missing:
+            raise KeyError("time-series records not found: {}".format(missing))
+        updated = [replacements.get(current.id, current) for current in self._records]
+        self._records = updated
 
     def remove(self, record_id: UUID) -> Optional[TimeSeriesRecord]:
         """Remove and return a record by UUID."""

@@ -94,6 +94,7 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
     discardPendingRequested = pyqtSignal()
     pendingLabelEdited = pyqtSignal(str)
     committedVisibilityEdited = pyqtSignal(object, bool)
+    toggleSelectedCommittedVisibilityRequested = pyqtSignal()
     committedLabelEdited = pyqtSignal(object, str)
     committedSelectionChanged = pyqtSignal(tuple)
     committedVisibilityAllRequested = pyqtSignal(bool)
@@ -382,6 +383,9 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
             self.copyCommittedSettingsRequested.emit
         )
         self.committed_view.pasteRequested.connect(self.pasteCommittedRequested.emit)
+        self.committed_view.toggleSelectedVisibilityRequested.connect(
+            self.toggleSelectedCommittedVisibilityRequested.emit
+        )
         self._clipboard_categories = ()
         self.refresh_removal_actions()
 

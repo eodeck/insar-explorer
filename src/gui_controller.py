@@ -545,6 +545,9 @@ class GuiController(QObject):
         panel.pendingLabelEdited.connect(self.updatePendingTimeSeriesLabel)
         panel.committedVisibilityEdited.connect(self.setCommittedTimeSeriesVisibility)
         panel.committedVisibilityAllRequested.connect(self.setAllCommittedTimeSeriesVisibility)
+        panel.toggleSelectedCommittedVisibilityRequested.connect(
+            self.toggleSelectedCommittedTimeSeriesVisibility
+        )
         panel.committedLabelEdited.connect(self.updateCommittedTimeSeriesLabel)
         panel.committedSelectionChanged.connect(self.committedTimeSeriesSelectionChanged)
         panel.removeSelectedCommittedRequested.connect(
@@ -1752,11 +1755,80 @@ class GuiController(QObject):
         panel = self.ui.time_series_point_panel
         panel.refresh_committed_model()
 
+    def setCommittedTimeSeriesVisibilityBatch(self, record_ids, visible):
+        """Set committed visibility for UUIDs as one renderer/list transaction."""
+        record_ids = tuple(record_ids)
+        if not record_ids:
+            return False
+        entries = tuple(self.time_series_list_state.entry(record_id) for record_id in record_ids)
+        if any(entry is None for entry in entries):
+            error = RuntimeError("stale committed UUID in visibility batch")
+            if self._plugin_diagnostic is not None:
+                self._plugin_diagnostic("committed_visibility_batch", error)
+            else:
+                self.msg_signal.emit(str(error), "c", 0)
+            return False
+        target = bool(visible)
+        changed_ids = tuple(
+            record_id for record_id, entry in zip(record_ids, entries)
+            if entry.visible != target
+        )
+        if not changed_ids:
+            return True
+        plotter = self.choose_point_click_handler.plot_ts
+        try:
+            result = plotter.set_committed_visibility_batch(changed_ids, target)
+        except Exception as error:
+            if self._plugin_diagnostic is not None:
+                self._plugin_diagnostic("committed_visibility_batch", error)
+            else:
+                self.msg_signal.emit(str(error), "c", 0)
+            return False
+        for record_id in result.changed_record_ids:
+            self.time_series_list_state.set_visible(record_id, target)
+        self.ui.time_series_point_panel.refresh_committed_model()
+        if result.graphics_errors:
+            error = result.graphics_errors[0]
+            if self._plugin_diagnostic is not None:
+                self._plugin_diagnostic("committed_visibility_graphics", error)
+            else:
+                self.msg_signal.emit(str(error), "c", 0)
+        if result.refresh_errors:
+            error = result.refresh_errors[0]
+            if self._plugin_diagnostic is not None:
+                self._plugin_diagnostic("committed_visibility_refresh", error)
+            else:
+                self.msg_signal.emit(str(error), "c", 0)
+        return True
+
+    def toggleSelectedCommittedTimeSeriesVisibility(self):
+        """Apply one predictable visibility state to selected committed UUIDs."""
+        panel = self.ui.time_series_point_panel
+        snapshot = panel.capture_committed_selection()
+        record_ids = snapshot.selected_record_ids
+        if not record_ids:
+            return False
+        entries = tuple(self.time_series_list_state.entry(record_id) for record_id in record_ids)
+        if any(entry is None for entry in entries):
+            return self.setCommittedTimeSeriesVisibilityBatch(record_ids, True)
+        target = not all(entry.visible for entry in entries)
+        changed = self.setCommittedTimeSeriesVisibilityBatch(record_ids, target)
+        if changed:
+            panel.restore_committed_selection(
+                snapshot.selected_record_ids,
+                current_record_id=snapshot.current_record_id,
+                vertical_scroll=snapshot.vertical_scroll,
+                horizontal_scroll=snapshot.horizontal_scroll,
+            )
+            panel.committed_view.setFocus()
+        return changed
+
     def setAllCommittedTimeSeriesVisibility(self, visible):
-        """Apply deterministic show/hide-all without synthesizing cell clicks."""
-        for entry in tuple(self.time_series_list_state.entries()):
-            if entry.visible != bool(visible):
-                self.setCommittedTimeSeriesVisibility(entry.record_id, visible)
+        """Apply deterministic show/hide-all through one batch command."""
+        self.setCommittedTimeSeriesVisibilityBatch(
+            tuple(entry.record_id for entry in self.time_series_list_state.entries()),
+            visible,
+        )
 
     def updateCommittedTimeSeriesLabel(self, record_id, label):
         """Immutably update one committed optional label without changing visibility."""

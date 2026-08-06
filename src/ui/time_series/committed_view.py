@@ -7,7 +7,7 @@ from ...qt_compat import (
     QAction, CLEAR_AND_SELECT, CURRENT_SELECTION, CUSTOM_CONTEXT_MENU,
     CHECK_STATE_ROLE, CHECKED, UNCHECKED, LEFT_MOUSE_BUTTON,
     EDITING_STATE, EVENT_KEY_PRESS, KEY_BACKSPACE, KEY_DELETE, KEY_ENTER,
-    KEY_ESCAPE, KEY_F2, KEY_RETURN, NO_UPDATE_CURRENT,
+    KEY_ESCAPE, KEY_F2, KEY_RETURN, KEY_SPACE, NO_UPDATE_CURRENT,
     SELECT_ROWS_SELECTION, WIDGET_SHORTCUT,
     PALETTE_ACTIVE, PALETTE_HIGHLIGHT, PALETTE_HIGHLIGHTED_TEXT,
     PALETTE_INACTIVE,
@@ -24,6 +24,7 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
     removeSelectedRequested = pyqtSignal()
     copySettingsRequested = pyqtSignal()
     pasteRequested = pyqtSignal(object)
+    toggleSelectedVisibilityRequested = pyqtSignal()
 
     def __init__(self, parent=None):
         """Create an intent-only view with a shared removal context action."""
@@ -324,7 +325,15 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
         super(CommittedTimeSeriesView, self).mousePressEvent(event)
 
     def keyPressEvent(self, event):
-        """Handle local removal commands outside active editors."""
+        """Handle local committed-row keyboard commands outside active editors."""
+        if (
+            event.key() == KEY_SPACE
+            and self.state() != EDITING_STATE
+            and self._has_selected_rows()
+        ):
+            self.toggleSelectedVisibilityRequested.emit()
+            event.accept()
+            return
         if (
             event.key() in (KEY_DELETE, KEY_BACKSPACE)
             and self.state() != EDITING_STATE
