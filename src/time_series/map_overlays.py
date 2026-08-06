@@ -22,14 +22,11 @@ from .map_indicator_style import (
     COMMITTED_COLOR_ALPHA_WHILE_PENDING,
     COMMITTED_FILL_ALPHA,
     COMMITTED_LINE_WIDTH,
-    COMMITTED_POINT_INNER_SIZE,
-    COMMITTED_POINT_OUTER_SIZE,
     COMMITTED_POINT_PEN_WIDTH,
     PENDING_FILL_ALPHA,
     PENDING_LINE_WIDTH,
-    PENDING_POINT_INNER_SIZE,
-    PENDING_POINT_OUTER_SIZE,
     PENDING_POINT_PEN_WIDTH,
+    derive_point_indicator_sizes,
     point_indicator_outer_color,
     semantic_indicator_color,
     transparent_point_fill,
@@ -80,6 +77,21 @@ class OverlayItem:
     role: str
     geometry_kind: SpatialSelectionKind
     presentation_part: str = "primary"
+
+
+def _new_point_indicator_items(canvas, point, role: str, settings):
+    """Create the one- or two-layer point indicator for active settings."""
+    items = []
+    if settings.show_point_outer_ring:
+        outer = _new_point_marker(canvas, point, role)
+        items.append(
+            OverlayItem(outer, role, SpatialSelectionKind.POINT, _POINT_OUTER_RING)
+        )
+    inner = _new_point_marker(canvas, point, role)
+    items.append(
+        OverlayItem(inner, role, SpatialSelectionKind.POINT, _POINT_INNER_RING)
+    )
+    return tuple(items)
 
 
 @dataclass(frozen=True)
@@ -161,9 +173,10 @@ class PendingTimeSeriesMapOverlayController:
         self._items = RecordOverlayItems(target_items, reference_items)
 
     def refresh_style(self) -> None:
-        """Restyle owned pending items from one current settings snapshot."""
-        for overlay in self._items.all_items():
-            self._apply_style(overlay)
+        """Rebuild pending items so settings may change marker ownership."""
+        record = self._record
+        if record is not None:
+            self.project_record(record)
 
     def clear(self) -> None:
         """Remove every stable pending target/reference indicator."""
@@ -211,11 +224,8 @@ class PendingTimeSeriesMapOverlayController:
                 source_crs, destination_crs, QgsProject.instance()
             )
             point = transform.transform(point)
-        outer = _new_point_marker(self._canvas, point, role)
-        inner = _new_point_marker(self._canvas, point, role)
-        return (
-            OverlayItem(outer, role, SpatialSelectionKind.POINT, _POINT_OUTER_RING),
-            OverlayItem(inner, role, SpatialSelectionKind.POINT, _POINT_INNER_RING),
+        return _new_point_indicator_items(
+            self._canvas, point, role, self._settings_provider()
         )
 
     def _create_polygon_item(self, selection):
@@ -249,8 +259,9 @@ class PendingTimeSeriesMapOverlayController:
             )
             overlay.item.setFillColor(transparent_point_fill())
             overlay.item.setPenWidth(PENDING_POINT_PEN_WIDTH)
+            sizes = derive_point_indicator_sizes(settings.point_size)
             overlay.item.setIconSize(
-                PENDING_POINT_OUTER_SIZE if is_outer else PENDING_POINT_INNER_SIZE
+                sizes.pending_outer if is_outer else sizes.pending_inner
             )
             return
         fill = QColor(color)
@@ -364,10 +375,10 @@ class CommittedSelectionOverlayController:
             self._remove_owned_items(owned)
 
     def refresh_style(self) -> None:
-        """Restyle every selected committed overlay."""
-        for record_items in self._registry.values():
-            for overlay in record_items.all_items():
-                self._apply_style(overlay)
+        """Rebuild selected items so settings may change marker ownership."""
+        records = tuple(self._records_by_id.values())
+        for record in records:
+            self.show_record(record)
 
     def set_pending_active(self, active: bool) -> None:
         """Subdue committed overlays further while pending geometry is active."""
@@ -430,11 +441,8 @@ class CommittedSelectionOverlayController:
                 source_crs, destination_crs, QgsProject.instance()
             )
             point = transform.transform(point)
-        outer = _new_point_marker(self._canvas, point, role)
-        inner = _new_point_marker(self._canvas, point, role)
-        return (
-            OverlayItem(outer, role, SpatialSelectionKind.POINT, _POINT_OUTER_RING),
-            OverlayItem(inner, role, SpatialSelectionKind.POINT, _POINT_INNER_RING),
+        return _new_point_indicator_items(
+            self._canvas, point, role, self._settings_provider()
         )
 
     def _create_polygon_item(self, selection):
@@ -471,9 +479,11 @@ class CommittedSelectionOverlayController:
             )
             overlay.item.setFillColor(transparent_point_fill())
             overlay.item.setPenWidth(COMMITTED_POINT_PEN_WIDTH)
-            outer_size = COMMITTED_POINT_OUTER_SIZE - (1 if self._pending_active else 0)
-            inner_size = COMMITTED_POINT_INNER_SIZE - (1 if self._pending_active else 0)
-            overlay.item.setIconSize(outer_size if is_outer else inner_size)
+            sizes = derive_point_indicator_sizes(settings.point_size)
+            size = sizes.committed_outer if is_outer else sizes.committed_inner
+            if self._pending_active:
+                size = max(1, size - 1)
+            overlay.item.setIconSize(size)
             return
         fill = QColor(color)
         fill_alpha = (
