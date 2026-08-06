@@ -44,9 +44,32 @@ def _enum_value(owner, enum_name, value_name):
     return getattr(owner, value_name)
 
 
+_VERTEX_MARKER_BOX = _enum_value(QgsVertexMarker, "IconType", "ICON_BOX")
 _VERTEX_MARKER_CIRCLE = _enum_value(QgsVertexMarker, "IconType", "ICON_CIRCLE")
 _POINT_OUTER_RING = "outer_ring"
 _POINT_INNER_RING = "inner_ring"
+
+
+def point_marker_icon_for_role(role: str):
+    """Return the fixed point-marker icon for a target or reference role.
+
+    Targets use hollow squares and references use hollow circles. The mapping
+    is presentation-only and is shared by pending and committed overlays.
+    """
+    if role == "target":
+        return _VERTEX_MARKER_BOX
+    if role == "reference":
+        return _VERTEX_MARKER_CIRCLE
+    raise ValueError("unsupported point-indicator role: {!r}".format(role))
+
+
+def _new_point_marker(canvas, point, role: str):
+    """Create one transparent point-marker layer using fixed role semantics."""
+    marker = QgsVertexMarker(canvas)
+    marker.setCenter(point)
+    marker.setIconType(point_marker_icon_for_role(role))
+    marker.setFillColor(transparent_point_fill())
+    return marker
 
 
 @dataclass(frozen=True)
@@ -188,19 +211,12 @@ class PendingTimeSeriesMapOverlayController:
                 source_crs, destination_crs, QgsProject.instance()
             )
             point = transform.transform(point)
-        outer = self._new_point_marker(point)
-        inner = self._new_point_marker(point)
+        outer = _new_point_marker(self._canvas, point, role)
+        inner = _new_point_marker(self._canvas, point, role)
         return (
             OverlayItem(outer, role, SpatialSelectionKind.POINT, _POINT_OUTER_RING),
             OverlayItem(inner, role, SpatialSelectionKind.POINT, _POINT_INNER_RING),
         )
-
-    def _new_point_marker(self, point):
-        marker = QgsVertexMarker(self._canvas)
-        marker.setCenter(point)
-        marker.setIconType(_VERTEX_MARKER_CIRCLE)
-        marker.setFillColor(transparent_point_fill())
-        return marker
 
     def _create_polygon_item(self, selection):
         resolved = resolve_polygon_indicator_geometry(selection)
@@ -414,19 +430,12 @@ class CommittedSelectionOverlayController:
                 source_crs, destination_crs, QgsProject.instance()
             )
             point = transform.transform(point)
-        outer = self._new_point_marker(point)
-        inner = self._new_point_marker(point)
+        outer = _new_point_marker(self._canvas, point, role)
+        inner = _new_point_marker(self._canvas, point, role)
         return (
             OverlayItem(outer, role, SpatialSelectionKind.POINT, _POINT_OUTER_RING),
             OverlayItem(inner, role, SpatialSelectionKind.POINT, _POINT_INNER_RING),
         )
-
-    def _new_point_marker(self, point):
-        marker = QgsVertexMarker(self._canvas)
-        marker.setCenter(point)
-        marker.setIconType(_VERTEX_MARKER_CIRCLE)
-        marker.setFillColor(transparent_point_fill())
-        return marker
 
     def _create_polygon_item(self, selection):
         resolved = resolve_polygon_indicator_geometry(selection)
