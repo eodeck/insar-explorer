@@ -12,6 +12,10 @@ from qgis.gui import QgsRubberBand, QgsVertexMarker
 
 from ..models.time_series import SpatialSelection, SpatialSelectionKind, TimeSeriesRecord
 from ..qt_compat import POLYGON_GEOMETRY
+from .map_indicator_geometry import (
+    resolve_point_indicator_location,
+    resolve_polygon_indicator_geometry,
+)
 from .map_indicator_settings import factory_map_indicator_settings
 from .map_indicator_style import (
     COMMITTED_COLOR_ALPHA,
@@ -151,12 +155,12 @@ class PendingTimeSeriesMapOverlayController:
             return ()
         try:
             if selection.kind == SpatialSelectionKind.POINT:
-                point_items = self._create_point_items(selection.value, role)
+                point_items = self._create_point_items(selection, role)
                 for overlay in point_items:
                     self._apply_style(overlay)
                 return point_items
             if selection.kind == SpatialSelectionKind.POLYGON:
-                item = self._create_polygon_item(selection.value)
+                item = self._create_polygon_item(selection)
                 if item is None:
                     return ()
                 overlay = OverlayItem(item, role, selection.kind)
@@ -164,13 +168,20 @@ class PendingTimeSeriesMapOverlayController:
                 return (overlay,)
             return ()
         except Exception as error:
-            self._report("pending_map_overlay", error)
+            scope = (
+                "pending_map_overlay_point_location"
+                if selection.kind == SpatialSelectionKind.POINT
+                else "pending_map_overlay"
+            )
+            self._report(scope, error)
             return ()
 
-    def _create_point_items(self, value, role: str) -> Tuple[OverlayItem, ...]:
-        point, source_crs = CommittedSelectionOverlayController._point_and_crs(value)
-        if point is None or source_crs is None or not source_crs.isValid():
-            return ()
+    def _create_point_items(self, selection, role: str) -> Tuple[OverlayItem, ...]:
+        location = resolve_point_indicator_location(selection)
+        if location is None:
+            raise ValueError("point selection has no finite location with a valid CRS")
+        point = location.point
+        source_crs = location.source_crs
         destination_crs = self._canvas.mapSettings().destinationCrs()
         if source_crs != destination_crs:
             transform = QgsCoordinateTransform(
@@ -191,9 +202,12 @@ class PendingTimeSeriesMapOverlayController:
         marker.setFillColor(transparent_point_fill())
         return marker
 
-    def _create_polygon_item(self, value):
-        geometry, source_crs = CommittedSelectionOverlayController._geometry_and_crs(value)
-        if geometry is None or geometry.isEmpty() or source_crs is None:
+    def _create_polygon_item(self, selection):
+        resolved = resolve_polygon_indicator_geometry(selection)
+        if resolved is None:
+            return None
+        geometry, source_crs = resolved
+        if geometry.isEmpty():
             return None
         geometry = QgsGeometry(geometry)
         destination_crs = self._canvas.mapSettings().destinationCrs()
@@ -367,12 +381,12 @@ class CommittedSelectionOverlayController:
             return ()
         try:
             if selection.kind == SpatialSelectionKind.POINT:
-                point_items = self._create_point_items(selection.value, role)
+                point_items = self._create_point_items(selection, role)
                 for overlay in point_items:
                     self._apply_style(overlay)
                 return point_items
             if selection.kind == SpatialSelectionKind.POLYGON:
-                item = self._create_polygon_item(selection.value)
+                item = self._create_polygon_item(selection)
                 if item is None:
                     return ()
                 overlay = OverlayItem(item, role, selection.kind)
@@ -380,13 +394,20 @@ class CommittedSelectionOverlayController:
                 return (overlay,)
             return ()
         except Exception as error:
-            self._report("committed_map_overlay", error)
+            scope = (
+                "committed_map_overlay_point_location"
+                if selection.kind == SpatialSelectionKind.POINT
+                else "committed_map_overlay"
+            )
+            self._report(scope, error)
             return ()
 
-    def _create_point_items(self, value, role: str) -> Tuple[OverlayItem, ...]:
-        point, source_crs = self._point_and_crs(value)
-        if point is None or source_crs is None or not source_crs.isValid():
-            return ()
+    def _create_point_items(self, selection, role: str) -> Tuple[OverlayItem, ...]:
+        location = resolve_point_indicator_location(selection)
+        if location is None:
+            raise ValueError("point selection has no finite location with a valid CRS")
+        point = location.point
+        source_crs = location.source_crs
         destination_crs = self._canvas.mapSettings().destinationCrs()
         if source_crs != destination_crs:
             transform = QgsCoordinateTransform(
@@ -407,9 +428,12 @@ class CommittedSelectionOverlayController:
         marker.setFillColor(transparent_point_fill())
         return marker
 
-    def _create_polygon_item(self, value):
-        geometry, source_crs = self._geometry_and_crs(value)
-        if geometry is None or geometry.isEmpty() or source_crs is None:
+    def _create_polygon_item(self, selection):
+        resolved = resolve_polygon_indicator_geometry(selection)
+        if resolved is None:
+            return None
+        geometry, source_crs = resolved
+        if geometry.isEmpty():
             return None
         geometry = QgsGeometry(geometry)
         destination_crs = self._canvas.mapSettings().destinationCrs()
@@ -421,26 +445,6 @@ class CommittedSelectionOverlayController:
         band = QgsRubberBand(self._canvas, POLYGON_GEOMETRY)
         band.setToGeometry(geometry, None)
         return band
-
-    @staticmethod
-    def _point_and_crs(value):
-        if value is None:
-            return None, None
-        if hasattr(value, "x") and hasattr(value, "y") and hasattr(value, "crs"):
-            return QgsPointXY(float(value.x), float(value.y)), value.crs
-        if isinstance(value, QgsGeometry) and not value.isEmpty():
-            return QgsPointXY(value.asPoint()), None
-        return None, None
-
-    @staticmethod
-    def _geometry_and_crs(value):
-        if value is None:
-            return None, None
-        if hasattr(value, "geom") and hasattr(value, "crs"):
-            return value.geom, value.crs
-        if isinstance(value, QgsGeometry):
-            return value, None
-        return None, None
 
     def _apply_style(self, overlay: OverlayItem) -> None:
         alpha = (

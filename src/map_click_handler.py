@@ -6,6 +6,7 @@ from qgis.core import QgsProject, QgsCoordinateTransform, QgsCoordinateReference
 from qgis.PyQt.QtGui import QColor, QCursor
 
 from .bootstrap import ensure_time_series_services
+from .models.time_series import MapPointSnapshot, SpatialSelection, SpatialSelectionKind
 from .time_series.target_session import CanonicalTargetSnapshot
 from .time_series.reference_session import ActiveReference
 from .qt_compat import WAIT_CURSOR
@@ -332,11 +333,11 @@ class TSClickHandler(MapClickHandler):
             return
 
     def _referenceInputsForNewTarget(self):
-        """Return active session-reference inputs without consulting a record."""
+        """Return active reference values and the complete typed selection."""
         reference = self.reference_session.current()
         if reference is None:
             return None, None
-        return reference.values_array(), reference.selection.value
+        return reference.values_array(), reference.selection
 
     def _commitSelectedReference(self, reference):
         """Publish reference session state after pending update succeeds."""
@@ -364,14 +365,14 @@ class TSClickHandler(MapClickHandler):
             return False
         active_reference = reference
         ref_values = None if active_reference is None else active_reference.values_array()
-        ref_coords = None if active_reference is None else active_reference.selection.value
+        ref_coords = None if active_reference is None else active_reference.selection
         pending_before = self.plot_ts.pending_record()
         previous_id = None if pending_before is None else pending_before.id
         self.plot_ts.plotTs(
             dates=np.asarray(target.dates),
             ts_values=target.values_array(),
             ref_values=ref_values,
-            coords=target.selection.value if pending_before is None else None,
+            coords=target.selection if pending_before is None else None,
             ref_coords=ref_coords,
             plot_multiple=target.plot_multiple,
             update=pending_before is not None,
@@ -463,18 +464,28 @@ class TSClickHandler(MapClickHandler):
             self.highlightSelectedReferenceFeature(clicked_point)
 
         crds = Coordinates(x=clicked_point.asPoint().x(), y=clicked_point.asPoint().y(), crs=layer.crs())
+        canvas_crs = self.iface.mapCanvas().mapSettings().destinationCrs()
+        selection = SpatialSelection(
+            value=crds,
+            kind=SpatialSelectionKind.POINT,
+            map_location=MapPointSnapshot(
+                x=float(point.x()),
+                y=float(point.y()),
+                crs=canvas_crs,
+            ),
+        )
         coords = None
         ref_coords = None
 
         if not ref:
             ts_values = date_values[:, 1]
             ref_values, ref_coords = self._referenceInputsForNewTarget()
-            coords = crds
+            coords = selection
         else:
             ref_values = date_values[:, 1]
             self.map_reference_clicked_value = self.raster_layer.getClickedPixelValue(layer, point=point)
             ts_values = None
-            ref_coords = crds
+            ref_coords = selection
 
         dates = date_values[:, 0]
         analysis = self._analysisForNewRecord() if not ref else None

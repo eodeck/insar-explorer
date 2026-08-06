@@ -5,8 +5,11 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from enum import Enum
-from typing import Any, List, Mapping, Optional
+from typing import TYPE_CHECKING, Any, List, Mapping, Optional
 from uuid import UUID, uuid4
+
+if TYPE_CHECKING:
+    from qgis.core import QgsCoordinateReferenceSystem
 
 import numpy as np
 
@@ -49,11 +52,30 @@ class SpatialSelectionKind(str, Enum):
 
 
 @dataclass(frozen=True)
+class MapPointSnapshot:
+    """Point location expressed in one explicit map CRS."""
+
+    x: float
+    y: float
+    crs: "QgsCoordinateReferenceSystem"
+
+    def __post_init__(self) -> None:
+        x = float(self.x)
+        y = float(self.y)
+        if not np.isfinite(x) or not np.isfinite(y):
+            raise ValueError("map point coordinates must be finite")
+        object.__setattr__(self, "x", x)
+        object.__setattr__(self, "y", y)
+        object.__setattr__(self, "crs", type(self.crs)(self.crs))
+
+
+@dataclass(frozen=True)
 class SpatialSelection:
     """Renderer-independent spatial selection used by a time-series record."""
 
     value: Any
     kind: SpatialSelectionKind
+    map_location: Optional[MapPointSnapshot] = None
 
     @classmethod
     def from_legacy(cls, value: Any) -> Optional["SpatialSelection"]:
