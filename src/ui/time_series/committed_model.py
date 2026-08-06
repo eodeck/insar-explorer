@@ -104,7 +104,7 @@ class CommittedTimeSeriesModel(QAbstractTableModel):
             if role == EDIT_ROLE:
                 return label
             if role == TOOLTIP_ROLE:
-                return "Double-click to edit label"
+                return "Press F2 or use Rename to edit the label"
             if role == TEXT_ALIGNMENT_ROLE:
                 return ALIGN_LEFT | ALIGN_VCENTER
             if not label and role == FONT_ROLE:

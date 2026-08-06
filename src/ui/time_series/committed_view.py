@@ -1,12 +1,14 @@
 """Committed time-series table view interaction policy."""
 
 from qgis.PyQt import QtGui, QtWidgets
-from qgis.PyQt.QtCore import QEvent, pyqtSignal
+from qgis.PyQt.QtCore import QEvent, QTimer, pyqtSignal
 
 from ...qt_compat import (
     QAction, CLEAR_AND_SELECT, CURRENT_SELECTION, CUSTOM_CONTEXT_MENU,
     CHECK_STATE_ROLE, CHECKED, UNCHECKED, LEFT_MOUSE_BUTTON,
-    EDITING_STATE, KEY_BACKSPACE, KEY_DELETE, SELECT_ROWS_SELECTION,
+    EDITING_STATE, EVENT_KEY_PRESS, KEY_BACKSPACE, KEY_DELETE, KEY_ENTER,
+    KEY_ESCAPE, KEY_F2, KEY_RETURN, NO_UPDATE_CURRENT,
+    SELECT_ROWS_SELECTION, WIDGET_SHORTCUT,
     PALETTE_ACTIVE, PALETTE_HIGHLIGHT, PALETTE_HIGHLIGHTED_TEXT,
     PALETTE_INACTIVE,
 )
@@ -28,6 +30,21 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
         super(CommittedTimeSeriesView, self).__init__(parent)
         self._selection_active = True
         self._applying_selection_palette = False
+        self._rename_record_id = None
+        self._rename_editor = None
+        self._restore_focus_after_rename = False
+        self.rename_action = QAction("Rename", self)
+        self.rename_action.setObjectName("action_rename_selected_time_series")
+        self.rename_action.setShortcut(QtGui.QKeySequence(KEY_F2))
+        self.rename_action.setShortcutContext(WIDGET_SHORTCUT)
+        self.rename_action.setToolTip("Rename the selected time series")
+        self.rename_action.setStatusTip("Rename the selected time series")
+        set_accessible_name = getattr(self.rename_action, "setAccessibleName", None)
+        if callable(set_accessible_name):
+            set_accessible_name("Rename selected time series")
+        self.rename_action.setEnabled(False)
+        self.rename_action.triggered.connect(self.begin_rename_selected_record)
+        self.addAction(self.rename_action)
         self.remove_action = QAction(
             QtGui.QIcon(":/icons/icons/item_remove.svg"), "Remove", self
         )
@@ -128,6 +145,117 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
         selection_model = self.selectionModel()
         return selection_model is not None and selection_model.hasSelection()
 
+    def _selected_record_ids(self):
+        """Return selected committed UUIDs through the model identity API."""
+        model = self.model()
+        selection_model = self.selectionModel()
+        if model is None or selection_model is None:
+            return ()
+        return tuple(
+            record_id for record_id in (
+                model.record_id_at(index.row())
+                for index in selection_model.selectedRows()
+            ) if record_id is not None
+        )
+
+    def _update_rename_action_enabled(self, *unused):
+        """Enable Rename only for exactly one selected committed UUID."""
+        self.rename_action.setEnabled(
+            self.state() != EDITING_STATE and len(self._selected_record_ids()) == 1
+        )
+
+    def setModel(self, model):
+        """Bind selection-driven Rename enablement to each installed model."""
+        old_selection_model = self.selectionModel()
+        if old_selection_model is not None:
+            try:
+                old_selection_model.selectionChanged.disconnect(
+                    self._update_rename_action_enabled
+                )
+            except (TypeError, RuntimeError):
+                pass
+        super(CommittedTimeSeriesView, self).setModel(model)
+        selection_model = self.selectionModel()
+        if selection_model is not None:
+            selection_model.selectionChanged.connect(
+                self._update_rename_action_enabled
+            )
+        self._update_rename_action_enabled()
+
+    def begin_rename_selected_record(self):
+        """Start inline label editing for the single selected committed record."""
+        if self.state() == EDITING_STATE:
+            return False
+        selected_ids = self._selected_record_ids()
+        model = self.model()
+        selection_model = self.selectionModel()
+        if len(selected_ids) != 1 or model is None or selection_model is None:
+            self._update_rename_action_enabled()
+            return False
+        record_id = selected_ids[0]
+        row = model.row_for_id(record_id)
+        if row is None:
+            self._update_rename_action_enabled()
+            return False
+        index = model.index(row, CommittedTimeSeriesColumn.LABEL)
+        if not index.isValid():
+            return False
+        self._rename_record_id = record_id
+        self._restore_focus_after_rename = False
+        selection_model.setCurrentIndex(index, NO_UPDATE_CURRENT)
+        self.edit(index)
+        if self.state() != EDITING_STATE:
+            self._rename_record_id = None
+            self._update_rename_action_enabled()
+            return False
+        QTimer.singleShot(0, self._select_active_editor_text)
+        self._update_rename_action_enabled()
+        return True
+
+    def _select_active_editor_text(self):
+        """Select label text and observe keyboard-driven editor completion."""
+        editor = self.findChild(QtWidgets.QLineEdit)
+        if editor is not None and editor.isVisible():
+            self._rename_editor = editor
+            editor.installEventFilter(self)
+            editor.selectAll()
+
+    def eventFilter(self, watched, event):
+        """Remember whether Enter or Escape is closing the active rename editor."""
+        if watched is self._rename_editor and event.type() == EVENT_KEY_PRESS:
+            if event.key() in (KEY_RETURN, KEY_ENTER, KEY_ESCAPE):
+                self._restore_focus_after_rename = True
+        return super(CommittedTimeSeriesView, self).eventFilter(watched, event)
+
+    def _restore_current_record(self, record_id):
+        """Restore one committed UUID as current without changing selection."""
+        model = self.model()
+        selection_model = self.selectionModel()
+        if model is None or selection_model is None:
+            return
+        row = model.row_for_id(record_id)
+        if row is None:
+            return
+        index = model.index(row, CommittedTimeSeriesColumn.LABEL)
+        if index.isValid():
+            selection_model.setCurrentIndex(index, NO_UPDATE_CURRENT)
+
+    def closeEditor(self, editor, hint):
+        """Close rename editing and restore predictable list navigation state."""
+        record_id = self._rename_record_id
+        restore_focus = self._restore_focus_after_rename
+        if editor is self._rename_editor:
+            editor.removeEventFilter(self)
+        self._rename_editor = None
+        super(CommittedTimeSeriesView, self).closeEditor(editor, hint)
+        if record_id is not None:
+            self._restore_current_record(record_id)
+        self._rename_record_id = None
+        self._restore_focus_after_rename = False
+        if restore_focus:
+            self.setFocus()
+        self._update_rename_action_enabled()
+
     def _request_selected_removal(self):
         """Emit removal intent only when committed rows are selected."""
         if self.state() != EDITING_STATE and self._has_selected_rows():
@@ -151,6 +279,7 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
     def _update_remove_action_enabled(self):
         """Project selection availability onto the context-menu action."""
         self.remove_action.setEnabled(self._has_selected_rows())
+        self._update_rename_action_enabled()
 
     def set_copy_paste_enabled(self, *, copy_enabled, paste_categories=()):
         """Project controller-owned clipboard/selection availability onto actions."""
@@ -169,6 +298,7 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
         menu.addAction(self.copy_settings_action)
         menu.addMenu(self.paste_menu)
         menu.addSeparator()
+        menu.addAction(self.rename_action)
         menu.addAction(self.remove_action)
         global_position = self.viewport().mapToGlobal(position)
         if hasattr(menu, "exec"):
@@ -194,7 +324,7 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
         super(CommittedTimeSeriesView, self).mousePressEvent(event)
 
     def keyPressEvent(self, event):
-        """Request row removal while preserving inline label editing keys."""
+        """Handle local removal commands outside active editors."""
         if (
             event.key() in (KEY_DELETE, KEY_BACKSPACE)
             and self.state() != EDITING_STATE

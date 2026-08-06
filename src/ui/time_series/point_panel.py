@@ -16,6 +16,7 @@ from ...qt_compat import (
     EDIT_DOUBLE_CLICKED,
     EDIT_KEY_PRESSED,
     EDIT_SELECTED_CLICKED,
+    NO_EDIT_TRIGGERS,
     HEADER_FIXED,
     HEADER_STRETCH,
     NO_CONTEXT_MENU,
@@ -304,9 +305,7 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         )
         self.committed_view.setSelectionBehavior(SELECT_ROWS)
         self.committed_view.setSelectionMode(EXTENDED_SELECTION)
-        self.committed_view.setEditTriggers(
-            EDIT_DOUBLE_CLICKED | EDIT_SELECTED_CLICKED | EDIT_KEY_PRESSED
-        )
+        self.committed_view.setEditTriggers(NO_EDIT_TRIGGERS)
         self.committed_view.setSortingEnabled(False)
         self.committed_view.setDragDropMode(NO_DRAG_DROP)
         self.committed_view.setDragEnabled(False)
