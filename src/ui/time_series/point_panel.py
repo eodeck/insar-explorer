@@ -356,7 +356,10 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
             "Remove selected time series",
         )
         self.remove_selected_button.clicked.connect(
-            self.removeSelectedCommittedRequested.emit
+            self.committed_view.remove_action.trigger
+        )
+        self.committed_view.remove_action.changed.connect(
+            self._sync_remove_button_enabled
         )
         removal_actions.addWidget(
             self.remove_selected_button, 0, ALIGN_VCENTER
@@ -526,16 +529,24 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         self._clipboard_categories = tuple(categories)
         self.refresh_removal_actions()
 
+    def _sync_remove_button_enabled(self):
+        """Mirror the shared Remove action state onto the bottom button."""
+        self.remove_selected_button.setEnabled(
+            self.committed_view.remove_action.isEnabled()
+        )
+
     def refresh_removal_actions(self):
         """Enable committed-list commands from selection and clipboard projection."""
         selected_ids = self.selected_committed_ids()
         selected = bool(selected_ids)
-        self.remove_selected_button.setEnabled(selected)
         committed_count = (
             0 if self.committed_model is None else self.committed_model.rowCount()
         )
         self.copy_paste_button.setEnabled(committed_count > 0)
-        self.committed_view.remove_action.setEnabled(selected)
+        self.committed_view.refresh_action_enabled_states()
+        self.remove_selected_button.setEnabled(
+            self.committed_view.remove_action.isEnabled()
+        )
         self.committed_view.set_copy_paste_enabled(
             copy_enabled=len(selected_ids) == 1,
             paste_categories=self._clipboard_categories if selected else (),

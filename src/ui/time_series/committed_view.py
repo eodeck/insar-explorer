@@ -6,7 +6,7 @@ from qgis.PyQt.QtCore import QEvent, QTimer, pyqtSignal
 from ...qt_compat import (
     QAction, CLEAR_AND_SELECT, CURRENT_SELECTION, CUSTOM_CONTEXT_MENU,
     CHECK_STATE_ROLE, CHECKED, UNCHECKED, LEFT_MOUSE_BUTTON,
-    EDITING_STATE, EVENT_KEY_PRESS, KEY_BACKSPACE, KEY_DELETE, KEY_ENTER,
+    EDITING_STATE, EVENT_KEY_PRESS, KEY_ENTER,
     KEY_ESCAPE, KEY_F2, KEY_RETURN, KEY_SPACE, NO_UPDATE_CURRENT,
     SELECT_ROWS_SELECTION, WIDGET_SHORTCUT,
     PALETTE_ACTIVE, PALETTE_HIGHLIGHT, PALETTE_HIGHLIGHTED_TEXT,
@@ -38,8 +38,8 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
         self.rename_action.setObjectName("action_rename_selected_time_series")
         self.rename_action.setShortcut(QtGui.QKeySequence(KEY_F2))
         self.rename_action.setShortcutContext(WIDGET_SHORTCUT)
-        self.rename_action.setToolTip("Rename the selected time series")
-        self.rename_action.setStatusTip("Rename the selected time series")
+        self.rename_action.setToolTip("Rename the selected time series (F2)")
+        self.rename_action.setStatusTip("Rename the selected time series (F2)")
         set_accessible_name = getattr(self.rename_action, "setAccessibleName", None)
         if callable(set_accessible_name):
             set_accessible_name("Rename selected time series")
@@ -51,8 +51,15 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
         )
         self.remove_action.setObjectName("action_remove_selected_time_series")
         self.remove_action.setToolTip("Remove selected time series")
+        self.remove_action.setStatusTip("Remove selected time series")
+        set_remove_accessible_name = getattr(
+            self.remove_action, "setAccessibleName", None
+        )
+        if callable(set_remove_accessible_name):
+            set_remove_accessible_name("Remove selected time series")
         self.remove_action.setEnabled(False)
         self.remove_action.triggered.connect(self._request_selected_removal)
+        self.addAction(self.remove_action)
         from ...time_series.copy_paste import CopyPasteCategory
         self.copy_settings_action = QAction("Copy Style, Fit and Replica", self)
         self.copy_settings_action.setObjectName("action_copy_time_series_settings")
@@ -160,10 +167,8 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
         )
 
     def _update_rename_action_enabled(self, *unused):
-        """Enable Rename only for exactly one selected committed UUID."""
-        self.rename_action.setEnabled(
-            self.state() != EDITING_STATE and len(self._selected_record_ids()) == 1
-        )
+        """Refresh shared action state after rename-related changes."""
+        self.refresh_action_enabled_states()
 
     def setModel(self, model):
         """Bind selection-driven Rename enablement to each installed model."""
@@ -171,7 +176,7 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
         if old_selection_model is not None:
             try:
                 old_selection_model.selectionChanged.disconnect(
-                    self._update_rename_action_enabled
+                    self.refresh_action_enabled_states
                 )
             except (TypeError, RuntimeError):
                 pass
@@ -179,9 +184,16 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
         selection_model = self.selectionModel()
         if selection_model is not None:
             selection_model.selectionChanged.connect(
-                self._update_rename_action_enabled
+                self.refresh_action_enabled_states
             )
-        self._update_rename_action_enabled()
+        self.refresh_action_enabled_states()
+
+    def refresh_action_enabled_states(self, *unused):
+        """Refresh shared Rename and Remove actions from view state."""
+        editing = self.state() == EDITING_STATE
+        selected_ids = self._selected_record_ids()
+        self.rename_action.setEnabled(not editing and len(selected_ids) == 1)
+        self.remove_action.setEnabled(not editing and bool(selected_ids))
 
     def begin_rename_selected_record(self):
         """Start inline label editing for the single selected committed record."""
@@ -278,9 +290,8 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
         self.setFocus()
 
     def _update_remove_action_enabled(self):
-        """Project selection availability onto the context-menu action."""
-        self.remove_action.setEnabled(self._has_selected_rows())
-        self._update_rename_action_enabled()
+        """Refresh shared action state before exposing row commands."""
+        self.refresh_action_enabled_states()
 
     def set_copy_paste_enabled(self, *, copy_enabled, paste_categories=()):
         """Project controller-owned clipboard/selection availability onto actions."""
@@ -332,15 +343,6 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
             and self._has_selected_rows()
         ):
             self.toggleSelectedVisibilityRequested.emit()
-            event.accept()
-            return
-        if (
-            event.key() in (KEY_DELETE, KEY_BACKSPACE)
-            and self.state() != EDITING_STATE
-            and self.selectionModel() is not None
-            and self.selectionModel().hasSelection()
-        ):
-            self._request_selected_removal()
             event.accept()
             return
         super(CommittedTimeSeriesView, self).keyPressEvent(event)
