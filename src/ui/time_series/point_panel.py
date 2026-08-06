@@ -29,6 +29,7 @@ from ...qt_compat import (
     SELECT_SELECTION,
     TOOL_BUTTON_INSTANT_POPUP,
     TOOL_BUTTON_ICON_ONLY,
+    configure_compact_command_button,
 )
 
 from .committed_columns import (
@@ -40,8 +41,8 @@ from .committed_view import CommittedTimeSeriesView
 from .visibility_header import TimeSeriesVisibilityHeader
 
 from .columns import (
-    PENDING_ACTION_BUTTON_SIZE,
-    PENDING_ACTION_ICON_SIZE,
+    TIME_SERIES_ACTION_BUTTON_SIZE,
+    TIME_SERIES_ACTION_ICON_SIZE,
     PENDING_ROW_HEIGHT,
     TIME_SERIES_ROW_HEIGHT,
     TIME_SERIES_TYPE_COLUMN_WIDTH,
@@ -69,6 +70,22 @@ PENDING_ACTION_ICONS = {
 }
 
 
+def configure_time_series_action_button(
+    button, *, icon, tooltip, accessible_name
+):
+    """Apply the shared compact time-series action-button presentation."""
+    button.setText("")
+    button.setIcon(QtGui.QIcon(icon))
+    button.setToolTip(tooltip)
+    button.setAccessibleName(accessible_name)
+    configure_compact_command_button(
+        button,
+        size=TIME_SERIES_ACTION_BUTTON_SIZE,
+        icon_size=TIME_SERIES_ACTION_ICON_SIZE,
+    )
+    return button
+
+
 class TimeSeriesPointPanel(QtWidgets.QWidget):
     """Own selection controls, pending preview controls, and future list space."""
 
@@ -82,6 +99,7 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
     removeSelectedCommittedRequested = pyqtSignal()
     copyCommittedSettingsRequested = pyqtSignal()
     pasteCommittedRequested = pyqtSignal(object)
+    indicatorSettingsRequested = pyqtSignal()
 
     ICON_SIZE = 18
     BUTTON_SIZE = 26
@@ -319,28 +337,16 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         removal_actions.setSpacing(3)
         self.copy_paste_button = QtWidgets.QToolButton(self)
         self.copy_paste_button.setObjectName("tb_copy_paste_time_series")
-        self.copy_paste_button.setText("")
-        self.copy_paste_button.setIcon(
-            QtGui.QIcon(":/icons/icons/clipboard.svg")
+        configure_time_series_action_button(
+            self.copy_paste_button,
+            icon=":/icons/icons/clipboard.svg",
+            tooltip="Copy or paste time-series settings",
+            accessible_name="Copy and paste time-series settings",
         )
-        self.copy_paste_button.setIconSize(
-            QSize(self.ICON_SIZE, self.ICON_SIZE)
-        )
-        self.copy_paste_button.setToolTip(
-            "Copy or paste time-series settings"
-        )
-        self.copy_paste_button.setAccessibleName(
-            "Copy and paste time-series settings"
-        )
-        self.copy_paste_button.setCheckable(False)
         self.copy_paste_button.setToolButtonStyle(TOOL_BUTTON_ICON_ONLY)
         self.copy_paste_button.setPopupMode(TOOL_BUTTON_INSTANT_POPUP)
         self.copy_paste_button.setMenu(
             self.committed_view.create_copy_paste_menu(self.copy_paste_button)
-        )
-        self.copy_paste_button.setFixedSize(self.BUTTON_SIZE, self.BUTTON_SIZE)
-        self.copy_paste_button.setSizePolicy(
-            SIZE_POLICY_FIXED, SIZE_POLICY_FIXED
         )
         removal_actions.addWidget(self.copy_paste_button, 0, ALIGN_VCENTER)
         self.remove_selected_button = self._pending_action_button(
@@ -356,6 +362,19 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
             self.remove_selected_button, 0, ALIGN_VCENTER
         )
         removal_actions.addStretch(1)
+        self.indicator_settings_button = QtWidgets.QToolButton(self)
+        self.indicator_settings_button.setObjectName(
+            "tb_time_series_indicator_settings"
+        )
+        configure_time_series_action_button(
+            self.indicator_settings_button,
+            icon=":/icons/icons/setting.svg",
+            tooltip="Configure target and reference map indicators",
+            accessible_name="Target and reference indicator settings",
+        )
+        self.indicator_settings_button.setToolButtonStyle(TOOL_BUTTON_ICON_ONLY)
+        self.indicator_settings_button.clicked.connect(self.indicatorSettingsRequested.emit)
+        removal_actions.addWidget(self.indicator_settings_button, 0, ALIGN_VCENTER)
         layout.addLayout(removal_actions)
         self.committed_view.removeSelectedRequested.connect(
             self.removeSelectedCommittedRequested.emit
@@ -527,16 +546,14 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         """Create a compact icon-only pending lifecycle action."""
         button = QtWidgets.QPushButton(self)
         button.setObjectName(object_name)
-        button.setText("")
-        button.setIcon(QtGui.QIcon(icon_path))
-        button.setToolTip(tooltip)
-        button.setAccessibleName(accessible_name)
-        button.setCheckable(False)
+        configure_time_series_action_button(
+            button,
+            icon=icon_path,
+            tooltip=tooltip,
+            accessible_name=accessible_name,
+        )
         button.setAutoDefault(False)
         button.setDefault(False)
-        button.setFixedSize(PENDING_ACTION_BUTTON_SIZE, PENDING_ACTION_BUTTON_SIZE)
-        button.setIconSize(QSize(PENDING_ACTION_ICON_SIZE, PENDING_ACTION_ICON_SIZE))
-        button.setSizePolicy(SIZE_POLICY_FIXED, SIZE_POLICY_FIXED)
         return button
 
     def show_pending(self, record):

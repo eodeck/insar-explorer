@@ -2,6 +2,7 @@
 
 from .time_series import (
     FitConfiguration,
+    MapPointSnapshot,
     ReplicaConfiguration,
     TimeSeriesAnalysis,
     TimeSeriesData,
@@ -20,6 +21,7 @@ from .time_series import (
 
 __all__ = [
     "FitConfiguration",
+    "MapPointSnapshot",
     "ReplicaConfiguration",
     "TimeSeriesAnalysis",
     "TimeSeriesData",

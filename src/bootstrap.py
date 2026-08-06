@@ -13,6 +13,7 @@ from .time_series.settings.model import TimeSeriesSettingsModel
 from .time_series.reference_session import ActiveReferenceSession
 from .time_series.pending_session import PendingTimeSeriesSession
 from .time_series.target_session import ActiveTargetSession
+from .time_series.map_indicator_settings import MapIndicatorSettingsService
 
 
 @dataclass(frozen=True)
@@ -25,6 +26,7 @@ class TimeSeriesServices:
     reference_session: ActiveReferenceSession
     pending_session: PendingTimeSeriesSession
     target_session: ActiveTargetSession
+    map_indicator_settings: MapIndicatorSettingsService
 
 
 def create_time_series_services(plugin_dir, diagnostic=None):
@@ -51,6 +53,7 @@ def create_time_series_services(plugin_dir, diagnostic=None):
         reference_session=ActiveReferenceSession(),
         pending_session=PendingTimeSeriesSession(),
         target_session=ActiveTargetSession(),
+        map_indicator_settings=MapIndicatorSettingsService(),
     )
 
 
@@ -65,6 +68,7 @@ def _services_are_complete(services):
             "reference_session",
             "pending_session",
             "target_session",
+            "map_indicator_settings",
         )
     )
 

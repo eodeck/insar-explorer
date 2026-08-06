@@ -40,6 +40,14 @@ from .models.time_series import (
 _UNSET = object()
 
 
+@dataclass(frozen=True)
+class CommittedRemovalResult:
+    """Result of one committed-record batch removal."""
+
+    removed_record_ids: Tuple[UUID, ...]
+    graphics_errors: Tuple[Exception, ...] = ()
+
+
 try:
     from .. import __version__
 except ImportError:
@@ -2019,6 +2027,10 @@ class PlotTs():
         if self.committed_changed_callback is not None:
             self.committed_changed_callback(self._series_store.records())
 
+    def notify_committed_changed(self) -> None:
+        """Publish the current committed-record projection."""
+        self._notify_committed_changed()
+
     def set_pending_record(self, record, *, plot_multiple=True, report_statistics=False):
         """Transactionally render and replace the current pending record."""
         previous = self.pending_record()
@@ -2151,8 +2163,8 @@ class PlotTs():
         """Remove and return the record with the supplied stable identity."""
         return self._series_store.remove(series_id)
 
-    def remove_records(self, record_ids, *, notify=True):
-        """Remove committed records by UUID and redraw exactly once.
+    def remove_records(self, record_ids, *, notify=True) -> CommittedRemovalResult:
+        """Remove committed records by UUID and return explicit diagnostics.
 
         Valid UUIDs are removed as one domain command. Stale UUIDs are ignored.
         Graphics detachment is best-effort after authoritative store removal;
@@ -2171,7 +2183,7 @@ class PlotTs():
             if record is not None
         )
         if not records:
-            return ()
+            return CommittedRemovalResult(())
         removed = self._series_store.remove_many(record.id for record in records)
         detach_errors = []
         for record in removed:
@@ -2187,12 +2199,15 @@ class PlotTs():
         self._draw()
         if notify:
             self._notify_committed_changed()
-        self._last_record_removal_errors = tuple(detach_errors)
-        return tuple(record.id for record in removed)
+        return CommittedRemovalResult(
+            removed_record_ids=tuple(record.id for record in removed),
+            graphics_errors=tuple(detach_errors),
+        )
 
     def remove_record(self, series_id: UUID) -> bool:
         """Remove one committed record through the shared batch boundary."""
-        return bool(self.remove_records((series_id,)))
+        result = self.remove_records((series_id,))
+        return bool(result.removed_record_ids)
 
     def set_committed_visibility(self, series_id: UUID, visible: bool) -> bool:
         """Show or hide one committed record without changing record state."""

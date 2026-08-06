@@ -46,11 +46,12 @@ class CompactColorButton(QPushButton):
 
     colorChanged = pyqtSignal(str)
 
-    def __init__(self, glyph, tooltip, parent=None):
-        """Create a fixed-size color preview with its original style glyph."""
+    def __init__(self, glyph, tooltip, parent=None, accessible_name=None):
+        """Create a fixed-size color preview with optional semantic metadata."""
         super().__init__(glyph, parent)
         self._color = "#000000"
         self.setToolTip(tooltip)
+        self.setAccessibleName(accessible_name or tooltip)
         self.setFixedSize(24, 24)
         self.setSizePolicy(SIZE_POLICY_FIXED, SIZE_POLICY_FIXED)
         self.clicked.connect(self._pickColor)
@@ -62,6 +63,7 @@ class CompactColorButton(QPushButton):
         if not parsed.isValid():
             parsed = QColor("#000000")
         self._color = parsed.name()
+        self.setAccessibleDescription("{}: {}".format(self.accessibleName(), self._color))
         self._updatePreview()
         if emit:
             self.colorChanged.emit(self._color)

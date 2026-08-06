@@ -3,12 +3,16 @@ from qgis.PyQt.QtWidgets import QApplication
 from qgis.core import QgsPointXY, QgsGeometry, QgsMapLayer, QgsRectangle, QgsFeatureRequest, QgsSettings, Qgis
 from qgis.gui import QgsHighlight
 from qgis.core import QgsProject, QgsCoordinateTransform, QgsCoordinateReferenceSystem
-from qgis.PyQt.QtGui import QCursor
+from qgis.PyQt.QtGui import QColor, QCursor
 
 from .bootstrap import ensure_time_series_services
+from .models.time_series import MapPointSnapshot, SpatialSelection, SpatialSelectionKind
 from .time_series.target_session import CanonicalTargetSnapshot
 from .time_series.reference_session import ActiveReference
-from .qt_compat import RED, WAIT_CURSOR, YELLOW
+from .qt_compat import WAIT_CURSOR
+from .time_series.map_indicator_style import (
+    semantic_indicator_color,
+)
 
 import numpy as np
 
@@ -105,7 +109,9 @@ class MapClickHandler:
         highlight: The QgsHighlight object used to highlight selected features.
 
     """
-    def __init__(self, plugin, msg_signal=None):
+    def __init__(
+        self, plugin, msg_signal=None, indicator_settings_service=None
+    ):
         self.ui = plugin.dockwidget
         self.iface = plugin.iface
         self.msg_signal = msg_signal
@@ -113,6 +119,11 @@ class MapClickHandler:
         self.reference_highlight = None
         self.map_reference_clicked_value = 0
         self.new_record_analysis_provider = None
+        if indicator_settings_service is None:
+            indicator_settings_service = (
+                ensure_time_series_services(plugin).map_indicator_settings
+            )
+        self._indicator_settings = indicator_settings_service
 
     def _analysisForNewRecord(self):
         """Capture controller-facing analysis immediately before new record creation."""
@@ -190,7 +201,12 @@ class MapClickHandler:
             layer = self.iface.activeLayer()
         self.clearFeatureHighlight()
         self.highlight = QgsHighlight(self.iface.mapCanvas(), geometry, layer)
-        self.highlight.setColor(YELLOW)
+        settings = self._indicator_settings.active
+        color = semantic_indicator_color("target", settings, alpha=round(255 * settings.opacity_percent / 100.0))
+        fill = QColor(0, 0, 0, 0)
+        self.highlight.setColor(color)
+        if hasattr(self.highlight, "setFillColor"):
+            self.highlight.setFillColor(fill)
         self.highlight.show()
 
     def highlightSelectedReferenceFeature(self, geometry: QgsGeometry, layer: QgsMapLayer = None) -> None:
@@ -198,7 +214,12 @@ class MapClickHandler:
             layer = self.iface.activeLayer()
         self.clearReferenceFeatureHighlight()
         self.reference_highlight = QgsHighlight(self.iface.mapCanvas(), geometry, layer)
-        self.reference_highlight.setColor(RED)
+        settings = self._indicator_settings.active
+        color = semantic_indicator_color("reference", settings, alpha=round(255 * settings.opacity_percent / 100.0))
+        fill = QColor(0, 0, 0, 0)
+        self.reference_highlight.setColor(color)
+        if hasattr(self.reference_highlight, "setFillColor"):
+            self.reference_highlight.setFillColor(fill)
         self.reference_highlight.show()
 
     def clearFeatureHighlight(self) -> None:
@@ -271,7 +292,9 @@ class MapClickHandler:
 
 class TSClickHandler(MapClickHandler):
     # TODO: separate PointClickHandler from TSClickHandler
-    def __init__(self, plugin, msg_signal=None):
+    def __init__(
+        self, plugin, msg_signal=None, indicator_settings_service=None
+    ):
         super().__init__(plugin, msg_signal=msg_signal)
         services = ensure_time_series_services(plugin)
         self.reference_session = services.reference_session
@@ -310,11 +333,11 @@ class TSClickHandler(MapClickHandler):
             return
 
     def _referenceInputsForNewTarget(self):
-        """Return active session-reference inputs without consulting a record."""
+        """Return active reference values and the complete typed selection."""
         reference = self.reference_session.current()
         if reference is None:
             return None, None
-        return reference.values_array(), reference.selection.value
+        return reference.values_array(), reference.selection
 
     def _commitSelectedReference(self, reference):
         """Publish reference session state after pending update succeeds."""
@@ -342,14 +365,14 @@ class TSClickHandler(MapClickHandler):
             return False
         active_reference = reference
         ref_values = None if active_reference is None else active_reference.values_array()
-        ref_coords = None if active_reference is None else active_reference.selection.value
+        ref_coords = None if active_reference is None else active_reference.selection
         pending_before = self.plot_ts.pending_record()
         previous_id = None if pending_before is None else pending_before.id
         self.plot_ts.plotTs(
             dates=np.asarray(target.dates),
             ts_values=target.values_array(),
             ref_values=ref_values,
-            coords=target.selection.value if pending_before is None else None,
+            coords=target.selection if pending_before is None else None,
             ref_coords=ref_coords,
             plot_multiple=target.plot_multiple,
             update=pending_before is not None,
@@ -441,18 +464,28 @@ class TSClickHandler(MapClickHandler):
             self.highlightSelectedReferenceFeature(clicked_point)
 
         crds = Coordinates(x=clicked_point.asPoint().x(), y=clicked_point.asPoint().y(), crs=layer.crs())
+        canvas_crs = self.iface.mapCanvas().mapSettings().destinationCrs()
+        selection = SpatialSelection(
+            value=crds,
+            kind=SpatialSelectionKind.POINT,
+            map_location=MapPointSnapshot(
+                x=float(point.x()),
+                y=float(point.y()),
+                crs=canvas_crs,
+            ),
+        )
         coords = None
         ref_coords = None
 
         if not ref:
             ts_values = date_values[:, 1]
             ref_values, ref_coords = self._referenceInputsForNewTarget()
-            coords = crds
+            coords = selection
         else:
             ref_values = date_values[:, 1]
             self.map_reference_clicked_value = self.raster_layer.getClickedPixelValue(layer, point=point)
             ts_values = None
-            ref_coords = crds
+            ref_coords = selection
 
         dates = date_values[:, 0]
         analysis = self._analysisForNewRecord() if not ref else None
@@ -484,7 +517,9 @@ class TSClickHandler(MapClickHandler):
 
 
 class PolygonClickHandler(MapClickHandler):
-    def __init__(self, plugin, msg_signal=None):
+    def __init__(
+        self, plugin, msg_signal=None, indicator_settings_service=None
+    ):
         super().__init__(plugin, msg_signal=msg_signal)
         self.polygon = None
 
@@ -603,6 +638,8 @@ class PolygonClickHandler(MapClickHandler):
 
 
 class ClickHandler(TSClickHandler, PolygonClickHandler):
-    def __init__(self, plugin, msg_signal=None):
+    def __init__(
+        self, plugin, msg_signal=None, indicator_settings_service=None
+    ):
         TSClickHandler.__init__(self, plugin, msg_signal=msg_signal)
         PolygonClickHandler.__init__(self, plugin, msg_signal=msg_signal)
