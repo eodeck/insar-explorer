@@ -4,6 +4,7 @@ from qgis.PyQt import QtGui, QtWidgets
 from qgis.PyQt.QtCore import QRect, QSize
 
 from ...qt_compat import (
+    ALIGN_VCENTER,
     SIZE_POLICY_EXPANDING,
     SIZE_POLICY_FIXED,
     SIZE_POLICY_PREFERRED,
@@ -12,6 +13,7 @@ from ...qt_compat import (
     screen_aware_popup_position,
 )
 
+from ..widgets import AdaptiveDoubleSpinBox
 from .popup import RangeSettingsPopup
 
 
@@ -111,9 +113,9 @@ QPushButton {
         self.cb_select_field = QtWidgets.QComboBox(self)
         self.cb_select_field.setObjectName("cb_select_field")
 
-        self.sb_symbol_lower_range = QtWidgets.QDoubleSpinBox(self)
+        self.sb_symbol_lower_range = AdaptiveDoubleSpinBox(self)
         self.sb_symbol_lower_range.setObjectName("sb_symbol_lower_range")
-        self.sb_symbol_upper_range = QtWidgets.QDoubleSpinBox(self)
+        self.sb_symbol_upper_range = AdaptiveDoubleSpinBox(self)
         self.sb_symbol_upper_range.setObjectName("sb_symbol_upper_range")
         self.pb_symbol_range_settings = QtWidgets.QPushButton(self)
         self.pb_symbol_range_settings.setObjectName("pb_symbol_range_settings")
@@ -125,7 +127,7 @@ QPushButton {
             self.range_settings_popup.cb_symbol_range_symmetric
         )
 
-        self.sb_symbol_value_offset = QtWidgets.QDoubleSpinBox(self)
+        self.sb_symbol_value_offset = AdaptiveDoubleSpinBox(self)
         self.sb_symbol_value_offset.setObjectName("sb_symbol_value_offset")
         self.cb_symbol_value_offset_sync_with_ref = QtWidgets.QPushButton(self)
         self.cb_symbol_value_offset_sync_with_ref.setObjectName(
@@ -155,26 +157,29 @@ QPushButton {
         self._configure_double_spin_box(
             self.sb_symbol_lower_range,
             tooltip="Min symbology value",
-            decimals=1,
+            decimals=5,
             minimum=-1_000_000_000.0,
             maximum=1_000_000_000.0,
             value=-10.0,
+            single_step=0.1,
         )
         self._configure_double_spin_box(
             self.sb_symbol_upper_range,
             tooltip="Max symbology value",
-            decimals=1,
+            decimals=5,
             minimum=-1_000_000_000.0,
             maximum=1_000_000_000.0,
             value=10.0,
+            single_step=0.1,
         )
         self._configure_double_spin_box(
             self.sb_symbol_value_offset,
             tooltip="Offset the values",
-            decimals=2,
+            decimals=5,
             minimum=-1_000_000_000.0,
             maximum=1_000_000_000.0,
             value=0.0,
+            single_step=0.1,
         )
         self._configure_toggle_button(
             self.cb_symbol_value_offset_sync_with_ref,
@@ -284,7 +289,7 @@ QPushButton {
         layout.addWidget(self._range_label, 2, 0, 1, 3)
         range_layout = QtWidgets.QHBoxLayout()
         range_layout.setContentsMargins(0, 0, 0, 0)
-        range_layout.setSpacing(5)
+        range_layout.setSpacing(3)
         range_layout.addWidget(self.sb_symbol_lower_range, 1)
         range_layout.addWidget(self.sb_symbol_upper_range, 1)
         range_layout.addWidget(self.pb_symbol_range_settings)
