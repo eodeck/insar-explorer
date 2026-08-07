@@ -1,6 +1,7 @@
 ### History
 
 v2.8.0
+- Enhanced map settings panel.
 - Added distinct color assignment to record list context menu.
 - Added time series rename actions using F2 and context menu.
 - Added map indicator settings popup.

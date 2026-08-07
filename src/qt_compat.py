@@ -11,13 +11,17 @@ try:
     except ImportError:
         from qgis.PyQt.QtWidgets import QAction, QActionGroup
         from qgis.PyQt.QtGui import QGuiApplication, QPalette
-    from qgis.PyQt.QtWidgets import (QApplication, QAbstractItemView, QColorDialog, QFrame, QHeaderView, QMessageBox,
-                                     QSizePolicy, QStyle, QToolButton)
+    from qgis.PyQt.QtWidgets import (
+        QApplication, QAbstractItemView, QAbstractSpinBox, QColorDialog, QFrame,
+        QHeaderView, QMessageBox, QSizePolicy, QStyle, QToolButton,
+    )
 except ImportError:
     from PySide6.QtCore import QEvent, QItemSelectionModel, QPoint, QRect, QSize, Qt
     from PySide6.QtGui import QAction, QActionGroup, QGuiApplication, QPalette
-    from PySide6.QtWidgets import (QApplication, QAbstractItemView, QColorDialog, QFrame, QHeaderView, QMessageBox,
-                                   QSizePolicy, QStyle, QToolButton)
+    from PySide6.QtWidgets import (
+        QApplication, QAbstractItemView, QAbstractSpinBox, QColorDialog, QFrame,
+        QHeaderView, QMessageBox, QSizePolicy, QStyle, QToolButton,
+    )
 
 try:
     from qgis.core import QgsMapLayer, QgsWkbTypes
@@ -127,6 +131,9 @@ STYLE_STATE_MOUSE_OVER = _enum_value(QStyle, "StateFlag", "State_MouseOver", "St
 
 # QFrame enums
 FRAME_SHAPE_STYLED_PANEL = _enum_value(QFrame, "Shape", "StyledPanel")
+
+# QAbstractSpinBox enums
+SPIN_BOX_NO_BUTTONS = _enum_value(QAbstractSpinBox, "ButtonSymbols", "NoButtons")
 
 # QSizePolicy enums
 SIZE_POLICY_FIXED = _enum_value(QSizePolicy, "Policy", "Fixed")
