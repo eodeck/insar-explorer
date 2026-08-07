@@ -154,7 +154,7 @@ QPushButton {
         self._configure_toggle_button(
             self.cb_symbol_range_sync,
             icon=":/icons/icons/synched.svg",
-            tooltip="Synchronize range",
+            tooltip="Keep range symmetric around zero",
             checked=True,
         )
         self._configure_double_spin_box(
@@ -176,8 +176,14 @@ QPushButton {
         self._configure_toggle_button(
             self.cb_symbol_value_offset_sync_with_ref,
             icon=":/icons/icons/sync_map_with_reference.svg",
-            tooltip="Use reference-point offset",
+            tooltip="Keep offset synchronized with the reference point",
             checked=False,
+        )
+        self.cb_symbol_value_offset_sync_with_ref.toggled.connect(
+            self._set_reference_offset_sync_state
+        )
+        self._set_reference_offset_sync_state(
+            self.cb_symbol_value_offset_sync_with_ref.isChecked()
         )
         self._configure_flat_button(
             self.pb_range_from_data,
@@ -382,6 +388,10 @@ QPushButton {
         self._configure_button_base(button, icon=icon, tooltip=tooltip)
         button.setFlat(True)
         button.setStyleSheet(self.HOVER_STYLE)
+
+    def _set_reference_offset_sync_state(self, synchronized):
+        """Reflect reference synchronization in offset editability."""
+        self.sb_symbol_value_offset.setEnabled(not synchronized)
 
     def _configure_live_update_checkbox(self):
         checkbox = self.cb_symbology_live

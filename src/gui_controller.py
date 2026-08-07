@@ -2900,10 +2900,9 @@ class GuiController(QObject):
     def syncOffsetWithReferenceClicked(self, status):
         if status:
             self.syncOffsetWithReference()
-            self.msg_signal.emit("Map reference update enabled: map will update when the reference point changes.",
-                                 "done", 0)
+            self.msg_signal.emit("Reference offset synchronization enabled.", "done", 0)
         else:
-            self.msg_signal.emit("Map reference update disabled.", "i", 0)
+            self.msg_signal.emit("Reference offset synchronization disabled.", "i", 0)
 
     def addSelectedLayers(self):
         """
