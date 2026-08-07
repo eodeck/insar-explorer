@@ -1,14 +1,18 @@
 """Code-defined Map Settings panel preserving the legacy dock-widget interface."""
 
 from qgis.PyQt import QtGui, QtWidgets
-from qgis.PyQt.QtCore import QSize
+from qgis.PyQt.QtCore import QRect, QSize
 
 from ...qt_compat import (
     SIZE_POLICY_EXPANDING,
     SIZE_POLICY_FIXED,
     SIZE_POLICY_PREFERRED,
     SPIN_BOX_UP_DOWN_ARROWS,
+    available_screen_geometry,
+    screen_aware_popup_position,
 )
+
+from .popup import RangeSettingsPopup
 
 
 class MapSettingsPanel(QtWidgets.QWidget):
@@ -89,10 +93,11 @@ QPushButton {
             self.cb_select_field,
             self.sb_symbol_lower_range,
             self.sb_symbol_upper_range,
-            self.cb_symbol_range_sync,
+            self.pb_symbol_range_settings,
+            self.cmb_symbol_range_source,
+            self.cb_symbol_range_symmetric,
             self.sb_symbol_value_offset,
             self.cb_symbol_value_offset_sync_with_ref,
-            self.pb_range_from_data,
             self.cmb_colormap,
             self.pb_colormap_reverse,
             self.sb_symbol_classes,
@@ -108,10 +113,17 @@ QPushButton {
 
         self.sb_symbol_lower_range = QtWidgets.QDoubleSpinBox(self)
         self.sb_symbol_lower_range.setObjectName("sb_symbol_lower_range")
-        self.cb_symbol_range_sync = QtWidgets.QPushButton(self)
-        self.cb_symbol_range_sync.setObjectName("cb_symbol_range_sync")
         self.sb_symbol_upper_range = QtWidgets.QDoubleSpinBox(self)
         self.sb_symbol_upper_range.setObjectName("sb_symbol_upper_range")
+        self.pb_symbol_range_settings = QtWidgets.QPushButton(self)
+        self.pb_symbol_range_settings.setObjectName("pb_symbol_range_settings")
+        self.range_settings_popup = RangeSettingsPopup(self)
+        self.cmb_symbol_range_source = (
+            self.range_settings_popup.cmb_symbol_range_source
+        )
+        self.cb_symbol_range_symmetric = (
+            self.range_settings_popup.cb_symbol_range_symmetric
+        )
 
         self.sb_symbol_value_offset = QtWidgets.QDoubleSpinBox(self)
         self.sb_symbol_value_offset.setObjectName("sb_symbol_value_offset")
@@ -119,9 +131,6 @@ QPushButton {
         self.cb_symbol_value_offset_sync_with_ref.setObjectName(
             "cb_symbol_value_offset_sync_with_ref"
         )
-        self.pb_range_from_data = QtWidgets.QPushButton(self)
-        self.pb_range_from_data.setObjectName("pb_range_from_data")
-
         self.cmb_colormap = QtWidgets.QComboBox(self)
         self.cmb_colormap.setObjectName("cmb_colormap")
         self.pb_colormap_reverse = QtWidgets.QPushButton(self)
@@ -150,12 +159,6 @@ QPushButton {
             minimum=-1_000_000_000.0,
             maximum=1_000_000_000.0,
             value=-10.0,
-        )
-        self._configure_toggle_button(
-            self.cb_symbol_range_sync,
-            icon=":/icons/icons/synched.svg",
-            tooltip="Keep range symmetric around zero",
-            checked=True,
         )
         self._configure_double_spin_box(
             self.sb_symbol_upper_range,
@@ -186,9 +189,12 @@ QPushButton {
             self.cb_symbol_value_offset_sync_with_ref.isChecked()
         )
         self._configure_flat_button(
-            self.pb_range_from_data,
-            icon=":/icons/icons/data_range.svg",
-            tooltip="Set range from data",
+            self.pb_symbol_range_settings,
+            icon=":/icons/icons/edit.svg",
+            tooltip="Configure range source and symmetry",
+        )
+        self.pb_symbol_range_settings.clicked.connect(
+            self._show_range_settings_popup
         )
 
         self.cmb_colormap.setToolTip("Select colormap")
@@ -276,10 +282,14 @@ QPushButton {
         self._range_label = QtWidgets.QLabel("Range", group)
         self._range_label.setObjectName("map_range_label")
         layout.addWidget(self._range_label, 2, 0, 1, 3)
-        layout.addWidget(self.sb_symbol_lower_range, 3, 0)
-        layout.addWidget(self.cb_symbol_range_sync, 3, 1)
-        layout.addWidget(self.sb_symbol_upper_range, 3, 2)
-        layout.addWidget(self.pb_range_from_data, 4, 0)
+        range_layout = QtWidgets.QHBoxLayout()
+        range_layout.setContentsMargins(0, 0, 0, 0)
+        range_layout.setSpacing(5)
+        range_layout.addWidget(self.sb_symbol_lower_range, 1)
+        range_layout.addWidget(self.sb_symbol_upper_range, 1)
+        range_layout.addWidget(self.pb_symbol_range_settings)
+        self._range_layout = range_layout
+        layout.addLayout(range_layout, 3, 0, 1, 3)
 
         reference_layout = QtWidgets.QGridLayout()
         reference_layout.setContentsMargins(0, 0, 0, 0)
@@ -289,12 +299,12 @@ QPushButton {
 
         self._reference_offset_label = QtWidgets.QLabel("Reference offset", group)
         self._reference_offset_label.setObjectName("map_reference_offset_label")
-        layout.addWidget(self._reference_offset_label, 5, 0, 1, 3)
+        layout.addWidget(self._reference_offset_label, 4, 0, 1, 3)
         reference_layout.addWidget(self.sb_symbol_value_offset, 0, 0)
         reference_layout.addWidget(
             self.cb_symbol_value_offset_sync_with_ref, 0, 1
         )
-        layout.addLayout(reference_layout, 6, 0, 1, 3)
+        layout.addLayout(reference_layout, 5, 0, 1, 3)
         return group
 
     def _build_symbology_group(self):
@@ -388,6 +398,19 @@ QPushButton {
         self._configure_button_base(button, icon=icon, tooltip=tooltip)
         button.setFlat(True)
         button.setStyleSheet(self.HOVER_STYLE)
+
+    def _show_range_settings_popup(self, checked=False):
+        """Open the compact range settings popup next to its anchor button."""
+        popup = self.range_settings_popup
+        popup.adjustSize()
+        top_left = self.pb_symbol_range_settings.mapToGlobal(
+            self.pb_symbol_range_settings.rect().topLeft()
+        )
+        anchor = QRect(top_left, self.pb_symbol_range_settings.size())
+        geometry = available_screen_geometry(top_left, self)
+        popup.move(screen_aware_popup_position(anchor, popup.sizeHint(), geometry))
+        popup.show()
+        popup.raise_()
 
     def _set_reference_offset_sync_state(self, synchronized):
         """Reflect reference synchronization in offset editability."""
