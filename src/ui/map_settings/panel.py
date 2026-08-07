@@ -8,7 +8,6 @@ from ...qt_compat import (
     SIZE_POLICY_FIXED,
     SIZE_POLICY_PREFERRED,
     SPIN_BOX_NO_BUTTONS,
-    configure_compact_command_button,
 )
 
 
@@ -22,6 +21,43 @@ class MapSettingsPanel(QtWidgets.QWidget):
     BUTTON_SIZE = 24
     ICON_SIZE = 20
     HOVER_STYLE = "QPushButton:hover {\n    border: 1px solid #bbb;\n}\n"
+    TOGGLE_STYLE = """
+QPushButton {
+    border: 1px solid transparent;
+    background: transparent;
+}
+QPushButton:hover:enabled:!checked {
+    border-color: palette(mid);
+    background-color: palette(alternate-base);
+}
+QPushButton:checked {
+    border-color: palette(highlight);
+    background-color: palette(highlight);
+    color: palette(highlighted-text);
+}
+QPushButton:checked:hover:enabled {
+    border-color: palette(highlight);
+    background-color: palette(highlight);
+    color: palette(highlighted-text);
+}
+QPushButton:disabled {
+    border-color: transparent;
+    background: transparent;
+    color: palette(mid);
+}
+QPushButton:checked:disabled {
+    border-color: palette(midlight);
+    background-color: palette(midlight);
+    color: palette(mid);
+}
+"""
+    ACTION_BUTTON_STYLE = """
+QPushButton {
+    padding: 1px 3px;
+}
+"""
+    ACTION_TOGGLE_STYLE = TOGGLE_STYLE + ACTION_BUTTON_STYLE
+    ACTION_ICON_SIZE = 14
     COLORMAPS = (
         ("Roma", ":/colormaps/icons/colormaps/roma.png"),
         ("Vik", ":/colormaps/icons/colormaps/vik.png"),
@@ -185,17 +221,8 @@ class MapSettingsPanel(QtWidgets.QWidget):
             value=100,
             single_step=10,
         )
-        self._configure_toggle_button(
-            self.pb_symbology_live,
-            icon=":/icons/icons/apply_symbology_on-the-fly.svg",
-            tooltip="Apply symbology automatically",
-            checked=False,
-        )
-        self._configure_command_button(
-            self.pb_symbology,
-            icon=":/icons/icons/apply_symbology.svg",
-            tooltip="Apply symbology",
-        )
+        self._configure_live_update_button()
+        self._configure_apply_button()
 
     def _build_layout(self):
         outer_layout = QtWidgets.QVBoxLayout(self)
@@ -222,8 +249,8 @@ class MapSettingsPanel(QtWidgets.QWidget):
         content_layout.setSpacing(6)
         content_layout.addWidget(self._build_value_group())
         content_layout.addWidget(self._build_symbology_group())
-        content_layout.addWidget(self._build_apply_group())
         content_layout.addStretch(1)
+        content_layout.addWidget(self._build_action_row())
 
     def _build_value_group(self):
         group = self._group_box("Value", "map_value_group")
@@ -293,15 +320,21 @@ class MapSettingsPanel(QtWidgets.QWidget):
         layout.addWidget(self.sb_symbol_opacity, 4, 1, 1, 2)
         return group
 
-    def _build_apply_group(self):
-        group = self._group_box("Apply", "map_apply_group")
-        layout = QtWidgets.QHBoxLayout(group)
+    def _build_action_row(self):
+        row = QtWidgets.QWidget(self.content)
+        row.setObjectName("map_settings_action_row")
+        row.setSizePolicy(SIZE_POLICY_EXPANDING, SIZE_POLICY_PREFERRED)
+
+        layout = QtWidgets.QHBoxLayout(row)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(5)
-        layout.addStretch(1)
+        layout.setSpacing(4)
         layout.addWidget(self.pb_symbology_live)
+        layout.addStretch(1)
         layout.addWidget(self.pb_symbology)
-        return group
+
+        self._action_row = row
+        self._action_layout = layout
+        return row
 
     @staticmethod
     def _group_box(title, object_name):
@@ -339,23 +372,43 @@ class MapSettingsPanel(QtWidgets.QWidget):
         spin_box.setSizePolicy(SIZE_POLICY_PREFERRED, SIZE_POLICY_FIXED)
 
     def _configure_toggle_button(self, button, *, icon, tooltip, checked):
-        self._configure_flat_button(button, icon=icon, tooltip=tooltip)
+        self._configure_button_base(button, icon=icon, tooltip=tooltip)
+        button.setFlat(True)
         button.setCheckable(True)
         button.setChecked(checked)
+        button.setStyleSheet(self.TOGGLE_STYLE)
 
     def _configure_flat_button(self, button, *, icon, tooltip):
         self._configure_button_base(button, icon=icon, tooltip=tooltip)
         button.setFlat(True)
         button.setStyleSheet(self.HOVER_STYLE)
 
-    def _configure_command_button(self, button, *, icon, tooltip):
-        button.setText("")
-        button.setIcon(QtGui.QIcon(icon))
-        button.setToolTip(tooltip)
-        configure_compact_command_button(
-            button, size=self.BUTTON_SIZE, icon_size=self.ICON_SIZE
+    def _configure_live_update_button(self):
+        button = self.pb_symbology_live
+        button.setText("Live update")
+        button.setIcon(
+            QtGui.QIcon(":/icons/icons/apply_symbology_on-the-fly.svg")
         )
-        button.setMinimumSize(0, 0)
+        button.setToolTip("Apply symbology automatically")
+        button.setCheckable(True)
+        button.setChecked(False)
+        button.setFlat(True)
+        button.setIconSize(QSize(self.ACTION_ICON_SIZE, self.ACTION_ICON_SIZE))
+        button.setFixedHeight(self.BUTTON_SIZE)
+        button.setSizePolicy(SIZE_POLICY_FIXED, SIZE_POLICY_FIXED)
+        button.setStyleSheet(self.ACTION_TOGGLE_STYLE)
+
+    def _configure_apply_button(self):
+        button = self.pb_symbology
+        button.setText("Apply")
+        button.setIcon(QtGui.QIcon(":/icons/icons/apply_symbology.svg"))
+        button.setToolTip("Apply symbology")
+        button.setCheckable(False)
+        button.setFlat(False)
+        button.setIconSize(QSize(self.ACTION_ICON_SIZE, self.ACTION_ICON_SIZE))
+        button.setFixedHeight(self.BUTTON_SIZE)
+        button.setSizePolicy(SIZE_POLICY_FIXED, SIZE_POLICY_FIXED)
+        button.setStyleSheet(self.ACTION_BUTTON_STYLE)
 
     def _configure_button_base(self, button, *, icon, tooltip):
         button.setText("")
