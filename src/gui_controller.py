@@ -21,6 +21,7 @@ from .ui.popups.export_settings_popup import ExportSettingsPopup
 from .ui.popups.appearance_popup import AppearancePopup
 from .ui.popups.replica_popup import ReplicaPopup
 from .ui.popups.map_indicator_settings_popup import MapIndicatorSettingsPopup
+from .ui.map_settings.range_state import RangeSource
 from .ui.widgets.split_tool_button import SplitButtonPopupHoverReconciler
 from .qt_compat import (
     RASTER_LAYER,
@@ -244,6 +245,8 @@ class GuiController(QObject):
             'insar_explorer/ts_export_format', 'csv', type=str
         )
         self._symbology_dirty = False
+        self._range_source = RangeSource.CUSTOM
+        self._range_programmatic_update = False
         self.initializeUiParams()
         self.connectUiSignals()
         # make point selection active by default
@@ -338,6 +341,7 @@ class GuiController(QObject):
 
     def onLayerChanged(self, layer=None):
         """Reset the time-series workspace and map for a confirmed layer change."""
+        self._setRangeSource(RangeSource.CUSTOM)
         self._setSymbologyDirty(False)
         if layer is None:
             layer = self.iface.activeLayer()
@@ -400,6 +404,7 @@ class GuiController(QObject):
 
         self.insar_map.reset()
         self.insar_map.selected_field_name = self.ui.cb_select_field.currentText()
+        self._setRangeSource(RangeSource.CUSTOM)
         self._setSymbologyDirty(False)
 
     def selectVectorFieldChanged(self):
@@ -722,6 +727,10 @@ class GuiController(QObject):
         )
 
     def connectMapSignals(self):
+        if not hasattr(self, "_range_source"):
+            self._range_source = RangeSource.CUSTOM
+        if not hasattr(self, "_range_programmatic_update"):
+            self._range_programmatic_update = False
         self.ui.cb_select_field.currentTextChanged.connect(self.selectVectorFieldChanged)
         self.ui.pb_symbology.clicked.connect(self.applySymbologyClicked)
         self.ui.sb_symbol_lower_range.valueChanged.connect(self.setSymbologyLowerRange)
@@ -737,64 +746,116 @@ class GuiController(QObject):
         self._setSymbologyDirty(False)
 
     def setDataRangeMenu(self):
-        """creat a menu for setting data range"""
+        """Create the legacy computed-range menu using semantic source values."""
         menu = QMenu(self.ui)
-        menu.addAction("Range from data", self.setSymbologyRangeFromData)
-        menu.addAction("1xStd", self.setSymbologyRangeFromData)
-        menu.addAction("2xStd", self.setSymbologyRangeFromData)
-        menu.addAction("3xStd", self.setSymbologyRangeFromData)
+        for source in (
+            RangeSource.DATA_EXTENT,
+            RangeSource.STD_1,
+            RangeSource.STD_2,
+            RangeSource.STD_3,
+        ):
+            action = menu.addAction(source.display_name)
+            action.triggered.connect(
+                lambda checked=False, source=source: self.setSymbologyRangeSource(source)
+            )
         self.ui.pb_range_from_data.setMenu(menu)
 
+    def _setRangeSource(self, source):
+        """Set the semantic source without changing the displayed range."""
+        if not isinstance(source, RangeSource):
+            raise ValueError("Unsupported Map Settings range source: {!r}".format(source))
+        self._range_source = source
+
+    def _setDisplayedRange(self, minimum, maximum):
+        """Project a controller-owned range without triggering manual-edit semantics."""
+        self._range_programmatic_update = True
+        lower = self.ui.sb_symbol_lower_range
+        upper = self.ui.sb_symbol_upper_range
+        lower.blockSignals(True)
+        upper.blockSignals(True)
+        try:
+            lower.setValue(float(minimum))
+            upper.setValue(float(maximum))
+        finally:
+            lower.blockSignals(False)
+            upper.blockSignals(False)
+            self._range_programmatic_update = False
+
+    def _symmetricRange(self, minimum, maximum):
+        """Return the largest-absolute range symmetric around zero."""
+        limit = max(abs(float(minimum)), abs(float(maximum)))
+        return -limit, limit
+
     def setSymbologyUpperRange(self):
-        self.ui.sb_symbol_lower_range.blockSignals(True)
+        if not self._range_programmatic_update:
+            self._setRangeSource(RangeSource.CUSTOM)
         if self.ui.cb_symbol_range_sync.isChecked():
-            value = self.ui.sb_symbol_upper_range.value()
-            self.ui.sb_symbol_lower_range.setValue(-value)
-        self.ui.sb_symbol_lower_range.blockSignals(False)
+            limit = abs(self.ui.sb_symbol_upper_range.value())
+            self._setDisplayedRange(-limit, limit)
         self.applyLiveSymbology()
 
     def setSymbologyLowerRange(self):
-        self.ui.sb_symbol_upper_range.blockSignals(True)
+        if not self._range_programmatic_update:
+            self._setRangeSource(RangeSource.CUSTOM)
         if self.ui.cb_symbol_range_sync.isChecked():
-            value = self.ui.sb_symbol_lower_range.value()
-            self.ui.sb_symbol_upper_range.setValue(-value)
-        self.ui.sb_symbol_upper_range.blockSignals(False)
+            limit = abs(self.ui.sb_symbol_lower_range.value())
+            self._setDisplayedRange(-limit, limit)
         self.applyLiveSymbology()
 
     def symbologyRangeSyncClicked(self, status):
         if status:
-            self.setSymbologyLowerRange()
-            self.msg_signal.emit("Symbology range synced: changing one value updates the other.", 't', 0)
+            minimum, maximum = self._symmetricRange(
+                self.ui.sb_symbol_lower_range.value(),
+                self.ui.sb_symbol_upper_range.value(),
+            )
+            self._setDisplayedRange(minimum, maximum)
+            self.msg_signal.emit("Range symmetry enabled.", 't', 0)
         else:
-            self.msg_signal.emit("Symbology ranges unsynced.", 'i', 0)
+            self.msg_signal.emit("Range symmetry disabled.", 'i', 0)
+        self.applyLiveSymbology()
 
     def setSymbologyOffset(self):
         self.insar_map.offset_value = self.ui.sb_symbol_value_offset.value()
         self.applyLiveSymbology()
 
-    def setSymbologyRangeFromData(self):
-        button = self.sender()
-        if button.text() == "Range from data":
-            message = self.insar_map.setSymbologyRangeFromData()
-            message = "Symbology range set from data."
-        elif button.text() == "1xStd":
-            message = self.insar_map.setSymbologyRangeFromData(n_std=1)
-            message = "Symbology range set to mean±1σ."
-        elif button.text() == "2xStd":
-            message = self.insar_map.setSymbologyRangeFromData(n_std=2)
-            message = "Symbology range set to mean±2σ."
-        elif button.text() == "3xStd":
-            message = self.insar_map.setSymbologyRangeFromData(n_std=3)
-            message = "Symbology range set to mean±3σ."
+    def setSymbologyRangeSource(self, source):
+        """Compute and project one explicit range source using existing map statistics."""
+        if not isinstance(source, RangeSource):
+            raise ValueError("Unsupported Map Settings range source: {!r}".format(source))
+        if source is RangeSource.CUSTOM:
+            self._setRangeSource(source)
+            return
 
-        self.msg_signal.emit(message, 'i', 0)
-        min_value = self.insar_map.min_value
-        max_value = self.insar_map.max_value
+        n_std = source.standard_deviations
+        error = self.insar_map.setSymbologyRangeFromData(n_std=n_std)
+        if error:
+            self.msg_signal.emit(error, 'i', 0)
+            return
+
+        minimum = self.insar_map.min_value
+        maximum = self.insar_map.max_value
         if self.ui.cb_symbol_range_sync.isChecked():
-            max_value = max(abs(min_value), abs(max_value))
-            min_value = -max_value
-        self.ui.sb_symbol_lower_range.setValue(min_value)
-        self.ui.sb_symbol_upper_range.setValue(max_value)
+            minimum, maximum = self._symmetricRange(minimum, maximum)
+        self._setDisplayedRange(minimum, maximum)
+        self._setRangeSource(source)
+
+        messages = {
+            RangeSource.DATA_EXTENT: "Symbology range set from data extent.",
+            RangeSource.STD_1: "Symbology range set to mean±1σ.",
+            RangeSource.STD_2: "Symbology range set to mean±2σ.",
+            RangeSource.STD_3: "Symbology range set to mean±3σ.",
+        }
+        self.msg_signal.emit(messages[source], 'i', 0)
+        self.applyLiveSymbology()
+
+    def setSymbologyRangeFromData(self):
+        """Compatibility entry point for legacy callers selecting a computed source."""
+        action = self.sender()
+        source_by_text = {source.display_name: source for source in RangeSource}
+        source = source_by_text.get(action.text()) if action is not None else None
+        if source is None:
+            return
+        self.setSymbologyRangeSource(source)
 
     def _setSymbologyDirty(self, dirty):
         """Project unapplied Map Settings state onto the manual Apply action."""
