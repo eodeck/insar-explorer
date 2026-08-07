@@ -291,6 +291,10 @@ QPushButton {
         range_layout.setContentsMargins(0, 0, 0, 0)
         range_layout.setSpacing(3)
         range_layout.addWidget(self.sb_symbol_lower_range, 1)
+        self._range_separator_label = QtWidgets.QLabel("–", group)
+        self._range_separator_label.setObjectName("map_range_separator_label")
+        self._range_separator_label.setAlignment(ALIGN_VCENTER)
+        range_layout.addWidget(self._range_separator_label)
         range_layout.addWidget(self.sb_symbol_upper_range, 1)
         range_layout.addWidget(self.pb_symbol_range_settings)
         self._range_layout = range_layout
