@@ -133,7 +133,9 @@ STYLE_STATE_MOUSE_OVER = _enum_value(QStyle, "StateFlag", "State_MouseOver", "St
 FRAME_SHAPE_STYLED_PANEL = _enum_value(QFrame, "Shape", "StyledPanel")
 
 # QAbstractSpinBox enums
-SPIN_BOX_NO_BUTTONS = _enum_value(QAbstractSpinBox, "ButtonSymbols", "NoButtons")
+SPIN_BOX_UP_DOWN_ARROWS = _enum_value(
+    QAbstractSpinBox, "ButtonSymbols", "UpDownArrows"
+)
 
 # QSizePolicy enums
 SIZE_POLICY_FIXED = _enum_value(QSizePolicy, "Policy", "Fixed")

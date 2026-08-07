@@ -7,7 +7,7 @@ from ...qt_compat import (
     SIZE_POLICY_EXPANDING,
     SIZE_POLICY_FIXED,
     SIZE_POLICY_PREFERRED,
-    SPIN_BOX_NO_BUTTONS,
+    SPIN_BOX_UP_DOWN_ARROWS,
 )
 
 
@@ -56,7 +56,6 @@ QPushButton {
     padding: 1px 3px;
 }
 """
-    ACTION_TOGGLE_STYLE = TOGGLE_STYLE + ACTION_BUTTON_STYLE
     ACTION_ICON_SIZE = 14
     COLORMAPS = (
         ("Roma", ":/colormaps/icons/colormaps/roma.png"),
@@ -99,7 +98,7 @@ QPushButton {
             self.sb_symbol_classes,
             self.sb_symbol_size,
             self.sb_symbol_opacity,
-            self.pb_symbology_live,
+            self.cb_symbology_live,
             self.pb_symbology,
         )
 
@@ -134,8 +133,8 @@ QPushButton {
         self.sb_symbol_opacity = QtWidgets.QSpinBox(self)
         self.sb_symbol_opacity.setObjectName("sb_symbol_opacity")
 
-        self.pb_symbology_live = QtWidgets.QPushButton(self)
-        self.pb_symbology_live.setObjectName("pb_symbology_live")
+        self.cb_symbology_live = QtWidgets.QCheckBox(self)
+        self.cb_symbology_live.setObjectName("cb_symbology_live")
         self.pb_symbology = QtWidgets.QPushButton(self)
         self.pb_symbology.setObjectName("pb_symbology")
 
@@ -222,7 +221,7 @@ QPushButton {
             single_step=10,
         )
         self.sb_symbol_opacity.setSuffix(" %")
-        self._configure_live_update_button()
+        self._configure_live_update_checkbox()
         self._configure_apply_button()
 
     def _build_layout(self):
@@ -329,7 +328,7 @@ QPushButton {
         layout = QtWidgets.QHBoxLayout(row)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
-        layout.addWidget(self.pb_symbology_live)
+        layout.addWidget(self.cb_symbology_live)
         layout.addStretch(1)
         layout.addWidget(self.pb_symbology)
 
@@ -351,7 +350,7 @@ QPushButton {
         spin_box, *, tooltip, decimals, minimum, maximum, value, single_step=None
     ):
         spin_box.setToolTip(tooltip)
-        spin_box.setButtonSymbols(SPIN_BOX_NO_BUTTONS)
+        spin_box.setButtonSymbols(SPIN_BOX_UP_DOWN_ARROWS)
         spin_box.setDecimals(decimals)
         spin_box.setMinimum(minimum)
         spin_box.setMaximum(maximum)
@@ -365,7 +364,7 @@ QPushButton {
         spin_box, *, tooltip, minimum, value, maximum=99, single_step=1
     ):
         spin_box.setToolTip(tooltip)
-        spin_box.setButtonSymbols(SPIN_BOX_NO_BUTTONS)
+        spin_box.setButtonSymbols(SPIN_BOX_UP_DOWN_ARROWS)
         spin_box.setMinimum(minimum)
         spin_box.setMaximum(maximum)
         spin_box.setSingleStep(single_step)
@@ -384,21 +383,13 @@ QPushButton {
         button.setFlat(True)
         button.setStyleSheet(self.HOVER_STYLE)
 
-    def _configure_live_update_button(self):
-        button = self.pb_symbology_live
-        button.setText("Live update")
-        button.setIcon(
-            QtGui.QIcon(":/icons/icons/apply_symbology_on-the-fly.svg")
-        )
-        button.setToolTip("Apply changes automatically")
-        button.setAccessibleName("Live update")
-        button.setCheckable(True)
-        button.setChecked(False)
-        button.setFlat(True)
-        button.setIconSize(QSize(self.ACTION_ICON_SIZE, self.ACTION_ICON_SIZE))
-        button.setFixedHeight(self.BUTTON_SIZE)
-        button.setSizePolicy(SIZE_POLICY_FIXED, SIZE_POLICY_FIXED)
-        button.setStyleSheet(self.ACTION_TOGGLE_STYLE)
+    def _configure_live_update_checkbox(self):
+        checkbox = self.cb_symbology_live
+        checkbox.setText("Live update")
+        checkbox.setToolTip("Apply changes automatically")
+        checkbox.setAccessibleName("Live update")
+        checkbox.setChecked(False)
+        checkbox.setSizePolicy(SIZE_POLICY_FIXED, SIZE_POLICY_FIXED)
 
     def _configure_apply_button(self):
         button = self.pb_symbology

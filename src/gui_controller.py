@@ -727,7 +727,7 @@ class GuiController(QObject):
         self.ui.sb_symbol_classes.valueChanged.connect(self.applyLiveSymbology)
         self.ui.sb_symbol_size.valueChanged.connect(self.applyLiveSymbology)
         self.ui.sb_symbol_opacity.valueChanged.connect(self.applyLiveSymbology)
-        self.ui.pb_symbology_live.toggled.connect(self.activateLiveSymbology)
+        self.ui.cb_symbology_live.toggled.connect(self.activateLiveSymbology)
         self.ui.cmb_colormap.currentIndexChanged.connect(self.applyLiveSymbology)
         self.ui.pb_colormap_reverse.toggled.connect(self.colormapReverseClicked)
 
@@ -792,7 +792,7 @@ class GuiController(QObject):
         self.ui.sb_symbol_upper_range.setValue(max_value)
 
     def applyLiveSymbology(self):
-        if self.ui.pb_symbology_live.isChecked():
+        if self.ui.cb_symbology_live.isChecked():
             self.applySymbology()
 
     def activateLiveSymbology(self, status):
