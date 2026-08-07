@@ -1,6 +1,7 @@
 ### History
 
 v2.8.0
+- Recompute derived ranges on field change.
 - Allow adaptive precision in data range spinboxes.
 - Enhanced map settings panel.
 - Added distinct color assignment to record list context menu.

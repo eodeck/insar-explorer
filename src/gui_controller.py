@@ -406,10 +406,31 @@ class GuiController(QObject):
         self._setSymbologyDirty(False)
 
     def selectVectorFieldChanged(self):
-        self._setCustomRangeSource()
+        """Update the active field while preserving the selected range strategy."""
+        source = self._range_source
+        displayed_range = (
+            self.ui.sb_symbol_lower_range.value(),
+            self.ui.sb_symbol_upper_range.value(),
+        )
+
         self.insar_map.selected_field_name = self.ui.cb_select_field.currentText()
         self.choose_point_click_handler.selected_field_name = self.insar_map.selected_field_name
         self.insar_map.reset()
+
+        if source is RangeSource.CUSTOM:
+            self._range_source_raw_values = None
+            self.applyLiveSymbology()
+            return
+
+        raw_values, error = self._computeRangeSourceValues(source)
+        if error:
+            self._setCustomRangeSource()
+            self._setDisplayedRange(*displayed_range)
+            self.msg_signal.emit(error, 'i', 0)
+            self.applyLiveSymbology()
+            return
+
+        self._projectComputedRangeSource(source, raw_values)
         self.applyLiveSymbology()
 
     def initializeClickTool(self):
@@ -841,6 +862,25 @@ class GuiController(QObject):
         self.insar_map.offset_value = self.ui.sb_symbol_value_offset.value()
         self.applyLiveSymbology()
 
+    def _computeRangeSourceValues(self, source):
+        """Return raw values for one computed range source without changing UI state."""
+        error = self.insar_map.setSymbologyRangeFromData(
+            n_std=source.standard_deviations
+        )
+        if error:
+            return None, error
+        return (float(self.insar_map.min_value), float(self.insar_map.max_value)), ""
+
+    def _projectComputedRangeSource(self, source, raw_values):
+        """Store and display a successfully computed range source."""
+        raw_minimum, raw_maximum = raw_values
+        self._range_source_raw_values = (raw_minimum, raw_maximum)
+        minimum, maximum = raw_minimum, raw_maximum
+        if self.ui.cb_symbol_range_symmetric.isChecked():
+            minimum, maximum = self._symmetricRange(minimum, maximum)
+        self._setDisplayedRange(minimum, maximum)
+        self._setRangeSource(source)
+
     def setSymbologyRangeSource(self, source):
         """Compute and project one explicit range source using existing map statistics."""
         if not isinstance(source, RangeSource):
@@ -849,24 +889,16 @@ class GuiController(QObject):
             self._setCustomRangeSource()
             return
 
-        n_std = source.standard_deviations
         previous_source = self._range_source
         previous_raw_values = self._range_source_raw_values
-        error = self.insar_map.setSymbologyRangeFromData(n_std=n_std)
+        raw_values, error = self._computeRangeSourceValues(source)
         if error:
             self._range_source_raw_values = previous_raw_values
             self._setRangeSource(previous_source)
             self.msg_signal.emit(error, 'i', 0)
             return
 
-        raw_minimum = float(self.insar_map.min_value)
-        raw_maximum = float(self.insar_map.max_value)
-        self._range_source_raw_values = (raw_minimum, raw_maximum)
-        minimum, maximum = raw_minimum, raw_maximum
-        if self.ui.cb_symbol_range_symmetric.isChecked():
-            minimum, maximum = self._symmetricRange(minimum, maximum)
-        self._setDisplayedRange(minimum, maximum)
-        self._setRangeSource(source)
+        self._projectComputedRangeSource(source, raw_values)
 
         messages = {
             RangeSource.DATA_EXTENT: "Symbology range set from data extent.",
