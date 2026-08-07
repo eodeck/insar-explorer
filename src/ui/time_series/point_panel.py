@@ -42,14 +42,18 @@ from .committed_view import CommittedTimeSeriesView
 from .visibility_header import TimeSeriesVisibilityHeader
 
 from .columns import (
+    PENDING_ROW_HEIGHT,
+    TimeSeriesColumn,
+)
+
+from .presentation import (
     TIME_SERIES_ACTION_BUTTON_SIZE,
     TIME_SERIES_ACTION_ICON_SIZE,
-    PENDING_ROW_HEIGHT,
     TIME_SERIES_ROW_HEIGHT,
     TIME_SERIES_TYPE_COLUMN_WIDTH,
     TIME_SERIES_TYPE_ICON_SIZE,
-    TimeSeriesColumn,
 )
+
 from .pending_label_delegate import PendingLabelDelegate
 from .pending_model import PendingTimeSeriesModel
 from .type_indicator_delegate import TimeSeriesTypeIndicatorDelegate
