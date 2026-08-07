@@ -24,6 +24,7 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
     removeSelectedRequested = pyqtSignal()
     copySettingsRequested = pyqtSignal()
     pasteRequested = pyqtSignal(object)
+    assignDistinctColorsRequested = pyqtSignal()
     toggleSelectedVisibilityRequested = pyqtSignal()
 
     def __init__(self, parent=None):
@@ -88,6 +89,27 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
             )
             self.paste_actions[category] = paste_action
         self.paste_menu = self._create_paste_menu(self)
+        self.assign_distinct_colors_action = QAction("Assign distinct colors", self)
+        self.assign_distinct_colors_action.setObjectName(
+            "action_assign_distinct_colors_time_series"
+        )
+        self.assign_distinct_colors_action.setToolTip(
+            "Assign distinct colors to the selected time series"
+        )
+        self.assign_distinct_colors_action.setStatusTip(
+            "Assign distinct colors to the selected time series"
+        )
+        set_distinct_accessible_name = getattr(
+            self.assign_distinct_colors_action, "setAccessibleName", None
+        )
+        if callable(set_distinct_accessible_name):
+            set_distinct_accessible_name(
+                "Assign distinct colors to selected time series"
+            )
+        self.assign_distinct_colors_action.setEnabled(False)
+        self.assign_distinct_colors_action.triggered.connect(
+            self.assignDistinctColorsRequested.emit
+        )
         self.setContextMenuPolicy(CUSTOM_CONTEXT_MENU)
         self.customContextMenuRequested.connect(self._show_context_menu)
 
@@ -194,6 +216,9 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
         selected_ids = self._selected_record_ids()
         self.rename_action.setEnabled(not editing and len(selected_ids) == 1)
         self.remove_action.setEnabled(not editing and bool(selected_ids))
+        self.assign_distinct_colors_action.setEnabled(
+            not editing and len(selected_ids) >= 2
+        )
 
     def begin_rename_selected_record(self):
         """Start inline label editing for the single selected committed record."""
@@ -309,6 +334,7 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
         menu = QtWidgets.QMenu(self)
         menu.addAction(self.copy_settings_action)
         menu.addMenu(self.paste_menu)
+        menu.addAction(self.assign_distinct_colors_action)
         menu.addSeparator()
         menu.addAction(self.rename_action)
         menu.addAction(self.remove_action)

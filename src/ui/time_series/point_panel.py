@@ -101,6 +101,7 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
     removeSelectedCommittedRequested = pyqtSignal()
     copyCommittedSettingsRequested = pyqtSignal()
     pasteCommittedRequested = pyqtSignal(object)
+    assignDistinctColorsRequested = pyqtSignal()
     indicatorSettingsRequested = pyqtSignal()
 
     ICON_SIZE = 18
@@ -386,6 +387,9 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
             self.copyCommittedSettingsRequested.emit
         )
         self.committed_view.pasteRequested.connect(self.pasteCommittedRequested.emit)
+        self.committed_view.assignDistinctColorsRequested.connect(
+            self.assignDistinctColorsRequested.emit
+        )
         self.committed_view.toggleSelectedVisibilityRequested.connect(
             self.toggleSelectedCommittedVisibilityRequested.emit
         )
