@@ -177,13 +177,13 @@ QPushButton {
         self._configure_toggle_button(
             self.cb_symbol_value_offset_sync_with_ref,
             icon=":/icons/icons/sync_map_with_reference.svg",
-            tooltip="Synchronize map offset with selected reference point",
+            tooltip="Use reference-point offset",
             checked=False,
         )
         self._configure_flat_button(
             self.pb_range_from_data,
             icon=":/icons/icons/data_range.svg",
-            tooltip="Min/Max from data",
+            tooltip="Set range from data",
         )
 
         self.cmb_colormap.setToolTip("Select colormap")
@@ -221,6 +221,7 @@ QPushButton {
             value=100,
             single_step=10,
         )
+        self.sb_symbol_opacity.setSuffix(" %")
         self._configure_live_update_button()
         self._configure_apply_button()
 
@@ -278,17 +279,17 @@ QPushButton {
         reference_layout = QtWidgets.QGridLayout()
         reference_layout.setContentsMargins(0, 0, 0, 0)
         reference_layout.setHorizontalSpacing(5)
-        reference_layout.setColumnStretch(1, 1)
+        reference_layout.setColumnStretch(0, 1)
         self._reference_offset_layout = reference_layout
 
-        self._reference_offset_label = QtWidgets.QLabel("Ref. shift:", group)
+        self._reference_offset_label = QtWidgets.QLabel("Reference offset", group)
         self._reference_offset_label.setObjectName("map_reference_offset_label")
-        reference_layout.addWidget(self._reference_offset_label, 0, 0)
-        reference_layout.addWidget(self.sb_symbol_value_offset, 0, 1)
+        layout.addWidget(self._reference_offset_label, 5, 0, 1, 3)
+        reference_layout.addWidget(self.sb_symbol_value_offset, 0, 0)
         reference_layout.addWidget(
-            self.cb_symbol_value_offset_sync_with_ref, 0, 2
+            self.cb_symbol_value_offset_sync_with_ref, 0, 1
         )
-        layout.addLayout(reference_layout, 5, 0, 1, 3)
+        layout.addLayout(reference_layout, 6, 0, 1, 3)
         return group
 
     def _build_symbology_group(self):
@@ -302,11 +303,11 @@ QPushButton {
 
         self._colormap_label = QtWidgets.QLabel("Colormap", group)
         self._colormap_label.setObjectName("map_colormap_label")
-        self._classes_label = QtWidgets.QLabel("Classes:", group)
+        self._classes_label = QtWidgets.QLabel("Classes", group)
         self._classes_label.setObjectName("map_classes_label")
-        self._size_label = QtWidgets.QLabel("Size:", group)
+        self._size_label = QtWidgets.QLabel("Size", group)
         self._size_label.setObjectName("map_size_label")
-        self._opacity_label = QtWidgets.QLabel("Opacity:", group)
+        self._opacity_label = QtWidgets.QLabel("Opacity", group)
         self._opacity_label.setObjectName("map_opacity_label")
 
         layout.addWidget(self._colormap_label, 0, 0, 1, 3)
@@ -389,7 +390,8 @@ QPushButton {
         button.setIcon(
             QtGui.QIcon(":/icons/icons/apply_symbology_on-the-fly.svg")
         )
-        button.setToolTip("Apply symbology automatically")
+        button.setToolTip("Apply changes automatically")
+        button.setAccessibleName("Live update")
         button.setCheckable(True)
         button.setChecked(False)
         button.setFlat(True)
@@ -403,6 +405,7 @@ QPushButton {
         button.setText("Apply")
         button.setIcon(QtGui.QIcon(":/icons/icons/apply_symbology.svg"))
         button.setToolTip("Apply symbology")
+        button.setAccessibleName("Apply symbology")
         button.setCheckable(False)
         button.setFlat(False)
         button.setIconSize(QSize(self.ACTION_ICON_SIZE, self.ACTION_ICON_SIZE))
@@ -414,6 +417,7 @@ QPushButton {
         button.setText("")
         button.setIcon(QtGui.QIcon(icon))
         button.setToolTip(tooltip)
+        button.setAccessibleName(tooltip)
         button.setMaximumSize(self.BUTTON_SIZE, self.BUTTON_SIZE)
         button.setIconSize(QSize(self.ICON_SIZE, self.ICON_SIZE))
         button.setSizePolicy(SIZE_POLICY_FIXED, SIZE_POLICY_FIXED)
