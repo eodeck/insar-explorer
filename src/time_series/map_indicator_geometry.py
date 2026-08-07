@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import isfinite
-from typing import Mapping, Optional, Tuple
+from typing import Mapping, Optional
 
 from qgis.core import (
     QgsCoordinateReferenceSystem,

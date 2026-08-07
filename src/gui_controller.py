@@ -1669,7 +1669,6 @@ class GuiController(QObject):
             "done", 3000,
         )
 
-
     def assignDistinctColorsToCommitted(self):
         """Assign deterministic qualitative colors to selected committed records."""
         panel = self.ui.time_series_point_panel

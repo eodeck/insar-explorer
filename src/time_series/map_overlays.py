@@ -7,7 +7,7 @@ from typing import Callable, Dict, Iterable, Optional, Tuple
 from uuid import UUID
 
 from qgis.PyQt.QtGui import QColor
-from qgis.core import QgsCoordinateTransform, QgsGeometry, QgsPointXY, QgsProject
+from qgis.core import QgsCoordinateTransform, QgsGeometry, QgsProject
 from qgis.gui import QgsRubberBand, QgsVertexMarker
 
 from ..models.time_series import SpatialSelection, SpatialSelectionKind, TimeSeriesRecord
