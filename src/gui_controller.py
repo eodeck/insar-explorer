@@ -246,6 +246,7 @@ class GuiController(QObject):
         )
         self._symbology_dirty = False
         self._range_source = RangeSource.CUSTOM
+        self._range_source_raw_values = None
         self._range_programmatic_update = False
         self.initializeUiParams()
         self.connectUiSignals()
@@ -338,7 +339,7 @@ class GuiController(QObject):
 
     def onLayerChanged(self, layer=None):
         """Reset the time-series workspace and map for a confirmed layer change."""
-        self._setRangeSource(RangeSource.CUSTOM)
+        self._setCustomRangeSource()
         self._setSymbologyDirty(False)
         if layer is None:
             layer = self.iface.activeLayer()
@@ -376,7 +377,7 @@ class GuiController(QObject):
         layer = self.iface.activeLayer()
         if not layer:
             return
-        self._setRangeSource(RangeSource.CUSTOM)
+        self._setCustomRangeSource()
         status, message = vector_layer_utils.checkVectorLayer(layer)
         self.ui.cb_select_field.clear()
         if status is False:
@@ -405,7 +406,7 @@ class GuiController(QObject):
         self._setSymbologyDirty(False)
 
     def selectVectorFieldChanged(self):
-        self._setRangeSource(RangeSource.CUSTOM)
+        self._setCustomRangeSource()
         self.insar_map.selected_field_name = self.ui.cb_select_field.currentText()
         self.choose_point_click_handler.selected_field_name = self.insar_map.selected_field_name
         self.insar_map.reset()
@@ -727,6 +728,8 @@ class GuiController(QObject):
     def connectMapSignals(self):
         if not hasattr(self, "_range_source"):
             self._range_source = RangeSource.CUSTOM
+        if not hasattr(self, "_range_source_raw_values"):
+            self._range_source_raw_values = None
         if not hasattr(self, "_range_programmatic_update"):
             self._range_programmatic_update = False
         self.ui.cb_select_field.currentTextChanged.connect(self.selectVectorFieldChanged)
@@ -765,6 +768,11 @@ class GuiController(QObject):
         finally:
             combo.blockSignals(False)
 
+    def _setCustomRangeSource(self):
+        """Mark the displayed range as user-owned and discard computed-source state."""
+        self._range_source_raw_values = None
+        self._setRangeSource(RangeSource.CUSTOM)
+
     def _setDisplayedRange(self, minimum, maximum):
         """Project a controller-owned range without triggering manual-edit semantics."""
         self._range_programmatic_update = True
@@ -787,7 +795,7 @@ class GuiController(QObject):
 
     def setSymbologyUpperRange(self):
         if not self._range_programmatic_update:
-            self._setRangeSource(RangeSource.CUSTOM)
+            self._setCustomRangeSource()
         if self.ui.cb_symbol_range_symmetric.isChecked():
             limit = abs(self.ui.sb_symbol_upper_range.value())
             self._setDisplayedRange(-limit, limit)
@@ -795,7 +803,7 @@ class GuiController(QObject):
 
     def setSymbologyLowerRange(self):
         if not self._range_programmatic_update:
-            self._setRangeSource(RangeSource.CUSTOM)
+            self._setCustomRangeSource()
         if self.ui.cb_symbol_range_symmetric.isChecked():
             limit = abs(self.ui.sb_symbol_lower_range.value())
             self._setDisplayedRange(-limit, limit)
@@ -811,12 +819,19 @@ class GuiController(QObject):
         self.setSymbologyRangeSource(source)
 
     def symbologyRangeSymmetryChanged(self, status):
-        if status:
-            minimum, maximum = self._symmetricRange(
-                self.ui.sb_symbol_lower_range.value(),
-                self.ui.sb_symbol_upper_range.value(),
-            )
+        if self._range_source is RangeSource.CUSTOM or self._range_source_raw_values is None:
+            minimum = self.ui.sb_symbol_lower_range.value()
+            maximum = self.ui.sb_symbol_upper_range.value()
+            if status:
+                minimum, maximum = self._symmetricRange(minimum, maximum)
+                self._setDisplayedRange(minimum, maximum)
+        else:
+            minimum, maximum = self._range_source_raw_values
+            if status:
+                minimum, maximum = self._symmetricRange(minimum, maximum)
             self._setDisplayedRange(minimum, maximum)
+
+        if status:
             self.msg_signal.emit("Range symmetry enabled.", 't', 0)
         else:
             self.msg_signal.emit("Range symmetry disabled.", 'i', 0)
@@ -831,19 +846,23 @@ class GuiController(QObject):
         if not isinstance(source, RangeSource):
             raise ValueError("Unsupported Map Settings range source: {!r}".format(source))
         if source is RangeSource.CUSTOM:
-            self._setRangeSource(source)
+            self._setCustomRangeSource()
             return
 
         n_std = source.standard_deviations
         previous_source = self._range_source
+        previous_raw_values = self._range_source_raw_values
         error = self.insar_map.setSymbologyRangeFromData(n_std=n_std)
         if error:
+            self._range_source_raw_values = previous_raw_values
             self._setRangeSource(previous_source)
             self.msg_signal.emit(error, 'i', 0)
             return
 
-        minimum = self.insar_map.min_value
-        maximum = self.insar_map.max_value
+        raw_minimum = float(self.insar_map.min_value)
+        raw_maximum = float(self.insar_map.max_value)
+        self._range_source_raw_values = (raw_minimum, raw_maximum)
+        minimum, maximum = raw_minimum, raw_maximum
         if self.ui.cb_symbol_range_symmetric.isChecked():
             minimum, maximum = self._symmetricRange(minimum, maximum)
         self._setDisplayedRange(minimum, maximum)
