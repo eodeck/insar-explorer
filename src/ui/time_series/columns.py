@@ -1,11 +1,8 @@
 """Shared column language for time-series record item views."""
 
 from enum import IntEnum
-from .presentation import (
-    TIME_SERIES_ACTION_BUTTON_SIZE, TIME_SERIES_ACTION_ICON_SIZE,
-    TIME_SERIES_ROW_HEIGHT, TIME_SERIES_TYPE_COLUMN_WIDTH,
-    TIME_SERIES_TYPE_ICON_SIZE,
-)
+
+from .presentation import TIME_SERIES_ROW_HEIGHT
 
 
 class TimeSeriesColumn(IntEnum):
