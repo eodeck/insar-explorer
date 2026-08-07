@@ -257,8 +257,6 @@ class GuiController(QObject):
         self.iface.currentLayerChanged.connect(self.onLayerChanged)
         self.onLayerChanged()
 
-        self.setVectorFields()
-
     def _installSplitButtonPopupHoverReconciliation(self):
         """Reconcile split-button hover whenever an associated popup closes."""
         toolbar = self.ui.time_series_toolbar
@@ -340,6 +338,7 @@ class GuiController(QObject):
     def onLayerChanged(self, layer=None):
         """Reset the time-series workspace and map for a confirmed layer change."""
         self._setCustomRangeSource()
+        self._setRangeSymmetryChecked(False)
         self._setSymbologyDirty(False)
         if layer is None:
             layer = self.iface.activeLayer()
@@ -349,7 +348,7 @@ class GuiController(QObject):
             self._restoreTimeSeriesYAxisMode()
             self._restoreTimeSeriesReplicaState()
             self.insar_map.reset()
-            self.setVectorFields()
+            self.setVectorFields(initialize_default_range=True)
 
             layer_type = layer.type()
             is_local_raster = (hasattr(layer, "dataProvider") and getattr(layer.dataProvider(), "name", lambda: "")()
@@ -373,37 +372,75 @@ class GuiController(QObject):
                 message = ""
             self.msg_signal.emit(message, "i", 0)
 
-    def setVectorFields(self):
+    def setVectorFields(self, initialize_default_range=False):
+        """Populate vector fields and optionally initialize a fresh range state."""
         layer = self.iface.activeLayer()
         if not layer:
             return
-        self._setCustomRangeSource()
+
         status, message = vector_layer_utils.checkVectorLayer(layer)
-        self.ui.cb_select_field.clear()
-        if status is False:
-            self.ui.cb_select_field.setEnabled(False)
-            self.ui.sb_symbol_size.setEnabled(False)
-            self._setSymbologyDirty(False)
-            return
-        else:
-            self.ui.cb_select_field.setEnabled(True)
+        field_combo = self.ui.cb_select_field
+        was_blocked = field_combo.blockSignals(True)
+        try:
+            field_combo.clear()
+            if status is False:
+                field_combo.setEnabled(False)
+                self.ui.sb_symbol_size.setEnabled(False)
+                self._setSymbologyDirty(False)
+                return
+
+            field_combo.setEnabled(True)
             self.ui.sb_symbol_size.setEnabled(True)
 
-        field_list, field_types = vector_layer_utils.getVectorFields(layer)
-        velocity_field, message = vector_layer_utils.getVectorVelocityFieldName(layer)
+            field_list, field_types = vector_layer_utils.getVectorFields(layer)
+            velocity_field, message = vector_layer_utils.getVectorVelocityFieldName(layer)
 
-        for field, field_type in zip(field_list, field_types):
-            self.ui.cb_select_field.addItem(field)
-            if field_type not in [QVariant.Double, QVariant.Int, QVariant.LongLong]:
-                index = self.ui.cb_select_field.count() - 1
-                self.ui.cb_select_field.model().item(index).setEnabled(False)
+            for field, field_type in zip(field_list, field_types):
+                field_combo.addItem(field)
+                if field_type not in [QVariant.Double, QVariant.Int, QVariant.LongLong]:
+                    index = field_combo.count() - 1
+                    field_combo.model().item(index).setEnabled(False)
 
-        if velocity_field:
-            self.ui.cb_select_field.setCurrentText(velocity_field)
+            if velocity_field:
+                field_combo.setCurrentText(velocity_field)
+        finally:
+            field_combo.blockSignals(was_blocked)
 
-        self.insar_map.reset()
-        self.insar_map.selected_field_name = self.ui.cb_select_field.currentText()
-        self._setSymbologyDirty(False)
+        self.insar_map.selected_field_name = field_combo.currentText()
+        self.choose_point_click_handler.selected_field_name = self.insar_map.selected_field_name
+
+        if initialize_default_range:
+            self._initializeDefaultRangeState()
+        else:
+            self._setSymbologyDirty(False)
+
+    def _setRangeSymmetryChecked(self, checked):
+        """Project range symmetry state without triggering range-change behavior."""
+        checkbox = self.ui.cb_symbol_range_symmetric
+        was_blocked = checkbox.blockSignals(True)
+        try:
+            checkbox.setChecked(bool(checked))
+        finally:
+            checkbox.blockSignals(was_blocked)
+
+    def _initializeDefaultRangeState(self):
+        """Initialize a fresh active-field range from its unsymmetrized data extent."""
+        displayed_range = (
+            self.ui.sb_symbol_lower_range.value(),
+            self.ui.sb_symbol_upper_range.value(),
+        )
+        self._setRangeSymmetryChecked(False)
+        raw_values, error = self._computeRangeSourceValues(RangeSource.DATA_EXTENT)
+        if error:
+            self._setCustomRangeSource()
+            self._setDisplayedRange(*displayed_range)
+            self._setSymbologyDirty(False)
+            self.msg_signal.emit(error, 'i', 0)
+            return False
+
+        self._projectComputedRangeSource(RangeSource.DATA_EXTENT, raw_values)
+        self._applySymbologyAndClearPending()
+        return True
 
     def selectVectorFieldChanged(self):
         """Update the active field while preserving the selected range strategy."""
