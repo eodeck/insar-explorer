@@ -1,6 +1,7 @@
 ### History
 
 v2.8.0
+- Improve field search and filtering.
 - Recompute derived ranges on field/layer change.
 - Allow adaptive precision in data range spinboxes.
 - Enhanced map settings panel.

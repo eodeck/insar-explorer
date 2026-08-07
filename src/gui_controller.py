@@ -24,6 +24,8 @@ from .ui.popups.map_indicator_settings_popup import MapIndicatorSettingsPopup
 from .ui.map_settings.range_state import RangeSource
 from .ui.widgets.split_tool_button import SplitButtonPopupHoverReconciler
 from .qt_compat import (
+    ITEM_IS_ENABLED,
+    ITEM_IS_SELECTABLE,
     RASTER_LAYER,
     VECTOR_LAYER,
     available_screen_geometry,
@@ -406,6 +408,9 @@ class GuiController(QObject):
         finally:
             field_combo.blockSignals(was_blocked)
 
+        if hasattr(self.ui, "map_settings_panel"):
+            self.ui.map_settings_panel.sync_field_selection_state()
+
         self.insar_map.selected_field_name = field_combo.currentText()
         self.choose_point_click_handler.selected_field_name = self.insar_map.selected_field_name
 
@@ -442,8 +447,18 @@ class GuiController(QObject):
         self._applySymbologyAndClearPending()
         return True
 
-    def selectVectorFieldChanged(self):
+    def selectVectorFieldChanged(self, index=None):
         """Update the active field while preserving the selected range strategy."""
+        field_combo = self.ui.cb_select_field
+        if index is None:
+            index = field_combo.currentIndex()
+        if index < 0:
+            return
+        model_index = field_combo.model().index(index, 0)
+        flags = model_index.flags()
+        if not (flags & ITEM_IS_ENABLED and flags & ITEM_IS_SELECTABLE):
+            return
+
         source = self._range_source
         displayed_range = (
             self.ui.sb_symbol_lower_range.value(),
@@ -790,7 +805,7 @@ class GuiController(QObject):
             self._range_source_raw_values = None
         if not hasattr(self, "_range_programmatic_update"):
             self._range_programmatic_update = False
-        self.ui.cb_select_field.currentTextChanged.connect(self.selectVectorFieldChanged)
+        self.ui.cb_select_field.currentIndexChanged.connect(self.selectVectorFieldChanged)
         self.ui.pb_symbology.clicked.connect(self.applySymbologyClicked)
         self.ui.sb_symbol_lower_range.valueChanged.connect(self.setSymbologyLowerRange)
         self.ui.sb_symbol_upper_range.valueChanged.connect(self.setSymbologyUpperRange)

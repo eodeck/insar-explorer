@@ -5,6 +5,12 @@ from qgis.PyQt.QtCore import QRect, QSize
 
 from ...qt_compat import (
     ALIGN_VCENTER,
+    CASE_INSENSITIVE,
+    COMBO_NO_INSERT,
+    COMPLETER_POPUP_COMPLETION,
+    ITEM_IS_ENABLED,
+    ITEM_IS_SELECTABLE,
+    MATCH_CONTAINS,
     SIZE_POLICY_EXPANDING,
     SIZE_POLICY_FIXED,
     SIZE_POLICY_PREFERRED,
@@ -78,6 +84,7 @@ QPushButton {
         self.setMaximumWidth(self.MAXIMUM_WIDTH)
         self.setSizePolicy(SIZE_POLICY_PREFERRED, SIZE_POLICY_EXPANDING)
 
+        self._last_valid_field_index = -1
         self._create_controls()
         self._configure_controls()
         self._build_layout()
@@ -150,9 +157,11 @@ QPushButton {
         self.pb_symbology.setObjectName("pb_symbology")
 
     def _configure_controls(self):
-        self.cb_select_field.setToolTip("Select field")
+        self.cb_select_field.setToolTip("Select a field; type to search")
         self.cb_select_field.setEditable(True)
+        self.cb_select_field.setInsertPolicy(COMBO_NO_INSERT)
         self.cb_select_field.setAcceptDrops(False)
+        self._configure_field_completer()
 
         self._configure_double_spin_box(
             self.sb_symbol_lower_range,
@@ -369,6 +378,79 @@ QPushButton {
         group.setMinimumWidth(150)
         group.setSizePolicy(SIZE_POLICY_EXPANDING, SIZE_POLICY_PREFERRED)
         return group
+
+    def _configure_field_completer(self):
+        """Configure native shared-model completion for the Field selector."""
+        completer = QtWidgets.QCompleter(
+            self.cb_select_field.model(),
+            self.cb_select_field,
+        )
+        completer.setCaseSensitivity(CASE_INSENSITIVE)
+        completer.setFilterMode(MATCH_CONTAINS)
+        completer.setCompletionMode(COMPLETER_POPUP_COMPLETION)
+        self.cb_select_field.setCompleter(completer)
+        self._field_completer = completer
+
+        self.cb_select_field.currentIndexChanged.connect(
+            self._remember_valid_field_index
+        )
+        self.cb_select_field.lineEdit().editingFinished.connect(
+            self._commit_or_restore_field_text
+        )
+
+    def _field_index_is_selectable(self, index):
+        """Return whether a combo row is an enabled, selectable field item."""
+        if index < 0 or index >= self.cb_select_field.count():
+            return False
+        model_index = self.cb_select_field.model().index(index, 0)
+        flags = model_index.flags()
+        return bool(flags & ITEM_IS_ENABLED) and bool(flags & ITEM_IS_SELECTABLE)
+
+    def _remember_valid_field_index(self, index):
+        """Remember only committed selectable field rows."""
+        if self._field_index_is_selectable(index):
+            self._last_valid_field_index = index
+
+    def sync_field_selection_state(self):
+        """Capture the current canonical field after blocked model population."""
+        index = self.cb_select_field.currentIndex()
+        if self._field_index_is_selectable(index):
+            self._last_valid_field_index = index
+            self.cb_select_field.lineEdit().setText(
+                self.cb_select_field.itemText(index)
+            )
+        else:
+            self._last_valid_field_index = -1
+
+    def _find_selectable_field_index(self, text):
+        """Resolve exact field text to its canonical selectable combo row."""
+        needle = str(text).casefold()
+        for index in range(self.cb_select_field.count()):
+            if self.cb_select_field.itemText(index).casefold() != needle:
+                continue
+            if self._field_index_is_selectable(index):
+                return index
+        return -1
+
+    def _commit_or_restore_field_text(self):
+        """Commit an exact valid field name or restore the last valid field."""
+        line_edit = self.cb_select_field.lineEdit()
+        index = self._find_selectable_field_index(line_edit.text())
+        if index >= 0:
+            self.cb_select_field.setCurrentIndex(index)
+            line_edit.setText(self.cb_select_field.itemText(index))
+            self._last_valid_field_index = index
+            return
+
+        fallback = self._last_valid_field_index
+        if not self._field_index_is_selectable(fallback):
+            current = self.cb_select_field.currentIndex()
+            fallback = current if self._field_index_is_selectable(current) else -1
+        if fallback >= 0:
+            self.cb_select_field.setCurrentIndex(fallback)
+            line_edit.setText(self.cb_select_field.itemText(fallback))
+        else:
+            line_edit.clear()
 
     @staticmethod
     def _configure_double_spin_box(
