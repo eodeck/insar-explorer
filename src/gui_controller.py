@@ -243,6 +243,7 @@ class GuiController(QObject):
         self.last_ts_export_format = self.settings.value(
             'insar_explorer/ts_export_format', 'csv', type=str
         )
+        self._symbology_dirty = False
         self.initializeUiParams()
         self.connectUiSignals()
         # make point selection active by default
@@ -337,6 +338,7 @@ class GuiController(QObject):
 
     def onLayerChanged(self, layer=None):
         """Reset the time-series workspace and map for a confirmed layer change."""
+        self._setSymbologyDirty(False)
         if layer is None:
             layer = self.iface.activeLayer()
         if layer:
@@ -378,6 +380,7 @@ class GuiController(QObject):
         if status is False:
             self.ui.cb_select_field.setEnabled(False)
             self.ui.sb_symbol_size.setEnabled(False)
+            self._setSymbologyDirty(False)
             return
         else:
             self.ui.cb_select_field.setEnabled(True)
@@ -397,6 +400,7 @@ class GuiController(QObject):
 
         self.insar_map.reset()
         self.insar_map.selected_field_name = self.ui.cb_select_field.currentText()
+        self._setSymbologyDirty(False)
 
     def selectVectorFieldChanged(self):
         self.insar_map.selected_field_name = self.ui.cb_select_field.currentText()
@@ -481,7 +485,7 @@ class GuiController(QObject):
             value = self.choose_point_click_handler.map_reference_clicked_value
             self.insar_map.offset_value = value
             self.ui.sb_symbol_value_offset.setValue(value)
-            self.applySymbology()
+            self._applySymbologyAndClearPending()
 
     def connectUiSignals(self):
         self.ui.visibilityChanged.connect(self.handleUiClose)
@@ -730,6 +734,7 @@ class GuiController(QObject):
         self.ui.cb_symbology_live.toggled.connect(self.activateLiveSymbology)
         self.ui.cmb_colormap.currentIndexChanged.connect(self.applyLiveSymbology)
         self.ui.pb_colormap_reverse.toggled.connect(self.colormapReverseClicked)
+        self._setSymbologyDirty(False)
 
     def setDataRangeMenu(self):
         """creat a menu for setting data range"""
@@ -791,19 +796,33 @@ class GuiController(QObject):
         self.ui.sb_symbol_lower_range.setValue(min_value)
         self.ui.sb_symbol_upper_range.setValue(max_value)
 
+    def _setSymbologyDirty(self, dirty):
+        """Project unapplied Map Settings state onto the manual Apply action."""
+        self._symbology_dirty = bool(dirty)
+        self.ui.pb_symbology.setEnabled(self._symbology_dirty)
+
+    def _applySymbologyAndClearPending(self):
+        """Apply current Map Settings and update pending state from the result."""
+        applied = self.applySymbology()
+        self._setSymbologyDirty(not applied)
+        return applied
+
     def applyLiveSymbology(self):
         if self.ui.cb_symbology_live.isChecked():
-            self.applySymbology()
+            self._applySymbologyAndClearPending()
+        else:
+            self._setSymbologyDirty(True)
 
     def activateLiveSymbology(self, status):
         if status:
-            self.applyLiveSymbology()
+            self._applySymbologyAndClearPending()
             self.msg_signal.emit("Live symbology enabled: changes will apply immediately.", 'done', 0)
         else:
+            self._setSymbologyDirty(False)
             self.msg_signal.emit("Live symbology disabled.", 'i', 0)
 
     def applySymbologyNow(self):
-        QTimer.singleShot(0, self.applySymbology)
+        QTimer.singleShot(0, self._applySymbologyAndClearPending)
 
     def applySymbology(self):
         self.insar_map.selected_field_name = self.ui.cb_select_field.currentText()
@@ -818,10 +837,11 @@ class GuiController(QObject):
             self.msg_signal.emit(message, "i", 0)
         else:
             self.msg_signal.emit("", "", 0)
+        return message == ""
 
     def applySymbologyClicked(self, status):
-        self.applySymbology()
-        self.msg_signal.emit("Symbology applied.", "done", 5000)
+        if self._applySymbologyAndClearPending():
+            self.msg_signal.emit("Symbology applied.", "done", 5000)
 
     def colormapReverseClicked(self, status):
         if status:

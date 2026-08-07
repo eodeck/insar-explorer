@@ -408,6 +408,7 @@ QPushButton {
         button.setToolTip("Apply symbology")
         button.setAccessibleName("Apply symbology")
         button.setCheckable(False)
+        button.setEnabled(False)
         button.setFlat(False)
         button.setIconSize(QSize(self.ACTION_ICON_SIZE, self.ACTION_ICON_SIZE))
         button.setFixedHeight(self.BUTTON_SIZE)
