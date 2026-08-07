@@ -227,46 +227,70 @@ class MapSettingsPanel(QtWidgets.QWidget):
 
     def _build_value_group(self):
         group = self._group_box("Value", "map_value_group")
-        layout = QtWidgets.QVBoxLayout(group)
+        layout = QtWidgets.QGridLayout(group)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self.cb_select_field)
+        layout.setHorizontalSpacing(5)
+        layout.setVerticalSpacing(4)
+        layout.setColumnStretch(0, 1)
+        layout.setColumnStretch(2, 1)
+        self._value_layout = layout
 
-        range_layout = QtWidgets.QHBoxLayout()
-        range_layout.setSpacing(5)
-        range_layout.addWidget(self.sb_symbol_lower_range)
-        range_layout.addWidget(self.cb_symbol_range_sync)
-        range_layout.addWidget(self.sb_symbol_upper_range)
-        layout.addLayout(range_layout)
+        self._field_label = QtWidgets.QLabel("Field", group)
+        self._field_label.setObjectName("map_field_label")
+        layout.addWidget(self._field_label, 0, 0, 1, 3)
+        layout.addWidget(self.cb_select_field, 1, 0, 1, 3)
 
-        offset_layout = QtWidgets.QHBoxLayout()
-        offset_layout.setSpacing(1)
-        offset_layout.addWidget(QtWidgets.QLabel("Ref. shift:", group))
-        offset_layout.addWidget(self.sb_symbol_value_offset)
-        offset_layout.addWidget(self.cb_symbol_value_offset_sync_with_ref)
-        offset_layout.addStretch(1)
-        layout.addLayout(offset_layout)
+        self._range_label = QtWidgets.QLabel("Range", group)
+        self._range_label.setObjectName("map_range_label")
+        layout.addWidget(self._range_label, 2, 0, 1, 3)
+        layout.addWidget(self.sb_symbol_lower_range, 3, 0)
+        layout.addWidget(self.cb_symbol_range_sync, 3, 1)
+        layout.addWidget(self.sb_symbol_upper_range, 3, 2)
+        layout.addWidget(self.pb_range_from_data, 4, 0)
 
-        range_from_data_layout = QtWidgets.QHBoxLayout()
-        range_from_data_layout.setSpacing(1)
-        range_from_data_layout.addWidget(self.pb_range_from_data)
-        range_from_data_layout.addStretch(1)
-        layout.addLayout(range_from_data_layout)
+        reference_layout = QtWidgets.QGridLayout()
+        reference_layout.setContentsMargins(0, 0, 0, 0)
+        reference_layout.setHorizontalSpacing(5)
+        reference_layout.setColumnStretch(1, 1)
+        self._reference_offset_layout = reference_layout
+
+        self._reference_offset_label = QtWidgets.QLabel("Ref. shift:", group)
+        self._reference_offset_label.setObjectName("map_reference_offset_label")
+        reference_layout.addWidget(self._reference_offset_label, 0, 0)
+        reference_layout.addWidget(self.sb_symbol_value_offset, 0, 1)
+        reference_layout.addWidget(
+            self.cb_symbol_value_offset_sync_with_ref, 0, 2
+        )
+        layout.addLayout(reference_layout, 5, 0, 1, 3)
         return group
 
     def _build_symbology_group(self):
         group = self._group_box("Symbology", "map_symbology_group")
-        layout = QtWidgets.QVBoxLayout(group)
+        layout = QtWidgets.QGridLayout(group)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(1)
+        layout.setHorizontalSpacing(5)
+        layout.setVerticalSpacing(4)
+        layout.setColumnStretch(1, 1)
+        self._symbology_layout = layout
 
-        colormap_layout = QtWidgets.QHBoxLayout()
-        colormap_layout.setSpacing(5)
-        colormap_layout.addWidget(self.cmb_colormap)
-        colormap_layout.addWidget(self.pb_colormap_reverse)
-        layout.addLayout(colormap_layout)
-        layout.addLayout(self._labeled_control_row("Classes:", self.sb_symbol_classes))
-        layout.addLayout(self._labeled_control_row("Size:", self.sb_symbol_size))
-        layout.addLayout(self._labeled_control_row("Opacity:", self.sb_symbol_opacity))
+        self._colormap_label = QtWidgets.QLabel("Colormap", group)
+        self._colormap_label.setObjectName("map_colormap_label")
+        self._classes_label = QtWidgets.QLabel("Classes:", group)
+        self._classes_label.setObjectName("map_classes_label")
+        self._size_label = QtWidgets.QLabel("Size:", group)
+        self._size_label.setObjectName("map_size_label")
+        self._opacity_label = QtWidgets.QLabel("Opacity:", group)
+        self._opacity_label.setObjectName("map_opacity_label")
+
+        layout.addWidget(self._colormap_label, 0, 0, 1, 3)
+        layout.addWidget(self.cmb_colormap, 1, 0, 1, 2)
+        layout.addWidget(self.pb_colormap_reverse, 1, 2)
+        layout.addWidget(self._classes_label, 2, 0)
+        layout.addWidget(self.sb_symbol_classes, 2, 1, 1, 2)
+        layout.addWidget(self._size_label, 3, 0)
+        layout.addWidget(self.sb_symbol_size, 3, 1, 1, 2)
+        layout.addWidget(self._opacity_label, 4, 0)
+        layout.addWidget(self.sb_symbol_opacity, 4, 1, 1, 2)
         return group
 
     def _build_apply_group(self):
@@ -285,16 +309,8 @@ class MapSettingsPanel(QtWidgets.QWidget):
         group.setObjectName(object_name)
         group.setFlat(True)
         group.setMinimumWidth(150)
-        group.setSizePolicy(SIZE_POLICY_FIXED, SIZE_POLICY_PREFERRED)
+        group.setSizePolicy(SIZE_POLICY_EXPANDING, SIZE_POLICY_PREFERRED)
         return group
-
-    @staticmethod
-    def _labeled_control_row(label_text, control):
-        layout = QtWidgets.QHBoxLayout()
-        layout.setSpacing(1)
-        layout.addWidget(QtWidgets.QLabel(label_text, control.parent()))
-        layout.addWidget(control)
-        return layout
 
     @staticmethod
     def _configure_double_spin_box(
