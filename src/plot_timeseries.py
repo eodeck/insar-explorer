@@ -48,6 +48,15 @@ class CommittedRemovalResult:
     graphics_errors: Tuple[Exception, ...] = ()
 
 
+@dataclass(frozen=True)
+class CommittedVisibilityBatchResult:
+    """Result of one atomic committed-visibility batch transaction."""
+
+    changed_record_ids: Tuple[UUID, ...]
+    graphics_errors: Tuple[Exception, ...] = ()
+    refresh_errors: Tuple[Exception, ...] = ()
+
+
 try:
     from .. import __version__
 except ImportError:
@@ -2210,34 +2219,146 @@ class PlotTs():
         return bool(result.removed_record_ids)
 
     def set_committed_visibility(self, series_id: UUID, visible: bool) -> bool:
-        """Show or hide one committed record without changing record state."""
-        record = self._series_store.get(series_id)
-        if record is None:
-            return False
-        if visible:
-            if series_id not in self._hidden_committed_ids:
-                return True
-            graphics, rendered_record, transaction = self._build_record_graphics(record)
+        """Show or hide one committed record through the atomic batch boundary."""
+        result = self.set_committed_visibility_batch((series_id,), visible)
+        return bool(result.changed_record_ids) or self.is_committed_visible(series_id) == bool(visible)
+
+    def set_committed_visibility_batch(
+        self, series_ids, visible: bool
+    ) -> CommittedVisibilityBatchResult:
+        """Apply one atomic authoritative visibility transition.
+
+        Showing is fully transactional across store, graphics registry, hidden IDs,
+        and newly attached graphics. Hiding publishes registry/hidden-ID state for
+        the whole batch first, then treats physical detach failures as non-fatal
+        graphics diagnostics so authoritative state can never become mixed.
+        """
+        requested = []
+        seen = set()
+        for value in series_ids:
+            series_id = value if isinstance(value, UUID) else UUID(str(value))
+            if series_id not in seen:
+                seen.add(series_id)
+                requested.append(series_id)
+        series_ids = tuple(requested)
+        records = tuple(self._series_store.get(series_id) for series_id in series_ids)
+        if any(record is None for record in records):
+            raise KeyError("stale committed UUID in visibility batch")
+
+        target = bool(visible)
+        if target:
+            to_show = tuple(
+                (series_id, record)
+                for series_id, record in zip(series_ids, records)
+                if series_id in self._hidden_committed_ids
+            )
+            if not to_show:
+                return CommittedVisibilityBatchResult(())
+
+            built = []
             try:
-                self._graphics_by_series_id[series_id] = graphics
-                self._series_store.replace(rendered_record)
-                transaction.commit()
+                for series_id, record in to_show:
+                    graphics, rendered_record, transaction = self._build_record_graphics(record)
+                    built.append((series_id, graphics, rendered_record, transaction))
             except Exception:
-                self._graphics_by_series_id.pop(series_id, None)
-                transaction.rollback()
+                for _series_id, _graphics, _record, transaction in reversed(built):
+                    transaction.rollback()
                 raise
-            self._hidden_committed_ids.discard(series_id)
+
+            previous_records = tuple(record for _series_id, record in to_show)
+            previous_graphics = {
+                series_id: self._graphics_by_series_id.get(series_id)
+                for series_id, _record in to_show
+            }
+            previous_hidden = {
+                series_id: series_id in self._hidden_committed_ids
+                for series_id, _record in to_show
+            }
+            store_replaced = False
+            published_ids = []
+            try:
+                self._series_store.replace_many(
+                    rendered_record
+                    for _series_id, _graphics, rendered_record, _transaction in built
+                )
+                store_replaced = True
+                for series_id, graphics, _record, _transaction in built:
+                    self._graphics_by_series_id[series_id] = graphics
+                    self._hidden_committed_ids.discard(series_id)
+                    published_ids.append(series_id)
+                for _series_id, _graphics, _record, transaction in built:
+                    transaction.commit()
+            except Exception:
+                if store_replaced:
+                    self._series_store.replace_many(previous_records)
+                for series_id in published_ids:
+                    previous = previous_graphics[series_id]
+                    if previous is None:
+                        self._graphics_by_series_id.pop(series_id, None)
+                    else:
+                        self._graphics_by_series_id[series_id] = previous
+                    if previous_hidden[series_id]:
+                        self._hidden_committed_ids.add(series_id)
+                    else:
+                        self._hidden_committed_ids.discard(series_id)
+                for _series_id, _graphics, _record, transaction in reversed(built):
+                    transaction.rollback()
+                raise
+            changed_ids = tuple(series_id for series_id, _record in to_show)
+            graphics_errors = ()
         else:
-            if series_id in self._hidden_committed_ids:
-                return True
-            graphics = self._graphics_by_series_id.pop(series_id, None)
-            if graphics is not None:
-                self._detach_graphics(graphics)
-            self._hidden_committed_ids.add(series_id)
-        self._rebuildYDataRanges()
-        self.applyYAxisPolicy()
-        self._draw()
-        return True
+            to_hide = tuple(
+                series_id for series_id in series_ids
+                if series_id not in self._hidden_committed_ids
+            )
+            if not to_hide:
+                return CommittedVisibilityBatchResult(())
+
+            captured_graphics = tuple(
+                (series_id, self._graphics_by_series_id.get(series_id))
+                for series_id in to_hide
+            )
+            # Publish the complete authoritative state before best-effort detach.
+            for series_id in to_hide:
+                self._graphics_by_series_id.pop(series_id, None)
+            self._hidden_committed_ids.update(to_hide)
+
+            detach_errors = []
+            for _series_id, graphics in captured_graphics:
+                if graphics is None:
+                    continue
+                try:
+                    self._detach_graphics(graphics)
+                except Exception as error:
+                    detach_errors.append(error)
+            changed_ids = to_hide
+            graphics_errors = tuple(detach_errors)
+
+        refresh_errors = self._refresh_after_committed_visibility_change()
+        return CommittedVisibilityBatchResult(
+            changed_record_ids=changed_ids,
+            graphics_errors=graphics_errors,
+            refresh_errors=refresh_errors,
+        )
+
+    def _refresh_after_committed_visibility_change(self):
+        """Refresh presentation after commit and return non-fatal errors.
+
+        Each presentation step is attempted independently so a later draw can
+        still recover from an earlier range or axis-policy failure. Authoritative
+        visibility state is never rolled back after this helper is entered.
+        """
+        errors = []
+        for operation in (
+            self._rebuildYDataRanges,
+            self.applyYAxisPolicy,
+            self._draw,
+        ):
+            try:
+                operation()
+            except Exception as error:
+                errors.append(error)
+        return tuple(errors)
 
     def is_committed_visible(self, series_id: UUID) -> bool:
         """Return list/canvas visibility for one committed UUID."""

@@ -16,6 +16,7 @@ from ...qt_compat import (
     EDIT_DOUBLE_CLICKED,
     EDIT_KEY_PRESSED,
     EDIT_SELECTED_CLICKED,
+    NO_EDIT_TRIGGERS,
     HEADER_FIXED,
     HEADER_STRETCH,
     NO_CONTEXT_MENU,
@@ -93,12 +94,14 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
     discardPendingRequested = pyqtSignal()
     pendingLabelEdited = pyqtSignal(str)
     committedVisibilityEdited = pyqtSignal(object, bool)
+    toggleSelectedCommittedVisibilityRequested = pyqtSignal()
     committedLabelEdited = pyqtSignal(object, str)
     committedSelectionChanged = pyqtSignal(tuple)
     committedVisibilityAllRequested = pyqtSignal(bool)
     removeSelectedCommittedRequested = pyqtSignal()
     copyCommittedSettingsRequested = pyqtSignal()
     pasteCommittedRequested = pyqtSignal(object)
+    assignDistinctColorsRequested = pyqtSignal()
     indicatorSettingsRequested = pyqtSignal()
 
     ICON_SIZE = 18
@@ -304,9 +307,7 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         )
         self.committed_view.setSelectionBehavior(SELECT_ROWS)
         self.committed_view.setSelectionMode(EXTENDED_SELECTION)
-        self.committed_view.setEditTriggers(
-            EDIT_DOUBLE_CLICKED | EDIT_SELECTED_CLICKED | EDIT_KEY_PRESSED
-        )
+        self.committed_view.setEditTriggers(NO_EDIT_TRIGGERS)
         self.committed_view.setSortingEnabled(False)
         self.committed_view.setDragDropMode(NO_DRAG_DROP)
         self.committed_view.setDragEnabled(False)
@@ -356,7 +357,10 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
             "Remove selected time series",
         )
         self.remove_selected_button.clicked.connect(
-            self.removeSelectedCommittedRequested.emit
+            self.committed_view.remove_action.trigger
+        )
+        self.committed_view.remove_action.changed.connect(
+            self._sync_remove_button_enabled
         )
         removal_actions.addWidget(
             self.remove_selected_button, 0, ALIGN_VCENTER
@@ -383,6 +387,12 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
             self.copyCommittedSettingsRequested.emit
         )
         self.committed_view.pasteRequested.connect(self.pasteCommittedRequested.emit)
+        self.committed_view.assignDistinctColorsRequested.connect(
+            self.assignDistinctColorsRequested.emit
+        )
+        self.committed_view.toggleSelectedVisibilityRequested.connect(
+            self.toggleSelectedCommittedVisibilityRequested.emit
+        )
         self._clipboard_categories = ()
         self.refresh_removal_actions()
 
@@ -523,16 +533,24 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         self._clipboard_categories = tuple(categories)
         self.refresh_removal_actions()
 
+    def _sync_remove_button_enabled(self):
+        """Mirror the shared Remove action state onto the bottom button."""
+        self.remove_selected_button.setEnabled(
+            self.committed_view.remove_action.isEnabled()
+        )
+
     def refresh_removal_actions(self):
         """Enable committed-list commands from selection and clipboard projection."""
         selected_ids = self.selected_committed_ids()
         selected = bool(selected_ids)
-        self.remove_selected_button.setEnabled(selected)
         committed_count = (
             0 if self.committed_model is None else self.committed_model.rowCount()
         )
         self.copy_paste_button.setEnabled(committed_count > 0)
-        self.committed_view.remove_action.setEnabled(selected)
+        self.committed_view.refresh_action_enabled_states()
+        self.remove_selected_button.setEnabled(
+            self.committed_view.remove_action.isEnabled()
+        )
         self.committed_view.set_copy_paste_enabled(
             copy_enabled=len(selected_ids) == 1,
             paste_categories=self._clipboard_categories if selected else (),

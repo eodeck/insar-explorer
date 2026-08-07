@@ -1,6 +1,8 @@
 ### History
 
 v2.8.0
+- Added distinct color assignment to record list context menu.
+- Added time series rename actions using F2 and context menu.
 - Added map indicator settings popup.
 - Added map indicator for selected record.
 - Added copy/paste button/context menu for time series record list.

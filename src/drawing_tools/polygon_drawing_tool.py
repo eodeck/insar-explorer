@@ -1,6 +1,5 @@
 from qgis.gui import QgsMapTool, QgsRubberBand
 from qgis.core import QgsGeometry
-from qgis.PyQt.QtGui import QColor as QgsColor
 
 from ..time_series.map_indicator_settings import factory_map_indicator_settings
 from ..time_series.map_indicator_style import (

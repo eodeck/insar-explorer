@@ -41,6 +41,9 @@ from .time_series.residual_style_controller import ResidualStyleController
 from .time_series.style_availability import TimeSeriesStyleAvailability
 from .time_series.style_controller import TimeSeriesStyleController
 from .time_series.style_schema import percent_to_alpha
+from .time_series.style_palette import (
+    DISTINCT_TIME_SERIES_COLORS, with_primary_series_color,
+)
 from .time_series.settings.model import (
     AppearanceSettings, AxisManualRange, EnsembleStyleSettings, ExportSettings,
     FitStyleSettings, ReplicaSettings, ReplicaStyleSettings, ResidualStyleSettings, SeriesStyleSettings,
@@ -545,6 +548,9 @@ class GuiController(QObject):
         panel.pendingLabelEdited.connect(self.updatePendingTimeSeriesLabel)
         panel.committedVisibilityEdited.connect(self.setCommittedTimeSeriesVisibility)
         panel.committedVisibilityAllRequested.connect(self.setAllCommittedTimeSeriesVisibility)
+        panel.toggleSelectedCommittedVisibilityRequested.connect(
+            self.toggleSelectedCommittedTimeSeriesVisibility
+        )
         panel.committedLabelEdited.connect(self.updateCommittedTimeSeriesLabel)
         panel.committedSelectionChanged.connect(self.committedTimeSeriesSelectionChanged)
         panel.removeSelectedCommittedRequested.connect(
@@ -554,6 +560,9 @@ class GuiController(QObject):
             self.copyCommittedTimeSeriesSettings
         )
         panel.pasteCommittedRequested.connect(self.pasteCommittedTimeSeriesSettings)
+        panel.assignDistinctColorsRequested.connect(
+            self.assignDistinctColorsToCommitted
+        )
         panel.indicatorSettingsRequested.connect(self.showMapIndicatorSettingsPopup)
         self.ui.pb_choose_point.clicked.connect(self.activatePointSelection)
         self.ui.pb_set_reference.clicked.connect(self.activateReferencePointSelection)
@@ -1660,6 +1669,84 @@ class GuiController(QObject):
             "done", 3000,
         )
 
+    def assignDistinctColorsToCommitted(self):
+        """Assign deterministic qualitative colors to selected committed records."""
+        panel = self.ui.time_series_point_panel
+        snapshot = panel.capture_committed_selection()
+        selected = snapshot.selected_record_ids
+        if len(selected) < 2:
+            return ()
+
+        selected_set = set(selected)
+        record_ids = tuple(
+            entry.record_id for entry in self.time_series_list_state.entries()
+            if entry.record_id in selected_set
+        )
+        if len(record_ids) != len(selected):
+            self._reportDistinctColorFailure(
+                RuntimeError("one or more selected committed time series no longer exist")
+            )
+            panel.restore_committed_selection(
+                snapshot.selected_record_ids,
+                current_record_id=snapshot.current_record_id,
+                vertical_scroll=snapshot.vertical_scroll,
+                horizontal_scroll=snapshot.horizontal_scroll,
+            )
+            return ()
+
+        plotter = self.choose_point_click_handler.plot_ts
+        try:
+            originals = tuple(
+                plotter.committed_record(record_id) for record_id in record_ids
+            )
+            if any(record is None for record in originals):
+                raise KeyError(
+                    "one or more selected committed time series no longer exist"
+                )
+            replacements = []
+            for index, record in enumerate(originals):
+                color = DISTINCT_TIME_SERIES_COLORS[
+                    index % len(DISTINCT_TIME_SERIES_COLORS)
+                ]
+                replacements.append(with_primary_series_color(record, color))
+            plotter.rerender_records(replacements, notify=True, draw=True)
+        except Exception as error:
+            self._reportDistinctColorFailure(error)
+            panel.restore_committed_selection(
+                snapshot.selected_record_ids,
+                current_record_id=snapshot.current_record_id,
+                vertical_scroll=snapshot.vertical_scroll,
+                horizontal_scroll=snapshot.horizontal_scroll,
+            )
+            self.committedTimeSeriesSelectionChanged(
+                panel.selected_committed_ids()
+            )
+            return ()
+
+        panel.restore_committed_selection(
+            snapshot.selected_record_ids,
+            current_record_id=snapshot.current_record_id,
+            vertical_scroll=snapshot.vertical_scroll,
+            horizontal_scroll=snapshot.horizontal_scroll,
+        )
+        panel.committed_view.setFocus()
+        self.committedTimeSeriesSelectionChanged(panel.selected_committed_ids())
+        self.setMessageBar(
+            "Assigned distinct colors to {} time series".format(len(record_ids)),
+            "done", 3000,
+        )
+        return record_ids
+
+    def _reportDistinctColorFailure(self, error):
+        """Report one batch-color diagnostic without exposing record UUIDs."""
+        if self._plugin_diagnostic is not None:
+            self._plugin_diagnostic("committed_assign_distinct_colors", error)
+        else:
+            self.msg_signal.emit(
+                "Unable to assign distinct time-series colors: {}".format(error),
+                "c", 0,
+            )
+
     def _reportCopyPasteFailure(self, operation, error):
         """Report one diagnostic without exposing record UUIDs to normal feedback."""
         if self._plugin_diagnostic is not None:
@@ -1752,11 +1839,80 @@ class GuiController(QObject):
         panel = self.ui.time_series_point_panel
         panel.refresh_committed_model()
 
+    def setCommittedTimeSeriesVisibilityBatch(self, record_ids, visible):
+        """Set committed visibility for UUIDs as one renderer/list transaction."""
+        record_ids = tuple(record_ids)
+        if not record_ids:
+            return False
+        entries = tuple(self.time_series_list_state.entry(record_id) for record_id in record_ids)
+        if any(entry is None for entry in entries):
+            error = RuntimeError("stale committed UUID in visibility batch")
+            if self._plugin_diagnostic is not None:
+                self._plugin_diagnostic("committed_visibility_batch", error)
+            else:
+                self.msg_signal.emit(str(error), "c", 0)
+            return False
+        target = bool(visible)
+        changed_ids = tuple(
+            record_id for record_id, entry in zip(record_ids, entries)
+            if entry.visible != target
+        )
+        if not changed_ids:
+            return True
+        plotter = self.choose_point_click_handler.plot_ts
+        try:
+            result = plotter.set_committed_visibility_batch(changed_ids, target)
+        except Exception as error:
+            if self._plugin_diagnostic is not None:
+                self._plugin_diagnostic("committed_visibility_batch", error)
+            else:
+                self.msg_signal.emit(str(error), "c", 0)
+            return False
+        for record_id in result.changed_record_ids:
+            self.time_series_list_state.set_visible(record_id, target)
+        self.ui.time_series_point_panel.refresh_committed_model()
+        if result.graphics_errors:
+            error = result.graphics_errors[0]
+            if self._plugin_diagnostic is not None:
+                self._plugin_diagnostic("committed_visibility_graphics", error)
+            else:
+                self.msg_signal.emit(str(error), "c", 0)
+        if result.refresh_errors:
+            error = result.refresh_errors[0]
+            if self._plugin_diagnostic is not None:
+                self._plugin_diagnostic("committed_visibility_refresh", error)
+            else:
+                self.msg_signal.emit(str(error), "c", 0)
+        return True
+
+    def toggleSelectedCommittedTimeSeriesVisibility(self):
+        """Apply one predictable visibility state to selected committed UUIDs."""
+        panel = self.ui.time_series_point_panel
+        snapshot = panel.capture_committed_selection()
+        record_ids = snapshot.selected_record_ids
+        if not record_ids:
+            return False
+        entries = tuple(self.time_series_list_state.entry(record_id) for record_id in record_ids)
+        if any(entry is None for entry in entries):
+            return self.setCommittedTimeSeriesVisibilityBatch(record_ids, True)
+        target = not all(entry.visible for entry in entries)
+        changed = self.setCommittedTimeSeriesVisibilityBatch(record_ids, target)
+        if changed:
+            panel.restore_committed_selection(
+                snapshot.selected_record_ids,
+                current_record_id=snapshot.current_record_id,
+                vertical_scroll=snapshot.vertical_scroll,
+                horizontal_scroll=snapshot.horizontal_scroll,
+            )
+            panel.committed_view.setFocus()
+        return changed
+
     def setAllCommittedTimeSeriesVisibility(self, visible):
-        """Apply deterministic show/hide-all without synthesizing cell clicks."""
-        for entry in tuple(self.time_series_list_state.entries()):
-            if entry.visible != bool(visible):
-                self.setCommittedTimeSeriesVisibility(entry.record_id, visible)
+        """Apply deterministic show/hide-all through one batch command."""
+        self.setCommittedTimeSeriesVisibilityBatch(
+            tuple(entry.record_id for entry in self.time_series_list_state.entries()),
+            visible,
+        )
 
     def updateCommittedTimeSeriesLabel(self, record_id, label):
         """Immutably update one committed optional label without changing visibility."""
