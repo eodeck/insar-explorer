@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import NamedTuple
 
 from qgis.PyQt.QtGui import QColor
@@ -148,12 +149,14 @@ class ColormapSpec(NamedTuple):
 
 DEFAULT_COLORMAP_ID = "roma"
 FALLBACK_COLORMAP_ID = "gray"
+_NORMAL_TURBO_ICON = str(
+    Path(__file__).resolve().parents[1] / "icons" / "colormaps" / "turbo.png"
+)
+
 COLORMAPS = (
     ColormapSpec("roma", "Roma", ":/colormaps/icons/colormaps/roma.png", Roma),
     ColormapSpec("vik", "Vik", ":/colormaps/icons/colormaps/vik.png", Vik),
-    ColormapSpec(
-        "turbo", "Turbo", ":/colormaps/icons/colormaps/turbo_r.png", TurboR
-    ),
+    ColormapSpec("turbo", "Turbo", _NORMAL_TURBO_ICON, Turbo),
     ColormapSpec("gray", "Gray", ":/colormaps/icons/colormaps/gray.png", Gray),
 )
 COLORMAP_BY_ID = {spec.id: spec for spec in COLORMAPS}
@@ -162,9 +165,26 @@ _COLORMAP_ID_BY_ALIAS = {
     for spec in COLORMAPS
     for alias in (spec.id, spec.label)
 }
+_LEGACY_REVERSED_ALIASES = {"turbo_r": "turbo"}
 
 
-def canonical_colormap_id(identifier):
-    """Resolve current labels/ids to one renderer identifier."""
+def normalize_colormap_state(identifier, reverse=False):
+    """Return canonical base id and reverse flag for current or legacy state.
+
+    Legacy ``Turbo_r`` encoded one reversal in the identifier.  Combining that
+    encoded reversal with the separately stored legacy reverse flag uses XOR so
+    both historically possible states retain their rendered appearance.
+    """
     key = str(identifier or "").strip().casefold()
-    return _COLORMAP_ID_BY_ALIAS.get(key, FALLBACK_COLORMAP_ID)
+    legacy_base = _LEGACY_REVERSED_ALIASES.get(key)
+    if legacy_base is not None:
+        return legacy_base, not bool(reverse)
+
+    colormap_id = _COLORMAP_ID_BY_ALIAS.get(key, FALLBACK_COLORMAP_ID)
+    return colormap_id, bool(reverse)
+
+
+def colormap_spec(identifier):
+    """Return the canonical specification for one current/legacy identifier."""
+    colormap_id, _reverse = normalize_colormap_state(identifier, False)
+    return COLORMAP_BY_ID[colormap_id]

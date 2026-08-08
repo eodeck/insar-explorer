@@ -3,7 +3,7 @@
     <file>icon.png</file>
   </qresource>
   <qresource prefix="colormaps">
-    <file>icons/colormaps/turbo_r.png</file>
+    <file>icons/colormaps/turbo.png</file>
     <file>icons/colormaps/roma.png</file>
     <file>icons/colormaps/vik.png</file>
     <file>icons/colormaps/gray.png</file>

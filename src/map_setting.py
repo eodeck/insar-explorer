@@ -146,11 +146,14 @@ class InsarMap:
         if status_vector or status_raster:
             interval = (self.max_value - self.min_value) / self.num_classes
 
-            color_ramp_id = color_maps.canonical_colormap_id(color_ramp_name)
+            color_ramp_id, reverse = color_maps.normalize_colormap_state(
+                color_ramp_name, self.color_ramp_reverse_flag
+            )
             self.color_ramp_name = color_ramp_id
+            self.color_ramp_reverse_flag = reverse
             color_ramp = color_maps.COLORMAP_BY_ID[color_ramp_id].factory()
 
-            if self.color_ramp_reverse_flag:
+            if reverse:
                 color_ramp.reverse()
 
             max_length = max(len(f"{self.min_value:.2f}"), len(f"{self.max_value:.2f}"))
