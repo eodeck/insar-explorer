@@ -41,7 +41,7 @@ class RangeSettingsPopup(QtWidgets.QWidget):
             "Use the largest absolute bound on both sides of zero"
         )
         self.cb_symbol_range_symmetric.setAccessibleName("Symmetric around zero")
-        self.cb_symbol_range_symmetric.setChecked(True)
+        self.cb_symbol_range_symmetric.setChecked(False)
         layout.addWidget(self.cb_symbol_range_symmetric)
 
         self.setMaximumWidth(280)
