@@ -374,6 +374,21 @@ class GuiController(QObject):
                 message = ""
             self.msg_signal.emit(message, "i", 0)
 
+    @staticmethod
+    def _findSelectableFieldIndex(field_combo, field_name):
+        """Return the real selectable combo row for an exact field name."""
+        if not field_name:
+            return -1
+        for index in range(field_combo.count()):
+            if field_combo.itemText(index) != field_name:
+                continue
+            model_index = field_combo.model().index(index, 0)
+            flags = model_index.flags()
+            if flags & ITEM_IS_ENABLED and flags & ITEM_IS_SELECTABLE:
+                return index
+            return -1
+        return -1
+
     def setVectorFields(self, initialize_default_range=False):
         """Populate vector fields and optionally initialize a fresh range state."""
         layer = self.iface.activeLayer()
@@ -403,8 +418,11 @@ class GuiController(QObject):
                     index = field_combo.count() - 1
                     field_combo.model().item(index).setEnabled(False)
 
-            if velocity_field:
-                field_combo.setCurrentText(velocity_field)
+            velocity_index = self._findSelectableFieldIndex(
+                field_combo, velocity_field
+            )
+            if velocity_index >= 0:
+                field_combo.setCurrentIndex(velocity_index)
         finally:
             field_combo.blockSignals(was_blocked)
 
