@@ -250,6 +250,7 @@ class GuiController(QObject):
         self._range_source = RangeSource.CUSTOM
         self._range_source_raw_values = None
         self._range_programmatic_update = False
+        self._pending_default_range_layer_id = None
         self.initializeUiParams()
         self.connectUiSignals()
         # make point selection active by default
@@ -339,11 +340,20 @@ class GuiController(QObject):
 
     def onLayerChanged(self, layer=None):
         """Reset the time-series workspace and map for a confirmed layer change."""
+        if layer is None:
+            layer = self.iface.activeLayer()
+
+        layer_id = self._layerIdentity(layer)
+        pending_layer_id = self._pending_default_range_layer_id
+        if pending_layer_id is not None and pending_layer_id != layer_id:
+            # Invalidate queued work for a previous layer/context.  Keep a same-
+            # layer pending token so duplicate signals coalesce to one callback.
+            self._pending_default_range_layer_id = None
+            self._setDefaultRangeInitializationPending(False)
+
         self._setCustomRangeSource()
         self._setRangeSymmetryChecked(False)
         self._setSymbologyDirty(False)
-        if layer is None:
-            layer = self.iface.activeLayer()
         if layer:
             self.resetTimeSeriesWorkspaceForDataset()
             self._restoreTimeSeriesFitState()
@@ -433,9 +443,66 @@ class GuiController(QObject):
         self.choose_point_click_handler.selected_field_name = self.insar_map.selected_field_name
 
         if initialize_default_range:
-            self._initializeDefaultRangeState()
+            self._scheduleDefaultRangeInitialization(layer)
         else:
             self._setSymbologyDirty(False)
+
+    @staticmethod
+    def _layerIdentity(layer):
+        """Return a stable identity token for a layer/context object."""
+        if layer is None:
+            return None
+        layer_id = getattr(layer, "id", None)
+        if callable(layer_id):
+            return layer_id()
+        return id(layer)
+
+    def _setDefaultRangeInitializationPending(self, pending):
+        """Reflect deferred range initialization without exposing stale values."""
+        enabled = not bool(pending)
+        for name in (
+            "sb_symbol_lower_range",
+            "sb_symbol_upper_range",
+            "pb_symbol_range_settings",
+        ):
+            control = getattr(self.ui, name, None)
+            if control is not None:
+                control.setEnabled(enabled)
+
+    def _scheduleDefaultRangeInitialization(self, layer):
+        """Queue fresh default range/symbology work for one active layer."""
+        layer_id = self._layerIdentity(layer)
+        if layer_id is None:
+            return False
+        if self._pending_default_range_layer_id == layer_id:
+            return False
+
+        self._pending_default_range_layer_id = layer_id
+        self._setDefaultRangeInitializationPending(True)
+        QTimer.singleShot(
+            0,
+            lambda layer_id=layer_id: (
+                self._runDeferredDefaultRangeInitialization(layer_id)
+            ),
+        )
+        return True
+
+    def _runDeferredDefaultRangeInitialization(self, layer_id):
+        """Run queued fresh default initialization only for the current layer."""
+        if self._pending_default_range_layer_id != layer_id:
+            return False
+
+        current_layer = self.iface.activeLayer()
+        if self._layerIdentity(current_layer) != layer_id:
+            self._pending_default_range_layer_id = None
+            self._setDefaultRangeInitializationPending(False)
+            return False
+
+        self._pending_default_range_layer_id = None
+        try:
+            return self._initializeDefaultRangeState()
+        finally:
+            self._setDefaultRangeInitializationPending(False)
 
     def _setRangeSymmetryChecked(self, checked):
         """Project range symmetry state without triggering range-change behavior."""
