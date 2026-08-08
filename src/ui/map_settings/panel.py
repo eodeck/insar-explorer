@@ -1,6 +1,8 @@
 """Code-defined Map Settings panel preserving the legacy dock-widget interface."""
 
 from qgis.PyQt import QtGui, QtWidgets
+
+from ... import color_maps
 from qgis.PyQt.QtCore import QRect, QSize
 
 from ...qt_compat import (
@@ -69,12 +71,7 @@ QPushButton {
 }
 """
     ACTION_ICON_SIZE = 14
-    COLORMAPS = (
-        ("Roma", ":/colormaps/icons/colormaps/roma.png"),
-        ("Vik", ":/colormaps/icons/colormaps/vik.png"),
-        ("Turbo_r", ":/colormaps/icons/colormaps/turbo_r.png"),
-        ("Gray", ":/colormaps/icons/colormaps/gray.png"),
-    )
+    COLORMAPS = color_maps.COLORMAPS
 
     def __init__(self, parent=None):
         """Create the panel with the same defaults as the Designer UI."""
@@ -214,8 +211,10 @@ QPushButton {
         self.cmb_colormap.setToolTip("Select colormap")
         self.cmb_colormap.setEditable(False)
         self.cmb_colormap.setIconSize(QSize(72, 16))
-        for name, icon in self.COLORMAPS:
-            self.cmb_colormap.addItem(QtGui.QIcon(icon), name)
+        for spec in self.COLORMAPS:
+            self.cmb_colormap.addItem(
+                QtGui.QIcon(spec.icon_path), spec.label, spec.id
+            )
 
         self._configure_toggle_button(
             self.pb_colormap_reverse,

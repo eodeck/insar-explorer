@@ -1,3 +1,5 @@
+from typing import NamedTuple
+
 from qgis.PyQt.QtGui import QColor
 
 
@@ -133,3 +135,36 @@ class Gray(ColorMaps):
             (0.9, QColor(240, 240, 240)),
             (1.0, QColor(255, 255, 255))  # White
         ]
+
+
+class ColormapSpec(NamedTuple):
+    """Describe one canonical Map Settings colormap."""
+
+    id: str
+    label: str
+    icon_path: str
+    factory: type
+
+
+DEFAULT_COLORMAP_ID = "roma"
+FALLBACK_COLORMAP_ID = "gray"
+COLORMAPS = (
+    ColormapSpec("roma", "Roma", ":/colormaps/icons/colormaps/roma.png", Roma),
+    ColormapSpec("vik", "Vik", ":/colormaps/icons/colormaps/vik.png", Vik),
+    ColormapSpec(
+        "turbo", "Turbo", ":/colormaps/icons/colormaps/turbo_r.png", TurboR
+    ),
+    ColormapSpec("gray", "Gray", ":/colormaps/icons/colormaps/gray.png", Gray),
+)
+COLORMAP_BY_ID = {spec.id: spec for spec in COLORMAPS}
+_COLORMAP_ID_BY_ALIAS = {
+    alias.casefold(): spec.id
+    for spec in COLORMAPS
+    for alias in (spec.id, spec.label)
+}
+
+
+def canonical_colormap_id(identifier):
+    """Resolve current labels/ids to one renderer identifier."""
+    key = str(identifier or "").strip().casefold()
+    return _COLORMAP_ID_BY_ALIAS.get(key, FALLBACK_COLORMAP_ID)

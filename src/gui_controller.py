@@ -996,7 +996,7 @@ class GuiController(QObject):
         self.insar_map.num_classes = int(self.ui.sb_symbol_classes.value())
         self.insar_map.alpha = float(self.ui.sb_symbol_opacity.value()) / 100
         self.insar_map.symbol_size = float(self.ui.sb_symbol_size.value())
-        self.insar_map.color_ramp_name = self.ui.cmb_colormap.currentText()
+        self.insar_map.color_ramp_name = str(self.ui.cmb_colormap.currentData())
         message = self.insar_map.setSymbology()
         if message != "":
             self.msg_signal.emit(message, "i", 0)
