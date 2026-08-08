@@ -1,7 +1,9 @@
 ### History
 
 v2.8.0
-- Improve field search and filtering.
+- Move symbology controls into popup.
+- Used Turbo instead of reversed Turbo in colormaps.
+- Improved field search and filtering.
 - Recompute derived ranges on field/layer change.
 - Allow adaptive precision in data range spinboxes.
 - Enhanced map settings panel.
