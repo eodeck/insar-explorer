@@ -22,7 +22,7 @@ from ...qt_compat import (
 )
 
 from ..widgets import AdaptiveDoubleSpinBox
-from .popup import RangeSettingsPopup
+from .popup import RangeSettingsPopup, SymbologySettingsPopup
 
 
 class MapSettingsPanel(QtWidgets.QWidget):
@@ -141,12 +141,20 @@ QPushButton {
         self.cmb_colormap.setObjectName("cmb_colormap")
         self.pb_colormap_reverse = QtWidgets.QPushButton(self)
         self.pb_colormap_reverse.setObjectName("pb_colormap_reverse")
+        self.pb_symbology_settings = QtWidgets.QPushButton(self)
+        self.pb_symbology_settings.setObjectName("pb_symbology_settings")
         self.sb_symbol_classes = QtWidgets.QSpinBox(self)
         self.sb_symbol_classes.setObjectName("sb_symbol_classes")
         self.sb_symbol_size = QtWidgets.QDoubleSpinBox(self)
         self.sb_symbol_size.setObjectName("sb_symbol_size")
         self.sb_symbol_opacity = QtWidgets.QSpinBox(self)
         self.sb_symbol_opacity.setObjectName("sb_symbol_opacity")
+        self.symbology_settings_popup = SymbologySettingsPopup(
+            self.sb_symbol_classes,
+            self.sb_symbol_size,
+            self.sb_symbol_opacity,
+            self,
+        )
 
         self.cb_symbology_live = QtWidgets.QCheckBox(self)
         self.cb_symbology_live.setObjectName("cb_symbology_live")
@@ -221,6 +229,14 @@ QPushButton {
             icon=":/icons/icons/reverse.svg",
             tooltip="Reverse colormap",
             checked=False,
+        )
+        self._configure_flat_button(
+            self.pb_symbology_settings,
+            icon=":/icons/icons/setting.svg",
+            tooltip="Configure symbology",
+        )
+        self.pb_symbology_settings.clicked.connect(
+            self._show_symbology_settings_popup
         )
         self._configure_spin_box(
             self.sb_symbol_classes,
@@ -335,22 +351,11 @@ QPushButton {
 
         self._colormap_label = QtWidgets.QLabel("Colormap", group)
         self._colormap_label.setObjectName("map_colormap_label")
-        self._classes_label = QtWidgets.QLabel("Classes", group)
-        self._classes_label.setObjectName("map_classes_label")
-        self._size_label = QtWidgets.QLabel("Size", group)
-        self._size_label.setObjectName("map_size_label")
-        self._opacity_label = QtWidgets.QLabel("Opacity", group)
-        self._opacity_label.setObjectName("map_opacity_label")
 
-        layout.addWidget(self._colormap_label, 0, 0, 1, 3)
+        layout.addWidget(self._colormap_label, 0, 0, 1, 4)
         layout.addWidget(self.cmb_colormap, 1, 0, 1, 2)
         layout.addWidget(self.pb_colormap_reverse, 1, 2)
-        layout.addWidget(self._classes_label, 2, 0)
-        layout.addWidget(self.sb_symbol_classes, 2, 1, 1, 2)
-        layout.addWidget(self._size_label, 3, 0)
-        layout.addWidget(self.sb_symbol_size, 3, 1, 1, 2)
-        layout.addWidget(self._opacity_label, 4, 0)
-        layout.addWidget(self.sb_symbol_opacity, 4, 1, 1, 2)
+        layout.addWidget(self.pb_symbology_settings, 1, 3)
         return group
 
     def _build_action_row(self):
@@ -497,6 +502,19 @@ QPushButton {
             self.pb_symbol_range_settings.rect().topLeft()
         )
         anchor = QRect(top_left, self.pb_symbol_range_settings.size())
+        geometry = available_screen_geometry(top_left, self)
+        popup.move(screen_aware_popup_position(anchor, popup.sizeHint(), geometry))
+        popup.show()
+        popup.raise_()
+
+    def _show_symbology_settings_popup(self, checked=False):
+        """Open secondary symbology controls next to their settings button."""
+        popup = self.symbology_settings_popup
+        popup.adjustSize()
+        top_left = self.pb_symbology_settings.mapToGlobal(
+            self.pb_symbology_settings.rect().topLeft()
+        )
+        anchor = QRect(top_left, self.pb_symbology_settings.size())
         geometry = available_screen_geometry(top_left, self)
         popup.move(screen_aware_popup_position(anchor, popup.sizeHint(), geometry))
         popup.show()
