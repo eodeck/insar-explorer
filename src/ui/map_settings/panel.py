@@ -15,8 +15,10 @@ from ...qt_compat import (
     MATCH_CONTAINS,
     SIZE_POLICY_EXPANDING,
     SIZE_POLICY_FIXED,
+    SIZE_POLICY_IGNORED,
     SIZE_POLICY_PREFERRED,
     SPIN_BOX_UP_DOWN_ARROWS,
+    SCROLL_BAR_ALWAYS_OFF,
     available_screen_geometry,
     screen_aware_popup_position,
 )
@@ -166,6 +168,8 @@ QPushButton {
         self.cb_select_field.setEditable(True)
         self.cb_select_field.setInsertPolicy(COMBO_NO_INSERT)
         self.cb_select_field.setAcceptDrops(False)
+        self.cb_select_field.setMinimumWidth(0)
+        self.cb_select_field.setSizePolicy(SIZE_POLICY_IGNORED, SIZE_POLICY_FIXED)
         self._configure_field_completer()
 
         self._configure_double_spin_box(
@@ -218,6 +222,8 @@ QPushButton {
 
         self.cmb_colormap.setToolTip("Select colormap")
         self.cmb_colormap.setEditable(False)
+        self.cmb_colormap.setMinimumWidth(0)
+        self.cmb_colormap.setSizePolicy(SIZE_POLICY_IGNORED, SIZE_POLICY_FIXED)
         self.cmb_colormap.setIconSize(QSize(72, 16))
         for spec in self.COLORMAPS:
             self.cmb_colormap.addItem(
@@ -243,6 +249,7 @@ QPushButton {
             tooltip="Number of classes",
             minimum=1,
             value=21,
+            horizontal_policy=SIZE_POLICY_EXPANDING,
         )
         self._configure_double_spin_box(
             self.sb_symbol_size,
@@ -252,6 +259,7 @@ QPushButton {
             maximum=99.99,
             value=1.0,
             single_step=0.1,
+            horizontal_policy=SIZE_POLICY_EXPANDING,
         )
         self._configure_spin_box(
             self.sb_symbol_opacity,
@@ -260,6 +268,7 @@ QPushButton {
             maximum=100,
             value=100,
             single_step=10,
+            horizontal_policy=SIZE_POLICY_EXPANDING,
         )
         self.sb_symbol_opacity.setSuffix(" %")
         self._configure_live_update_checkbox()
@@ -273,29 +282,30 @@ QPushButton {
         scroll_area = QtWidgets.QScrollArea(self)
         scroll_area.setObjectName("map_settings_scroll_area")
         scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(SCROLL_BAR_ALWAYS_OFF)
         scroll_area.setMaximumWidth(self.MAXIMUM_WIDTH)
-        scroll_area.setSizePolicy(SIZE_POLICY_PREFERRED, SIZE_POLICY_PREFERRED)
+        scroll_area.setSizePolicy(SIZE_POLICY_EXPANDING, SIZE_POLICY_PREFERRED)
         outer_layout.addWidget(scroll_area)
         self.scroll_area = scroll_area
 
         content = QtWidgets.QWidget(scroll_area)
         content.setObjectName("map_settings_content")
+        content.setMinimumWidth(0)
         content.setMaximumWidth(self.CONTENT_MAXIMUM_WIDTH)
-        content.setSizePolicy(SIZE_POLICY_EXPANDING, SIZE_POLICY_EXPANDING)
+        content.setSizePolicy(SIZE_POLICY_IGNORED, SIZE_POLICY_EXPANDING)
         scroll_area.setWidget(content)
         self.content = content
 
         content_layout = QtWidgets.QVBoxLayout(content)
         content_layout.setContentsMargins(9, 9, 9, 9)
-        content_layout.setSpacing(6)
-        content_layout.addWidget(self._build_value_group())
-        content_layout.addWidget(self._build_symbology_group())
+        content_layout.setSpacing(8)
+        content_layout.addLayout(self._build_value_layout())
+        content_layout.addLayout(self._build_symbology_layout())
         content_layout.addStretch(1)
         content_layout.addWidget(self._build_action_row())
 
-    def _build_value_group(self):
-        group = self._group_box("Value", "map_value_group")
-        layout = QtWidgets.QGridLayout(group)
+    def _build_value_layout(self):
+        layout = QtWidgets.QGridLayout()
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setHorizontalSpacing(5)
         layout.setVerticalSpacing(4)
@@ -303,19 +313,19 @@ QPushButton {
         layout.setColumnStretch(2, 1)
         self._value_layout = layout
 
-        self._field_label = QtWidgets.QLabel("Field", group)
+        self._field_label = QtWidgets.QLabel("Field", self.content)
         self._field_label.setObjectName("map_field_label")
         layout.addWidget(self._field_label, 0, 0, 1, 3)
         layout.addWidget(self.cb_select_field, 1, 0, 1, 3)
 
-        self._range_label = QtWidgets.QLabel("Range", group)
+        self._range_label = QtWidgets.QLabel("Range", self.content)
         self._range_label.setObjectName("map_range_label")
         layout.addWidget(self._range_label, 2, 0, 1, 3)
         range_layout = QtWidgets.QHBoxLayout()
         range_layout.setContentsMargins(0, 0, 0, 0)
         range_layout.setSpacing(3)
         range_layout.addWidget(self.sb_symbol_lower_range, 1)
-        self._range_separator_label = QtWidgets.QLabel("–", group)
+        self._range_separator_label = QtWidgets.QLabel("–", self.content)
         self._range_separator_label.setObjectName("map_range_separator_label")
         self._range_separator_label.setAlignment(ALIGN_VCENTER)
         range_layout.addWidget(self._range_separator_label)
@@ -330,7 +340,9 @@ QPushButton {
         reference_layout.setColumnStretch(0, 1)
         self._reference_offset_layout = reference_layout
 
-        self._reference_offset_label = QtWidgets.QLabel("Reference offset", group)
+        self._reference_offset_label = QtWidgets.QLabel(
+            "Reference offset", self.content
+        )
         self._reference_offset_label.setObjectName("map_reference_offset_label")
         layout.addWidget(self._reference_offset_label, 4, 0, 1, 3)
         reference_layout.addWidget(self.sb_symbol_value_offset, 0, 0)
@@ -338,25 +350,24 @@ QPushButton {
             self.cb_symbol_value_offset_sync_with_ref, 0, 1
         )
         layout.addLayout(reference_layout, 5, 0, 1, 3)
-        return group
+        return layout
 
-    def _build_symbology_group(self):
-        group = self._group_box("Symbology", "map_symbology_group")
-        layout = QtWidgets.QGridLayout(group)
+    def _build_symbology_layout(self):
+        layout = QtWidgets.QGridLayout()
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setHorizontalSpacing(5)
         layout.setVerticalSpacing(4)
         layout.setColumnStretch(1, 1)
         self._symbology_layout = layout
 
-        self._colormap_label = QtWidgets.QLabel("Colormap", group)
+        self._colormap_label = QtWidgets.QLabel("Colormap", self.content)
         self._colormap_label.setObjectName("map_colormap_label")
 
         layout.addWidget(self._colormap_label, 0, 0, 1, 4)
         layout.addWidget(self.cmb_colormap, 1, 0, 1, 2)
         layout.addWidget(self.pb_colormap_reverse, 1, 2)
         layout.addWidget(self.pb_symbology_settings, 1, 3)
-        return group
+        return layout
 
     def _build_action_row(self):
         row = QtWidgets.QWidget(self.content)
@@ -373,15 +384,6 @@ QPushButton {
         self._action_row = row
         self._action_layout = layout
         return row
-
-    @staticmethod
-    def _group_box(title, object_name):
-        group = QtWidgets.QGroupBox(title)
-        group.setObjectName(object_name)
-        group.setFlat(True)
-        group.setMinimumWidth(150)
-        group.setSizePolicy(SIZE_POLICY_EXPANDING, SIZE_POLICY_PREFERRED)
-        return group
 
     def _configure_field_completer(self):
         """Configure native shared-model completion for the Field selector."""
@@ -458,7 +460,15 @@ QPushButton {
 
     @staticmethod
     def _configure_double_spin_box(
-        spin_box, *, tooltip, decimals, minimum, maximum, value, single_step=None
+        spin_box,
+        *,
+        tooltip,
+        decimals,
+        minimum,
+        maximum,
+        value,
+        single_step=None,
+        horizontal_policy=SIZE_POLICY_IGNORED,
     ):
         spin_box.setToolTip(tooltip)
         spin_box.setButtonSymbols(SPIN_BOX_UP_DOWN_ARROWS)
@@ -468,11 +478,19 @@ QPushButton {
         if single_step is not None:
             spin_box.setSingleStep(single_step)
         spin_box.setValue(value)
-        spin_box.setSizePolicy(SIZE_POLICY_PREFERRED, SIZE_POLICY_FIXED)
+        spin_box.setMinimumWidth(0)
+        spin_box.setSizePolicy(horizontal_policy, SIZE_POLICY_FIXED)
 
     @staticmethod
     def _configure_spin_box(
-        spin_box, *, tooltip, minimum, value, maximum=99, single_step=1
+        spin_box,
+        *,
+        tooltip,
+        minimum,
+        value,
+        maximum=99,
+        single_step=1,
+        horizontal_policy=SIZE_POLICY_IGNORED,
     ):
         spin_box.setToolTip(tooltip)
         spin_box.setButtonSymbols(SPIN_BOX_UP_DOWN_ARROWS)
@@ -480,7 +498,8 @@ QPushButton {
         spin_box.setMaximum(maximum)
         spin_box.setSingleStep(single_step)
         spin_box.setValue(value)
-        spin_box.setSizePolicy(SIZE_POLICY_PREFERRED, SIZE_POLICY_FIXED)
+        spin_box.setMinimumWidth(0)
+        spin_box.setSizePolicy(horizontal_policy, SIZE_POLICY_FIXED)
 
     def _configure_toggle_button(self, button, *, icon, tooltip, checked):
         self._configure_button_base(button, icon=icon, tooltip=tooltip)

@@ -152,6 +152,7 @@ SPIN_BOX_UP_DOWN_ARROWS = _enum_value(
 SIZE_POLICY_FIXED = _enum_value(QSizePolicy, "Policy", "Fixed")
 SIZE_POLICY_MAXIMUM = _enum_value(QSizePolicy, "Policy", "Maximum")
 SIZE_POLICY_EXPANDING = _enum_value(QSizePolicy, "Policy", "Expanding")
+SIZE_POLICY_IGNORED = _enum_value(QSizePolicy, "Policy", "Ignored")
 SIZE_POLICY_PREFERRED = _enum_value(QSizePolicy, "Policy", "Preferred")
 
 # QToolButton enums

@@ -1,6 +1,7 @@
 ### History
 
 v2.8.0
+- Simplify map settings panel.
 - Move symbology controls into popup.
 - Used Turbo instead of reversed Turbo in colormaps.
 - Improved field search and filtering.
