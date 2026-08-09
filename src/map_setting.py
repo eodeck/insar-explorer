@@ -44,7 +44,7 @@ class InsarMap:
         self.data_mean = None
         self.data_stdv = None
 
-    def setSymbologyRangeFromData(self, layer=None, n_std=None):
+    def setSymbologyRangeFromData(self, layer=None, n_std=None, std_calculation_mode=None):
         if not layer:
             layer = self.iface.activeLayer()
 

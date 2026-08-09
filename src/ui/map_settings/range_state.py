@@ -3,6 +3,34 @@
 from enum import Enum
 
 
+class StdCalculationMode(Enum):
+    """Describe how standard-deviation statistics are obtained."""
+
+    FAST = "fast"
+    EXACT = "exact"
+
+    @property
+    def display_name(self):
+        """Return the concise user-facing calculation label."""
+        return {
+            StdCalculationMode.FAST: "Fast estimate",
+            StdCalculationMode.EXACT: "Exact",
+        }[self]
+
+    @property
+    def tooltip(self):
+        """Return the user-facing explanation for this calculation mode."""
+        return {
+            StdCalculationMode.FAST: (
+                "Estimate mean and standard deviation from a representative "
+                "sample for faster interaction."
+            ),
+            StdCalculationMode.EXACT: (
+                "Calculate mean and standard deviation from all valid values."
+            ),
+        }[self]
+
+
 class RangeSource(Enum):
     """Describe how the current Map Settings numeric range was derived."""
 
@@ -37,6 +65,13 @@ class RangeSource(Enum):
 
 COMPUTED_RANGE_SOURCES = (
     RangeSource.DATA_EXTENT,
+    RangeSource.STD_1,
+    RangeSource.STD_2,
+    RangeSource.STD_3,
+)
+
+
+STD_RANGE_SOURCES = (
     RangeSource.STD_1,
     RangeSource.STD_2,
     RangeSource.STD_3,

@@ -21,7 +21,7 @@ from .ui.popups.export_settings_popup import ExportSettingsPopup
 from .ui.popups.appearance_popup import AppearancePopup
 from .ui.popups.replica_popup import ReplicaPopup
 from .ui.popups.map_indicator_settings_popup import MapIndicatorSettingsPopup
-from .ui.map_settings.range_state import RangeSource
+from .ui.map_settings.range_state import RangeSource, STD_RANGE_SOURCES, StdCalculationMode
 from .ui.widgets.split_tool_button import SplitButtonPopupHoverReconciler
 from .qt_compat import (
     ITEM_IS_ENABLED,
@@ -250,6 +250,7 @@ class GuiController(QObject):
         self._range_source = RangeSource.CUSTOM
         self._range_source_raw_values = None
         self._range_programmatic_update = False
+        self._std_calculation_mode = StdCalculationMode.FAST
         self._pending_default_range_layer_id = None
         self.initializeUiParams()
         self.connectUiSignals()
@@ -890,12 +891,18 @@ class GuiController(QObject):
             self._range_source_raw_values = None
         if not hasattr(self, "_range_programmatic_update"):
             self._range_programmatic_update = False
+        if not hasattr(self, "_std_calculation_mode"):
+            self._std_calculation_mode = StdCalculationMode.FAST
+        self._setStdCalculationMode(self._std_calculation_mode)
         self.ui.cb_select_field.currentIndexChanged.connect(self.selectVectorFieldChanged)
         self.ui.pb_symbology.clicked.connect(self.applySymbologyClicked)
         self.ui.sb_symbol_lower_range.valueChanged.connect(self.setSymbologyLowerRange)
         self.ui.sb_symbol_upper_range.valueChanged.connect(self.setSymbologyUpperRange)
         self.ui.cmb_symbol_range_source.currentIndexChanged.connect(
             self.symbologyRangeSourceChanged
+        )
+        self.ui.cmb_std_calculation_mode.currentIndexChanged.connect(
+            self.stdCalculationModeChanged
         )
         self.ui.cb_symbol_range_symmetric.toggled.connect(
             self.symbologyRangeSymmetryChanged
@@ -914,6 +921,7 @@ class GuiController(QObject):
         if not isinstance(source, RangeSource):
             raise ValueError("Unsupported Map Settings range source: {!r}".format(source))
         self._range_source = source
+        self._syncStdCalculationControlEnabled()
         combo = getattr(self.ui, "cmb_symbol_range_source", None)
         if combo is None:
             return
@@ -925,6 +933,41 @@ class GuiController(QObject):
             combo.setCurrentIndex(index)
         finally:
             combo.blockSignals(False)
+
+    def _syncStdCalculationControlEnabled(self):
+        """Enable calculation policy only when a Std-derived source is active."""
+        combo = getattr(self.ui, "cmb_std_calculation_mode", None)
+        if combo is not None:
+            combo.setEnabled(self._range_source in STD_RANGE_SOURCES)
+
+    def _setStdCalculationMode(self, mode):
+        """Set calculation mode and project it into the popup without feedback."""
+        if not isinstance(mode, StdCalculationMode):
+            raise ValueError("Unsupported Std calculation mode: {!r}".format(mode))
+        self._std_calculation_mode = mode
+        combo = getattr(self.ui, "cmb_std_calculation_mode", None)
+        if combo is not None:
+            index = combo.findData(mode.value)
+            if index >= 0 and index != combo.currentIndex():
+                blocked = combo.blockSignals(True)
+                try:
+                    combo.setCurrentIndex(index)
+                finally:
+                    combo.blockSignals(blocked)
+        self._syncStdCalculationControlEnabled()
+
+    def stdCalculationModeChanged(self, index):
+        """Recompute an active Std source when its calculation policy changes."""
+        value = self.ui.cmb_std_calculation_mode.itemData(index)
+        try:
+            mode = StdCalculationMode(value)
+        except (TypeError, ValueError):
+            return
+        if mode is self._std_calculation_mode:
+            return
+        self._std_calculation_mode = mode
+        if self._range_source in STD_RANGE_SOURCES:
+            self.setSymbologyRangeSource(self._range_source)
 
     def _setCustomRangeSource(self):
         """Mark the displayed range as user-owned and discard computed-source state."""
@@ -1002,7 +1045,10 @@ class GuiController(QObject):
     def _computeRangeSourceValues(self, source):
         """Return raw values for one computed range source without changing UI state."""
         error = self.insar_map.setSymbologyRangeFromData(
-            n_std=source.standard_deviations
+            n_std=source.standard_deviations,
+            std_calculation_mode=(
+                self._std_calculation_mode if source in STD_RANGE_SOURCES else None
+            ),
         )
         if error:
             return None, error
