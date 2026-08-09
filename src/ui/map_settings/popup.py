@@ -93,9 +93,27 @@ class SymbologySettingsPopup(QtWidgets.QWidget):
         self.sb_symbol_size = marker_size_spin_box
         self.sb_symbol_opacity = opacity_spin_box
 
+        self.cb_symbol_continuous_colormap = QtWidgets.QCheckBox(
+            "Continuous colormap", self
+        )
+        self.cb_symbol_continuous_colormap.setObjectName(
+            "cb_symbol_continuous_colormap"
+        )
+        self.cb_symbol_continuous_colormap.setToolTip(
+            "Use a continuously interpolated colormap"
+        )
+        self.cb_symbol_continuous_colormap.setAccessibleName(
+            "Continuous colormap"
+        )
+        self.cb_symbol_continuous_colormap.setChecked(False)
+        self.cb_symbol_continuous_colormap.toggled.connect(
+            self._sync_continuous_colormap_controls
+        )
+
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(9, 9, 9, 9)
         layout.setSpacing(6)
+        layout.addWidget(self.cb_symbol_continuous_colormap)
 
         form = QtWidgets.QFormLayout()
         form.setContentsMargins(0, 0, 0, 0)
@@ -107,4 +125,19 @@ class SymbologySettingsPopup(QtWidgets.QWidget):
         layout.addLayout(form)
 
         self._form_layout = form
+        self._sync_continuous_colormap_controls(False)
         self.setMaximumWidth(280)
+
+    def set_continuous_colormap(self, continuous):
+        """Set continuous mode programmatically and synchronize dependent UI."""
+        continuous = bool(continuous)
+        blocked = self.cb_symbol_continuous_colormap.blockSignals(True)
+        try:
+            self.cb_symbol_continuous_colormap.setChecked(continuous)
+        finally:
+            self.cb_symbol_continuous_colormap.blockSignals(blocked)
+        self._sync_continuous_colormap_controls(continuous)
+
+    def _sync_continuous_colormap_controls(self, continuous):
+        """Keep class-count editability consistent with renderer mode."""
+        self.sb_symbol_classes.setEnabled(not bool(continuous))

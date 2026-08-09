@@ -46,6 +46,7 @@ class InsarMap:
         self.num_classes = 9
         self.color_ramp_name = color_maps.DEFAULT_COLORMAP_ID
         self.color_ramp_reverse_flag = False
+        self.continuous_colormap = True
         self.data_type = "vector"
         self._std_statistics_cache = {}
         self._std_cache_connected_layer_ids = set()

@@ -109,6 +109,7 @@ QPushButton {
             self.cb_symbol_value_offset_sync_with_ref,
             self.cmb_colormap,
             self.pb_colormap_reverse,
+            self.cb_symbol_continuous_colormap,
             self.sb_symbol_classes,
             self.sb_symbol_size,
             self.sb_symbol_opacity,
@@ -160,6 +161,9 @@ QPushButton {
             self.sb_symbol_size,
             self.sb_symbol_opacity,
             self,
+        )
+        self.cb_symbol_continuous_colormap = (
+            self.symbology_settings_popup.cb_symbol_continuous_colormap
         )
 
         self.cb_symbology_live = QtWidgets.QCheckBox(self)
