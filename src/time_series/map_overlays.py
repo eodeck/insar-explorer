@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from typing import Callable, Dict, Iterable, Optional, Tuple
 from uuid import UUID
 
 from qgis.PyQt.QtGui import QColor
-from qgis.core import QgsCoordinateTransform, QgsGeometry, QgsProject
+from qgis.core import QgsCoordinateTransform, QgsGeometry, QgsPointXY, QgsProject
 from qgis.gui import QgsRubberBand, QgsVertexMarker
 
 from ..models.time_series import SpatialSelection, SpatialSelectionKind, TimeSeriesRecord
@@ -77,6 +78,46 @@ class OverlayItem:
     role: str
     geometry_kind: SpatialSelectionKind
     presentation_part: str = "primary"
+
+
+def _point_in_canvas_crs(canvas, point, source_crs):
+    """Return a point in the canvas CRS without constructing invalid transforms."""
+    destination_crs = canvas.mapSettings().destinationCrs()
+    if not source_crs.isValid():
+        raise ValueError("point indicator source CRS is invalid")
+    if not destination_crs.isValid() or source_crs == destination_crs:
+        return point
+    transform = QgsCoordinateTransform(
+        source_crs, destination_crs, QgsProject.instance()
+    )
+    return transform.transform(point)
+
+
+def _resolve_point_for_canvas(canvas, selection):
+    """Resolve a point selection to the coordinate expected by the map canvas.
+
+    A finite ``map_location`` is the authoritative canvas click position when
+    the canvas has no valid destination CRS.  In a CRS-aware canvas, retain the
+    normal domain/location resolver so source CRS validation and reprojection
+    semantics remain unchanged.
+    """
+    map_location = selection.map_location
+    if map_location is not None:
+        x = float(map_location.x)
+        y = float(map_location.y)
+        if math.isfinite(x) and math.isfinite(y):
+            destination_crs = canvas.mapSettings().destinationCrs()
+            if not destination_crs.isValid():
+                return QgsPointXY(x, y)
+
+    location = resolve_point_indicator_location(selection)
+    if location is None:
+        raise ValueError(
+            "point selection has no finite location usable by the map canvas"
+        )
+    return _point_in_canvas_crs(
+        canvas, location.point, location.source_crs
+    )
 
 
 def _new_point_indicator_items(canvas, point, role: str, settings):
@@ -213,17 +254,7 @@ class PendingTimeSeriesMapOverlayController:
             return ()
 
     def _create_point_items(self, selection, role: str) -> Tuple[OverlayItem, ...]:
-        location = resolve_point_indicator_location(selection)
-        if location is None:
-            raise ValueError("point selection has no finite location with a valid CRS")
-        point = location.point
-        source_crs = location.source_crs
-        destination_crs = self._canvas.mapSettings().destinationCrs()
-        if source_crs != destination_crs:
-            transform = QgsCoordinateTransform(
-                source_crs, destination_crs, QgsProject.instance()
-            )
-            point = transform.transform(point)
+        point = _resolve_point_for_canvas(self._canvas, selection)
         return _new_point_indicator_items(
             self._canvas, point, role, self._settings_provider()
         )
@@ -430,17 +461,7 @@ class CommittedSelectionOverlayController:
             return ()
 
     def _create_point_items(self, selection, role: str) -> Tuple[OverlayItem, ...]:
-        location = resolve_point_indicator_location(selection)
-        if location is None:
-            raise ValueError("point selection has no finite location with a valid CRS")
-        point = location.point
-        source_crs = location.source_crs
-        destination_crs = self._canvas.mapSettings().destinationCrs()
-        if source_crs != destination_crs:
-            transform = QgsCoordinateTransform(
-                source_crs, destination_crs, QgsProject.instance()
-            )
-            point = transform.transform(point)
+        point = _resolve_point_for_canvas(self._canvas, selection)
         return _new_point_indicator_items(
             self._canvas, point, role, self._settings_provider()
         )

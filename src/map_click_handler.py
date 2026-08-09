@@ -471,7 +471,7 @@ class TSClickHandler(MapClickHandler):
             map_location=MapPointSnapshot(
                 x=float(point.x()),
                 y=float(point.y()),
-                crs=canvas_crs,
+                crs=QgsCoordinateReferenceSystem(canvas_crs),
             ),
         )
         coords = None
