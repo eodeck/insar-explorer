@@ -643,3 +643,102 @@ class ClickHandler(TSClickHandler, PolygonClickHandler):
     ):
         TSClickHandler.__init__(self, plugin, msg_signal=msg_signal)
         PolygonClickHandler.__init__(self, plugin, msg_signal=msg_signal)
+
+    def referenceValueForField(self, field_name, layer=None):
+        """Return the selected field value at the active reference selection.
+
+        Reuse the canonical reference geometry so linked Map Settings can be
+        refreshed after a field change without reselecting the reference.
+        """
+        reference = self.reference_session.current()
+        if reference is None:
+            return None
+        if not layer:
+            layer = self.iface.activeLayer()
+        if layer is None:
+            return None
+
+        selection = reference.selection
+        status_vector, _ = vector_layer_utils.checkVectorLayer(layer)
+        if status_vector:
+            if not field_name:
+                return None
+            field_index = layer.fields().indexFromName(field_name)
+            if field_index < 0:
+                return None
+
+            if selection.kind is SpatialSelectionKind.POINT:
+                point_value = selection.value
+                if not hasattr(point_value, "x") or not hasattr(point_value, "y"):
+                    return None
+                point = QgsPointXY(float(point_value.x), float(point_value.y))
+                source_crs = getattr(point_value, "crs", None)
+                canvas_crs = self.iface.mapCanvas().mapSettings().destinationCrs()
+                if source_crs is not None and source_crs.authid() != canvas_crs.authid():
+                    transform = QgsCoordinateTransform(
+                        source_crs, canvas_crs, QgsProject.instance()
+                    )
+                    point = transform.transform(point)
+                feature = self.findFeatureAtPoint(
+                    layer, point, self.iface.mapCanvas(), only_the_closest_one=True
+                )
+                if feature is None:
+                    return None
+                value = feature[field_index]
+                try:
+                    numeric = float(value)
+                except (TypeError, ValueError):
+                    return None
+                return numeric if np.isfinite(numeric) else None
+
+            polygon_value = selection.value
+            geometry = getattr(polygon_value, "geom", None)
+            if geometry is None:
+                return None
+            geometry = QgsGeometry(geometry)
+            source_crs = getattr(polygon_value, "crs", None)
+            if source_crs is not None and source_crs.authid() != layer.crs().authid():
+                transform = QgsCoordinateTransform(
+                    source_crs, layer.crs(), QgsProject.instance()
+                )
+                geometry.transform(transform)
+            request = QgsFeatureRequest().setFilterRect(geometry.boundingBox())
+            values = []
+            for feature in layer.getFeatures(request):
+                if not feature.geometry().intersects(geometry):
+                    continue
+                try:
+                    numeric = float(feature[field_index])
+                except (TypeError, ValueError):
+                    continue
+                if np.isfinite(numeric):
+                    values.append(numeric)
+            return float(np.mean(values)) if values else None
+
+        status_raster, _ = grd_layer_utils.checkGrdLayer(layer)
+        if status_raster and selection.kind is SpatialSelectionKind.POINT:
+            if selection.map_location is not None:
+                point = QgsPointXY(
+                    float(selection.map_location.x),
+                    float(selection.map_location.y),
+                )
+            else:
+                point_value = selection.value
+                if not hasattr(point_value, "x") or not hasattr(point_value, "y"):
+                    return None
+                point = QgsPointXY(float(point_value.x), float(point_value.y))
+                source_crs = getattr(point_value, "crs", None)
+                canvas_crs = self.iface.mapCanvas().mapSettings().destinationCrs()
+                if source_crs is not None and source_crs.authid() != canvas_crs.authid():
+                    transform = QgsCoordinateTransform(
+                        source_crs, canvas_crs, QgsProject.instance()
+                    )
+                    point = transform.transform(point)
+            value = self.raster_layer.getClickedPixelValue(layer, point=point)
+            try:
+                numeric = float(value)
+            except (TypeError, ValueError):
+                return None
+            return numeric if np.isfinite(numeric) else None
+
+        return None

@@ -200,7 +200,7 @@ QPushButton {
         )
         self._configure_double_spin_box(
             self.sb_symbol_value_offset,
-            tooltip="Offset the values",
+            tooltip="Value at the selected reference location, used to shift the colormap range.",
             decimals=5,
             minimum=-1_000_000_000.0,
             maximum=1_000_000_000.0,
@@ -210,15 +210,13 @@ QPushButton {
         self._configure_toggle_button(
             self.cb_symbol_value_offset_sync_with_ref,
             icon=":/icons/icons/sync_map_with_reference.svg",
-            tooltip="Keep offset synchronized with the reference point",
+            tooltip="Link Reference to the selected reference location",
             checked=False,
         )
         self.cb_symbol_value_offset_sync_with_ref.toggled.connect(
-            self._set_reference_offset_sync_state
+            self._sync_reference_editability
         )
-        self._set_reference_offset_sync_state(
-            self.cb_symbol_value_offset_sync_with_ref.isChecked()
-        )
+        self._sync_reference_editability()
         self._configure_flat_button(
             self.pb_symbol_range_settings,
             icon=":/icons/icons/edit.svg",
@@ -349,7 +347,7 @@ QPushButton {
         self._reference_offset_layout = reference_layout
 
         self._reference_offset_label = QtWidgets.QLabel(
-            "Reference offset", self.content
+            "Reference", self.content
         )
         self._reference_offset_label.setObjectName("map_reference_offset_label")
         layout.addWidget(self._reference_offset_label, 4, 0, 1, 3)
@@ -547,9 +545,25 @@ QPushButton {
         popup.show()
         popup.raise_()
 
-    def _set_reference_offset_sync_state(self, synchronized):
-        """Reflect reference synchronization in offset editability."""
-        self.sb_symbol_value_offset.setEnabled(not synchronized)
+    def _sync_reference_editability(self, checked=None):
+        """Synchronize Reference editability with the link control state."""
+        linked = self.cb_symbol_value_offset_sync_with_ref.isChecked()
+        self.sb_symbol_value_offset.setReadOnly(linked)
+        self.cb_symbol_value_offset_sync_with_ref.setToolTip(
+            "Reference is linked to the selected reference location"
+            if linked
+            else "Link Reference to the selected reference location"
+        )
+
+    def set_reference_sync_checked(self, checked):
+        """Set Reference linking programmatically and synchronize presentation."""
+        button = self.cb_symbol_value_offset_sync_with_ref
+        was_blocked = button.blockSignals(True)
+        try:
+            button.setChecked(bool(checked))
+        finally:
+            button.blockSignals(was_blocked)
+        self._sync_reference_editability()
 
     def _configure_live_update_checkbox(self):
         checkbox = self.cb_symbology_live
