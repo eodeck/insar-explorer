@@ -105,7 +105,7 @@ class SymbologySettingsPopup(QtWidgets.QWidget):
         self.cb_symbol_continuous_colormap.setAccessibleName(
             "Continuous colormap"
         )
-        self.cb_symbol_continuous_colormap.setChecked(False)
+        self.cb_symbol_continuous_colormap.setChecked(True)
         self.cb_symbol_continuous_colormap.toggled.connect(
             self._sync_continuous_colormap_controls
         )
@@ -125,7 +125,9 @@ class SymbologySettingsPopup(QtWidgets.QWidget):
         layout.addLayout(form)
 
         self._form_layout = form
-        self._sync_continuous_colormap_controls(False)
+        self._sync_continuous_colormap_controls(
+            self.cb_symbol_continuous_colormap.isChecked()
+        )
         self.setMaximumWidth(280)
 
     def set_continuous_colormap(self, continuous):
