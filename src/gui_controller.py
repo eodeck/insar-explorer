@@ -909,6 +909,9 @@ class GuiController(QObject):
         )
         self.ui.sb_symbol_value_offset.valueChanged.connect(self.setSymbologyOffset)
         self.ui.sb_symbol_classes.valueChanged.connect(self.applyLiveSymbology)
+        self.ui.cb_symbol_continuous_colormap.toggled.connect(
+            self.continuousColormapChanged
+        )
         self.ui.sb_symbol_size.valueChanged.connect(self.applyLiveSymbology)
         self.ui.sb_symbol_opacity.valueChanged.connect(self.applyLiveSymbology)
         self.ui.cb_symbology_live.toggled.connect(self.activateLiveSymbology)
@@ -1038,6 +1041,11 @@ class GuiController(QObject):
             self.msg_signal.emit("Range symmetry disabled.", 'i', 0)
         self.applyLiveSymbology()
 
+    def continuousColormapChanged(self, status):
+        """Apply one semantic discrete/continuous colormap mode change."""
+        self.insar_map.continuous_colormap = bool(status)
+        self.applyLiveSymbology()
+
     def setSymbologyOffset(self):
         self.insar_map.offset_value = self.ui.sb_symbol_value_offset.value()
         self.applyLiveSymbology()
@@ -1125,6 +1133,9 @@ class GuiController(QObject):
         self.insar_map.min_value = float(self.ui.sb_symbol_lower_range.value())
         self.insar_map.max_value = float(self.ui.sb_symbol_upper_range.value())
         self.insar_map.num_classes = int(self.ui.sb_symbol_classes.value())
+        self.insar_map.continuous_colormap = bool(
+            self.ui.cb_symbol_continuous_colormap.isChecked()
+        )
         self.insar_map.alpha = float(self.ui.sb_symbol_opacity.value()) / 100
         self.insar_map.symbol_size = float(self.ui.sb_symbol_size.value())
         self.insar_map.color_ramp_name = str(self.ui.cmb_colormap.currentData())

@@ -1,8 +1,18 @@
 import numpy as np
 from qgis.PyQt.QtGui import QColor
 from qgis.core import (
-    Qgis, QgsFeatureRequest, QgsGraduatedSymbolRenderer, QgsRectangle,
-    QgsRendererRange, QgsSymbol,
+    Qgis,
+    QgsColorRampTransformer,
+    QgsFeatureRequest,
+    QgsGradientColorRamp,
+    QgsGradientStop,
+    QgsGraduatedSymbolRenderer,
+    QgsProperty,
+    QgsRectangle,
+    QgsRendererRange,
+    QgsSingleSymbolRenderer,
+    QgsSymbol,
+    QgsSymbolLayer,
 )
 from qgis.core import QgsRasterShader, QgsColorRampShader, QgsSingleBandPseudoColorRenderer
 from osgeo import gdal
@@ -46,6 +56,7 @@ class InsarMap:
         self.num_classes = 9
         self.color_ramp_name = color_maps.DEFAULT_COLORMAP_ID
         self.color_ramp_reverse_flag = False
+        self.continuous_colormap = True
         self.data_type = "vector"
         self._std_statistics_cache = {}
         self._std_cache_connected_layer_ids = set()
@@ -372,14 +383,121 @@ class InsarMap:
             max_length = max(len(f"{self.min_value:.2f}"), len(f"{self.max_value:.2f}"))
 
         if status_vector:
-            self.setSymbologyVector(layer, interval, max_length, color_ramp)
+            if self.continuous_colormap:
+                self.setSymbologyVectorContinuous(layer, color_ramp)
+            else:
+                self.setSymbologyVector(layer, interval, max_length, color_ramp)
             return ""
         elif status_raster:
-            self.setSymbologyRaster(layer, interval, max_length, color_ramp)
+            if self.continuous_colormap:
+                self.setSymbologyRasterContinuous(layer, color_ramp)
+            else:
+                self.setSymbologyRaster(layer, interval, max_length, color_ramp)
             return ""
         else:
             message = '<span style="color:red;">Could not set the symbology. Check layer validity.</span>'
             return message
+
+    @staticmethod
+    def _qgisGradientColorRamp(color_ramp):
+        """Convert the plugin ramp to a native smooth QGIS gradient ramp."""
+        stops = list(color_ramp.ramp)
+        if not stops:
+            return QgsGradientColorRamp()
+        if len(stops) == 1:
+            color = QColor(stops[0][1])
+            return QgsGradientColorRamp(color, color, False, [])
+
+        gradient_stops = [
+            QgsGradientStop(float(position), QColor(color))
+            for position, color in stops[1:-1]
+        ]
+        return QgsGradientColorRamp(
+            QColor(stops[0][1]),
+            QColor(stops[-1][1]),
+            False,
+            gradient_stops,
+        )
+
+    @staticmethod
+    def _symbolLayerColorProperty(geometry_type):
+        """Return the data-defined color property for one vector geometry type."""
+        property_name = "StrokeColor" if int(geometry_type) == 1 else "FillColor"
+        legacy_name = "Property{}".format(property_name)
+        legacy = getattr(QgsSymbolLayer, legacy_name, None)
+        if legacy is not None:
+            return legacy
+        return getattr(QgsSymbolLayer.Property, property_name)
+
+    def setSymbologyRasterContinuous(self, layer, color_ramp):
+        """Apply a genuinely interpolated raster shader for the active range."""
+        effective_min = float(self.min_value) + float(self.offset_value)
+        effective_max = float(self.max_value) + float(self.offset_value)
+        shader = QgsRasterShader()
+        shader.setMinimumValue(effective_min)
+        shader.setMaximumValue(effective_max)
+        color_ramp_shader = QgsColorRampShader()
+        color_ramp_shader.setMinimumValue(effective_min)
+        color_ramp_shader.setMaximumValue(effective_max)
+        color_ramp_shader.setColorRampType(QgsColorRampShader.Interpolated)
+
+        span = float(self.max_value) - float(self.min_value)
+        items = []
+        for position, ramp_color in color_ramp.ramp:
+            raw_value = float(self.min_value) + float(position) * span
+            value = raw_value + float(self.offset_value)
+            color = QColor(ramp_color)
+            color.setAlphaF(self.alpha)
+            items.append(
+                QgsColorRampShader.ColorRampItem(value, color, f"{raw_value:.2f}")
+            )
+
+        color_ramp_shader.setColorRampItemList(items)
+        color_ramp_shader.setColorRampType(QgsColorRampShader.Interpolated)
+        shader.setRasterShaderFunction(color_ramp_shader)
+        renderer = QgsSingleBandPseudoColorRenderer(layer.dataProvider(), 1, shader)
+        renderer.setClassificationMin(effective_min)
+        renderer.setClassificationMax(effective_max)
+        layer.setRenderer(renderer)
+        layer.triggerRepaint()
+        self.iface.mapCanvas().refresh()
+
+    def setSymbologyVectorContinuous(self, layer, color_ramp):
+        """Apply per-feature continuous ramp coloring through a QGIS transformer."""
+        field_name = self.selected_field_name
+        if field_name is None:
+            return "layer field name is None"
+
+        symbol = QgsSymbol.defaultSymbol(layer.geometryType())
+        if hasattr(symbol, "setSize"):
+            symbol.setSize(self.symbol_size)
+        if hasattr(symbol, "setOpacity"):
+            symbol.setOpacity(self.alpha)
+
+        symbol_layer = symbol.symbolLayer(0)
+        if hasattr(symbol_layer, "setStrokeWidth"):
+            symbol_layer.setStrokeWidth(self.stroke_width)
+        if int(layer.geometryType()) != 1 and hasattr(symbol_layer, "setStrokeColor"):
+            symbol_layer.setStrokeColor(QColor("gray"))
+
+        property_value = QgsProperty.fromField(field_name)
+        property_value.setTransformer(
+            QgsColorRampTransformer(
+                float(self.min_value) + float(self.offset_value),
+                float(self.max_value) + float(self.offset_value),
+                self._qgisGradientColorRamp(color_ramp),
+            )
+        )
+        symbol_layer.setDataDefinedProperty(
+            self._symbolLayerColorProperty(layer.geometryType()),
+            property_value,
+        )
+
+        renderer = QgsSingleSymbolRenderer(symbol)
+        layer.setRenderer(renderer)
+        layer.triggerRepaint()
+        self.iface.mapCanvas().refresh()
+        return ""
 
     def setSymbologyRaster(self, layer, interval, max_length, color_ramp):
 
