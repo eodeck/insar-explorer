@@ -103,6 +103,7 @@ QPushButton {
             self.sb_symbol_upper_range,
             self.pb_symbol_range_settings,
             self.cmb_symbol_range_source,
+            self.cmb_std_calculation_mode,
             self.cb_symbol_range_symmetric,
             self.sb_symbol_value_offset,
             self.cb_symbol_value_offset_sync_with_ref,
@@ -128,6 +129,9 @@ QPushButton {
         self.range_settings_popup = RangeSettingsPopup(self)
         self.cmb_symbol_range_source = (
             self.range_settings_popup.cmb_symbol_range_source
+        )
+        self.cmb_std_calculation_mode = (
+            self.range_settings_popup.cmb_std_calculation_mode
         )
         self.cb_symbol_range_symmetric = (
             self.range_settings_popup.cb_symbol_range_symmetric

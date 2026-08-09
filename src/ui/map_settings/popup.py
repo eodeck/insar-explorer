@@ -3,7 +3,7 @@
 from qgis.PyQt import QtWidgets
 
 from ...qt_compat import POPUP_WINDOW_FLAG
-from .range_state import RangeSource
+from .range_state import RangeSource, StdCalculationMode
 
 
 class RangeSettingsPopup(QtWidgets.QWidget):
@@ -31,6 +31,21 @@ class RangeSettingsPopup(QtWidgets.QWidget):
         for source in RangeSource:
             self.cmb_symbol_range_source.addItem(source.display_name, source.value)
         form.addRow("Range source", self.cmb_symbol_range_source)
+
+        self.cmb_std_calculation_mode = QtWidgets.QComboBox(self)
+        self.cmb_std_calculation_mode.setObjectName("cmb_std_calculation_mode")
+        self.cmb_std_calculation_mode.setAccessibleName("Std calculation")
+        for mode in StdCalculationMode:
+            self.cmb_std_calculation_mode.addItem(mode.display_name, mode.value)
+        self.cmb_std_calculation_mode.setCurrentIndex(
+            self.cmb_std_calculation_mode.findData(StdCalculationMode.FAST.value)
+        )
+        self.cmb_std_calculation_mode.setEnabled(False)
+        self._update_std_calculation_tooltip()
+        self.cmb_std_calculation_mode.currentIndexChanged.connect(
+            self._update_std_calculation_tooltip
+        )
+        form.addRow("Calculation", self.cmb_std_calculation_mode)
         layout.addLayout(form)
 
         self.cb_symbol_range_symmetric = QtWidgets.QCheckBox(
@@ -45,6 +60,18 @@ class RangeSettingsPopup(QtWidgets.QWidget):
         layout.addWidget(self.cb_symbol_range_symmetric)
 
         self.setMaximumWidth(280)
+
+    def _update_std_calculation_tooltip(self, index=None):
+        """Describe the currently selected standard-deviation calculation mode."""
+        if index is None:
+            index = self.cmb_std_calculation_mode.currentIndex()
+        value = self.cmb_std_calculation_mode.itemData(index)
+        try:
+            mode = StdCalculationMode(value)
+        except (TypeError, ValueError):
+            return
+        self.cmb_std_calculation_mode.setToolTip(mode.tooltip)
+
 
 
 class SymbologySettingsPopup(QtWidgets.QWidget):
