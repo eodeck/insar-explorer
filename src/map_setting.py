@@ -1,6 +1,9 @@
 import numpy as np
 from qgis.PyQt.QtGui import QColor
-from qgis.core import QgsGraduatedSymbolRenderer, QgsRendererRange, QgsSymbol
+from qgis.core import (
+    Qgis, QgsFeatureRequest, QgsGraduatedSymbolRenderer, QgsRectangle,
+    QgsRendererRange, QgsSymbol,
+)
 from qgis.core import QgsRasterShader, QgsColorRampShader, QgsSingleBandPseudoColorRenderer
 from osgeo import gdal
 
@@ -9,6 +12,13 @@ from . import color_maps
 from .layer_utils import vector_layer as vector_layer_utils
 from .layer_utils import grd_layer as grd_layer_utils
 from .get_version import qgisVresion
+from .std_statistics import (
+    STD_FAST_EXACT_THRESHOLD,
+    STD_FAST_GRID_SIZE,
+    STD_FAST_SAMPLE_SIZE,
+    summarize_std_values,
+)
+from .ui.map_settings.range_state import StdCalculationMode
 
 
 class velocity():
@@ -37,12 +47,213 @@ class InsarMap:
         self.color_ramp_name = color_maps.DEFAULT_COLORMAP_ID
         self.color_ramp_reverse_flag = False
         self.data_type = "vector"
+        self._std_statistics_cache = {}
+        self._std_cache_connected_layer_ids = set()
 
     def reset(self):
         self.data_min = None
         self.data_max = None
         self.data_mean = None
         self.data_stdv = None
+        self.clearStdStatisticsCache()
+
+    @staticmethod
+    def _layerIdentity(layer):
+        """Return a stable cache identity for one QGIS layer object."""
+        layer_id = getattr(layer, "id", None)
+        if callable(layer_id):
+            return layer_id()
+        return id(layer)
+
+    def clearStdStatisticsCache(self, layer_id=None):
+        """Clear cached Std statistics globally or for one changed layer."""
+        if layer_id is None:
+            self._std_statistics_cache.clear()
+        else:
+            self._std_statistics_cache = {
+                key: value
+                for key, value in self._std_statistics_cache.items()
+                if key[0] != layer_id
+            }
+        self.data_mean = None
+        self.data_stdv = None
+
+    def _trackStdStatisticsLayerChanges(self, layer):
+        """Conservatively invalidate cached statistics when vector data changes."""
+        layer_id = self._layerIdentity(layer)
+        if layer_id in self._std_cache_connected_layer_ids:
+            return
+
+        def invalidate(*args, layer_id=layer_id):
+            self.clearStdStatisticsCache(layer_id)
+            self.data_min = None
+            self.data_max = None
+
+        for signal_name in (
+            "attributeValueChanged",
+            "featureAdded",
+            "featureDeleted",
+            "dataChanged",
+            "committedAttributeValuesChanges",
+            "committedFeaturesAdded",
+            "committedFeaturesRemoved",
+        ):
+            signal = getattr(layer, signal_name, None)
+            if signal is not None and hasattr(signal, "connect"):
+                signal.connect(invalidate)
+
+        destroyed = getattr(layer, "destroyed", None)
+        if destroyed is not None and hasattr(destroyed, "connect"):
+            def forget_layer(*args, layer_id=layer_id):
+                self.clearStdStatisticsCache(layer_id)
+                self._std_cache_connected_layer_ids.discard(layer_id)
+
+            destroyed.connect(forget_layer)
+        self._std_cache_connected_layer_ids.add(layer_id)
+
+    @staticmethod
+    def _noGeometryFeatureRequestFlag():
+        """Return the no-geometry request flag across supported QGIS APIs."""
+        flag = getattr(QgsFeatureRequest, "NoGeometry", None)
+        if flag is not None:
+            return flag
+        return Qgis.FeatureRequestFlag.NoGeometry
+
+    def _stdStatisticsRequest(self, layer, field_index, *, filter_rect=None, limit=None):
+        """Build an attribute-only request for exact or bounded statistics."""
+        request = QgsFeatureRequest()
+        # Use the integer-index overload. Passing QgsFields as a second argument
+        # selects the name-based overload in PyQGIS and rejects integer indexes.
+        request.setSubsetOfAttributes([field_index])
+        request.setFlags(self._noGeometryFeatureRequestFlag())
+        if filter_rect is not None:
+            request.setFilterRect(filter_rect)
+        if limit is not None:
+            request.setLimit(max(0, int(limit)))
+        return request
+
+    @staticmethod
+    def _hasUsableSamplingExtent(layer):
+        """Return whether a layer extent can support spatial stratification."""
+        try:
+            extent = layer.extent()
+        except (AttributeError, RuntimeError):
+            return False
+        if extent is None:
+            return False
+        is_null = getattr(extent, "isNull", None)
+        if callable(is_null) and is_null():
+            return False
+        is_empty = getattr(extent, "isEmpty", None)
+        if callable(is_empty) and is_empty():
+            return False
+        try:
+            return extent.width() > 0 and extent.height() > 0
+        except (AttributeError, TypeError):
+            return False
+
+    def _boundedFastStdValues(self, layer, field_index):
+        """Return a deterministic bounded sample spanning a spatial layer."""
+        target = max(1, int(STD_FAST_SAMPLE_SIZE))
+        if not self._hasUsableSamplingExtent(layer):
+            request = self._stdStatisticsRequest(
+                layer, field_index, limit=target
+            )
+            return [feature[field_index] for feature in layer.getFeatures(request)]
+
+        extent = layer.extent()
+        grid_size = min(
+            max(1, int(STD_FAST_GRID_SIZE)),
+            max(1, int(np.sqrt(target))),
+        )
+        cell_count = grid_size * grid_size
+        base_quota, remainder = divmod(target, cell_count)
+        cell_width = extent.width() / grid_size
+        cell_height = extent.height() / grid_size
+
+        sampled_values = []
+        seen_feature_ids = set()
+        cell_index = 0
+        for row in range(grid_size):
+            y_min = extent.yMinimum() + row * cell_height
+            y_max = (
+                extent.yMaximum()
+                if row == grid_size - 1
+                else extent.yMinimum() + (row + 1) * cell_height
+            )
+            for column in range(grid_size):
+                quota = base_quota + (1 if cell_index < remainder else 0)
+                cell_index += 1
+                if quota <= 0:
+                    continue
+                x_min = extent.xMinimum() + column * cell_width
+                x_max = (
+                    extent.xMaximum()
+                    if column == grid_size - 1
+                    else extent.xMinimum() + (column + 1) * cell_width
+                )
+                request = self._stdStatisticsRequest(
+                    layer,
+                    field_index,
+                    filter_rect=QgsRectangle(x_min, y_min, x_max, y_max),
+                    limit=quota,
+                )
+                for feature in layer.getFeatures(request):
+                    feature_id = feature.id()
+                    if feature_id in seen_feature_ids:
+                        continue
+                    seen_feature_ids.add(feature_id)
+                    sampled_values.append(feature[field_index])
+                    if len(sampled_values) >= target:
+                        return sampled_values
+        return sampled_values
+
+    def _vectorStdStatistics(self, layer, mode):
+        """Return cached exact or deterministic sampled statistics for a field."""
+        field_name = self.selected_field_name
+        if field_name is None:
+            return None, "layer field name is None"
+        field_index = layer.fields().indexFromName(field_name)
+        if field_index < 0:
+            return None, "Layer field was not found."
+
+        if mode is None:
+            mode = StdCalculationMode.EXACT
+        elif not isinstance(mode, StdCalculationMode):
+            try:
+                mode = StdCalculationMode(mode)
+            except (TypeError, ValueError):
+                return None, "Unsupported standard-deviation calculation mode."
+
+        layer_id = self._layerIdentity(layer)
+        cache_key = (layer_id, field_name, mode.value)
+        cached = self._std_statistics_cache.get(cache_key)
+        if cached is not None:
+            return cached, ""
+
+        self._trackStdStatisticsLayerChanges(layer)
+        is_exact = True
+        if mode is StdCalculationMode.FAST:
+            feature_count = max(0, int(layer.featureCount()))
+            if feature_count > STD_FAST_EXACT_THRESHOLD:
+                values = self._boundedFastStdValues(layer, field_index)
+                is_exact = False
+            else:
+                request = self._stdStatisticsRequest(layer, field_index)
+                values = (
+                    feature[field_index] for feature in layer.getFeatures(request)
+                )
+        else:
+            request = self._stdStatisticsRequest(layer, field_index)
+            values = (feature[field_index] for feature in layer.getFeatures(request))
+
+        statistics = summarize_std_values(values, is_exact=is_exact)
+        if statistics is None:
+            self._std_statistics_cache.pop(cache_key, None)
+            return None, "No valid values are available for range statistics."
+
+        self._std_statistics_cache[cache_key] = statistics
+        return statistics, ""
 
     def setSymbologyRangeFromData(self, layer=None, n_std=None, std_calculation_mode=None):
         if not layer:
@@ -52,15 +263,17 @@ class InsarMap:
         status_raster, message = grd_layer_utils.checkGrdLayer(layer)
         if status_vector:
             self.data_type = "vector"
-            self.getDataRangeFromVectorLayer(layer, n_std)
+            return self.getDataRangeFromVectorLayer(
+                layer, n_std, std_calculation_mode=std_calculation_mode
+            )
         elif status_raster:
             self.data_type = "raster"
-            self.getDataRangeFromRasterLayer(layer, n_std)
+            return self.getDataRangeFromRasterLayer(layer, n_std)
         else:
             message = '<span style="color:red;">Invalid Layer: Please select a valid layer.</span>'
             return message
 
-    def getDataRangeFromVectorLayer(self, layer, n_std=None):
+    def getDataRangeFromVectorLayer(self, layer, n_std=None, std_calculation_mode=None):
         field_name = self.selected_field_name
         if field_name is None:
             return "layer field name is None"
@@ -81,10 +294,13 @@ class InsarMap:
             self.min_value = self.data_min
             self.max_value = self.data_max
         else:
-            if self.data_mean is None or self.data_stdv is None:
-                values = [feature[field_name] for feature in layer.getFeatures() if feature[field_name] is not None]
-                self.data_mean = np.nanmean(values)
-                self.data_stdv = np.nanstd(values)
+            statistics, error = self._vectorStdStatistics(
+                layer, std_calculation_mode
+            )
+            if error:
+                return error
+            self.data_mean = statistics.mean
+            self.data_stdv = statistics.std
             self.min_value = self.data_mean - n_std * self.data_stdv
             self.max_value = self.data_mean + n_std * self.data_stdv
 
