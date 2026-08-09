@@ -431,8 +431,14 @@ class InsarMap:
 
     def setSymbologyRasterContinuous(self, layer, color_ramp):
         """Apply a genuinely interpolated raster shader for the active range."""
+        effective_min = float(self.min_value) + float(self.offset_value)
+        effective_max = float(self.max_value) + float(self.offset_value)
         shader = QgsRasterShader()
+        shader.setMinimumValue(effective_min)
+        shader.setMaximumValue(effective_max)
         color_ramp_shader = QgsColorRampShader()
+        color_ramp_shader.setMinimumValue(effective_min)
+        color_ramp_shader.setMaximumValue(effective_max)
         color_ramp_shader.setColorRampType(QgsColorRampShader.Interpolated)
 
         span = float(self.max_value) - float(self.min_value)
@@ -450,6 +456,8 @@ class InsarMap:
         color_ramp_shader.setColorRampType(QgsColorRampShader.Interpolated)
         shader.setRasterShaderFunction(color_ramp_shader)
         renderer = QgsSingleBandPseudoColorRenderer(layer.dataProvider(), 1, shader)
+        renderer.setClassificationMin(effective_min)
+        renderer.setClassificationMax(effective_max)
         layer.setRenderer(renderer)
         layer.triggerRepaint()
         self.iface.mapCanvas().refresh()
@@ -469,8 +477,6 @@ class InsarMap:
         symbol_layer = symbol.symbolLayer(0)
         if hasattr(symbol_layer, "setStrokeWidth"):
             symbol_layer.setStrokeWidth(self.stroke_width)
-        # Preserve the existing point/polygon outline convention. Line symbols
-        # use their stroke itself as the continuously transformed color.
         if int(layer.geometryType()) != 1 and hasattr(symbol_layer, "setStrokeColor"):
             symbol_layer.setStrokeColor(QColor("gray"))
 
