@@ -1,6 +1,7 @@
 ### History
 
 v2.8.0
+- Improve reference offset behavior and apply only when user explicitly clicks on apply or live apply is active.
 - Added support for continuous colormaps.
 - Added fast calculation mode for field statistics.
 - Simplified map settings panel.

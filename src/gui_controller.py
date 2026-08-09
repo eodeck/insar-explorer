@@ -1,4 +1,5 @@
 import os
+import math
 from dataclasses import replace
 
 from qgis.gui import QgsMapToolEmitPoint
@@ -555,6 +556,9 @@ class GuiController(QObject):
         self.choose_point_click_handler.selected_field_name = self.insar_map.selected_field_name
         self.insar_map.reset()
 
+        if self.ui.cb_symbol_value_offset_sync_with_ref.isChecked():
+            self._syncReferenceValueFromSelection()
+
         if source is RangeSource.CUSTOM:
             self._range_source_raw_values = None
             self.applyLiveSymbology()
@@ -642,13 +646,45 @@ class GuiController(QObject):
                                                            ref=self.ui.pb_set_reference_polygon.isChecked())
         self.syncOffsetWithReference()
 
+    def _setReferenceValue(self, value):
+        """Project one Reference value without relying on valueChanged feedback."""
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            return False
+        if not math.isfinite(value):
+            return False
+
+        spin_box = self.ui.sb_symbol_value_offset
+        was_blocked = spin_box.blockSignals(True)
+        try:
+            spin_box.setValue(value)
+        finally:
+            spin_box.blockSignals(was_blocked)
+        self.insar_map.offset_value = float(spin_box.value())
+        return True
+
+    def _syncReferenceValueFromSelection(self):
+        """Recompute linked Reference from the active field/reference selection."""
+        field_name = self.ui.cb_select_field.currentText()
+        value = self.choose_point_click_handler.referenceValueForField(field_name)
+        if value is None:
+            reference_session = getattr(
+                self.choose_point_click_handler, "reference_session", None
+            )
+            if reference_session is not None and reference_session.current() is None:
+                return self._setReferenceValue(0.0)
+            return False
+        return self._setReferenceValue(value)
+
     def syncOffsetWithReference(self):
-        """Sync offset value with reference point or polygon."""
-        if self.ui.cb_symbol_value_offset_sync_with_ref.isChecked():
-            value = self.choose_point_click_handler.map_reference_clicked_value
-            self.insar_map.offset_value = value
-            self.ui.sb_symbol_value_offset.setValue(value)
-            self._applySymbologyAndClearPending()
+        """Refresh linked Reference using the normal Live/Apply policy."""
+        if not self.ui.cb_symbol_value_offset_sync_with_ref.isChecked():
+            return False
+        if not self._syncReferenceValueFromSelection():
+            return False
+        self.applyLiveSymbology()
+        return True
 
     def connectUiSignals(self):
         self.ui.visibilityChanged.connect(self.handleUiClose)
@@ -3217,8 +3253,8 @@ class GuiController(QObject):
         self.activateReferencePointSelection(status=False)
 
         if self.ui.cb_symbol_value_offset_sync_with_ref.isChecked():
-            self.ui.sb_symbol_value_offset.setValue(0)
-            self.applySymbologyNow()
+            self._setReferenceValue(0.0)
+            self.applyLiveSymbology()
 
         self.removePolygonDrawingTool(reference=True)  # remove reference polygon
         self.deactivatePolygonDrawingTool(reference=False)  # deactivate polygon
@@ -3227,9 +3263,9 @@ class GuiController(QObject):
     def syncOffsetWithReferenceClicked(self, status):
         if status:
             self.syncOffsetWithReference()
-            self.msg_signal.emit("Reference offset synchronization enabled.", "done", 0)
+            self.msg_signal.emit("Reference linked to the selected reference location.", "done", 0)
         else:
-            self.msg_signal.emit("Reference offset synchronization disabled.", "i", 0)
+            self.msg_signal.emit("Reference unlinked; the current value is now editable.", "i", 0)
 
     def addSelectedLayers(self):
         """
