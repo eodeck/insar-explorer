@@ -2,7 +2,7 @@ import os
 from dataclasses import replace
 
 from qgis.gui import QgsMapToolEmitPoint
-from qgis.PyQt.QtWidgets import QFileDialog, QMenu, QComboBox
+from qgis.PyQt.QtWidgets import QFileDialog, QComboBox
 from qgis.PyQt.QtCore import QObject, QPoint, QRect, QSettings, QStandardPaths, QTimer, QVariant, pyqtSignal
 from qgis.PyQt.QtGui import QColor, QIcon, QTransform
 
@@ -21,8 +21,11 @@ from .ui.popups.export_settings_popup import ExportSettingsPopup
 from .ui.popups.appearance_popup import AppearancePopup
 from .ui.popups.replica_popup import ReplicaPopup
 from .ui.popups.map_indicator_settings_popup import MapIndicatorSettingsPopup
+from .ui.map_settings.range_state import RangeSource
 from .ui.widgets.split_tool_button import SplitButtonPopupHoverReconciler
 from .qt_compat import (
+    ITEM_IS_ENABLED,
+    ITEM_IS_SELECTABLE,
     RASTER_LAYER,
     VECTOR_LAYER,
     available_screen_geometry,
@@ -243,19 +246,19 @@ class GuiController(QObject):
         self.last_ts_export_format = self.settings.value(
             'insar_explorer/ts_export_format', 'csv', type=str
         )
+        self._symbology_dirty = False
+        self._range_source = RangeSource.CUSTOM
+        self._range_source_raw_values = None
+        self._range_programmatic_update = False
+        self._pending_default_range_layer_id = None
         self.initializeUiParams()
         self.connectUiSignals()
         # make point selection active by default
         self.ui.pb_choose_point.setChecked(True)
         self.activatePointSelection(True)
 
-        # add data range menu
-        self.setDataRangeMenu()
-
         self.iface.currentLayerChanged.connect(self.onLayerChanged)
         self.onLayerChanged()
-
-        self.setVectorFields()
 
     def _installSplitButtonPopupHoverReconciliation(self):
         """Reconcile split-button hover whenever an associated popup closes."""
@@ -339,13 +342,25 @@ class GuiController(QObject):
         """Reset the time-series workspace and map for a confirmed layer change."""
         if layer is None:
             layer = self.iface.activeLayer()
+
+        layer_id = self._layerIdentity(layer)
+        pending_layer_id = self._pending_default_range_layer_id
+        if pending_layer_id is not None and pending_layer_id != layer_id:
+            # Invalidate queued work for a previous layer/context.  Keep a same-
+            # layer pending token so duplicate signals coalesce to one callback.
+            self._pending_default_range_layer_id = None
+            self._setDefaultRangeInitializationPending(False)
+
+        self._setCustomRangeSource()
+        self._setRangeSymmetryChecked(False)
+        self._setSymbologyDirty(False)
         if layer:
             self.resetTimeSeriesWorkspaceForDataset()
             self._restoreTimeSeriesFitState()
             self._restoreTimeSeriesYAxisMode()
             self._restoreTimeSeriesReplicaState()
             self.insar_map.reset()
-            self.setVectorFields()
+            self.setVectorFields(initialize_default_range=True)
 
             layer_type = layer.type()
             is_local_raster = (hasattr(layer, "dataProvider") and getattr(layer.dataProvider(), "name", lambda: "")()
@@ -369,39 +384,190 @@ class GuiController(QObject):
                 message = ""
             self.msg_signal.emit(message, "i", 0)
 
-    def setVectorFields(self):
+    @staticmethod
+    def _findSelectableFieldIndex(field_combo, field_name):
+        """Return the real selectable combo row for an exact field name."""
+        if not field_name:
+            return -1
+        for index in range(field_combo.count()):
+            if field_combo.itemText(index) != field_name:
+                continue
+            model_index = field_combo.model().index(index, 0)
+            flags = model_index.flags()
+            if flags & ITEM_IS_ENABLED and flags & ITEM_IS_SELECTABLE:
+                return index
+            return -1
+        return -1
+
+    def setVectorFields(self, initialize_default_range=False):
+        """Populate vector fields and optionally initialize a fresh range state."""
         layer = self.iface.activeLayer()
         if not layer:
             return
+
         status, message = vector_layer_utils.checkVectorLayer(layer)
-        self.ui.cb_select_field.clear()
-        if status is False:
-            self.ui.cb_select_field.setEnabled(False)
-            self.ui.sb_symbol_size.setEnabled(False)
-            return
-        else:
-            self.ui.cb_select_field.setEnabled(True)
+        field_combo = self.ui.cb_select_field
+        was_blocked = field_combo.blockSignals(True)
+        try:
+            field_combo.clear()
+            if status is False:
+                field_combo.setEnabled(False)
+                self.ui.sb_symbol_size.setEnabled(False)
+                self._setSymbologyDirty(False)
+                return
+
+            field_combo.setEnabled(True)
             self.ui.sb_symbol_size.setEnabled(True)
 
-        field_list, field_types = vector_layer_utils.getVectorFields(layer)
-        velocity_field, message = vector_layer_utils.getVectorVelocityFieldName(layer)
+            field_list, field_types = vector_layer_utils.getVectorFields(layer)
+            velocity_field, message = vector_layer_utils.getVectorVelocityFieldName(layer)
 
-        for field, field_type in zip(field_list, field_types):
-            self.ui.cb_select_field.addItem(field)
-            if field_type not in [QVariant.Double, QVariant.Int, QVariant.LongLong]:
-                index = self.ui.cb_select_field.count() - 1
-                self.ui.cb_select_field.model().item(index).setEnabled(False)
+            for field, field_type in zip(field_list, field_types):
+                field_combo.addItem(field)
+                if field_type not in [QVariant.Double, QVariant.Int, QVariant.LongLong]:
+                    index = field_combo.count() - 1
+                    field_combo.model().item(index).setEnabled(False)
 
-        if velocity_field:
-            self.ui.cb_select_field.setCurrentText(velocity_field)
+            velocity_index = self._findSelectableFieldIndex(
+                field_combo, velocity_field
+            )
+            if velocity_index >= 0:
+                field_combo.setCurrentIndex(velocity_index)
+        finally:
+            field_combo.blockSignals(was_blocked)
 
-        self.insar_map.reset()
-        self.insar_map.selected_field_name = self.ui.cb_select_field.currentText()
+        if hasattr(self.ui, "map_settings_panel"):
+            self.ui.map_settings_panel.sync_field_selection_state()
 
-    def selectVectorFieldChanged(self):
+        self.insar_map.selected_field_name = field_combo.currentText()
+        self.choose_point_click_handler.selected_field_name = self.insar_map.selected_field_name
+
+        if initialize_default_range:
+            self._scheduleDefaultRangeInitialization(layer)
+        else:
+            self._setSymbologyDirty(False)
+
+    @staticmethod
+    def _layerIdentity(layer):
+        """Return a stable identity token for a layer/context object."""
+        if layer is None:
+            return None
+        layer_id = getattr(layer, "id", None)
+        if callable(layer_id):
+            return layer_id()
+        return id(layer)
+
+    def _setDefaultRangeInitializationPending(self, pending):
+        """Reflect deferred range initialization without exposing stale values."""
+        enabled = not bool(pending)
+        for name in (
+            "sb_symbol_lower_range",
+            "sb_symbol_upper_range",
+            "pb_symbol_range_settings",
+        ):
+            control = getattr(self.ui, name, None)
+            if control is not None:
+                control.setEnabled(enabled)
+
+    def _scheduleDefaultRangeInitialization(self, layer):
+        """Queue fresh default range/symbology work for one active layer."""
+        layer_id = self._layerIdentity(layer)
+        if layer_id is None:
+            return False
+        if self._pending_default_range_layer_id == layer_id:
+            return False
+
+        self._pending_default_range_layer_id = layer_id
+        self._setDefaultRangeInitializationPending(True)
+        QTimer.singleShot(
+            0,
+            lambda layer_id=layer_id: (
+                self._runDeferredDefaultRangeInitialization(layer_id)
+            ),
+        )
+        return True
+
+    def _runDeferredDefaultRangeInitialization(self, layer_id):
+        """Run queued fresh default initialization only for the current layer."""
+        if self._pending_default_range_layer_id != layer_id:
+            return False
+
+        current_layer = self.iface.activeLayer()
+        if self._layerIdentity(current_layer) != layer_id:
+            self._pending_default_range_layer_id = None
+            self._setDefaultRangeInitializationPending(False)
+            return False
+
+        self._pending_default_range_layer_id = None
+        try:
+            return self._initializeDefaultRangeState()
+        finally:
+            self._setDefaultRangeInitializationPending(False)
+
+    def _setRangeSymmetryChecked(self, checked):
+        """Project range symmetry state without triggering range-change behavior."""
+        checkbox = self.ui.cb_symbol_range_symmetric
+        was_blocked = checkbox.blockSignals(True)
+        try:
+            checkbox.setChecked(bool(checked))
+        finally:
+            checkbox.blockSignals(was_blocked)
+
+    def _initializeDefaultRangeState(self):
+        """Initialize a fresh active-field range from its unsymmetrized data extent."""
+        displayed_range = (
+            self.ui.sb_symbol_lower_range.value(),
+            self.ui.sb_symbol_upper_range.value(),
+        )
+        self._setRangeSymmetryChecked(False)
+        raw_values, error = self._computeRangeSourceValues(RangeSource.DATA_EXTENT)
+        if error:
+            self._setCustomRangeSource()
+            self._setDisplayedRange(*displayed_range)
+            self._setSymbologyDirty(False)
+            self.msg_signal.emit(error, 'i', 0)
+            return False
+
+        self._projectComputedRangeSource(RangeSource.DATA_EXTENT, raw_values)
+        self._applySymbologyAndClearPending()
+        return True
+
+    def selectVectorFieldChanged(self, index=None):
+        """Update the active field while preserving the selected range strategy."""
+        field_combo = self.ui.cb_select_field
+        if index is None:
+            index = field_combo.currentIndex()
+        if index < 0:
+            return
+        model_index = field_combo.model().index(index, 0)
+        flags = model_index.flags()
+        if not (flags & ITEM_IS_ENABLED and flags & ITEM_IS_SELECTABLE):
+            return
+
+        source = self._range_source
+        displayed_range = (
+            self.ui.sb_symbol_lower_range.value(),
+            self.ui.sb_symbol_upper_range.value(),
+        )
+
         self.insar_map.selected_field_name = self.ui.cb_select_field.currentText()
         self.choose_point_click_handler.selected_field_name = self.insar_map.selected_field_name
         self.insar_map.reset()
+
+        if source is RangeSource.CUSTOM:
+            self._range_source_raw_values = None
+            self.applyLiveSymbology()
+            return
+
+        raw_values, error = self._computeRangeSourceValues(source)
+        if error:
+            self._setCustomRangeSource()
+            self._setDisplayedRange(*displayed_range)
+            self.msg_signal.emit(error, 'i', 0)
+            self.applyLiveSymbology()
+            return
+
+        self._projectComputedRangeSource(source, raw_values)
         self.applyLiveSymbology()
 
     def initializeClickTool(self):
@@ -481,7 +647,7 @@ class GuiController(QObject):
             value = self.choose_point_click_handler.map_reference_clicked_value
             self.insar_map.offset_value = value
             self.ui.sb_symbol_value_offset.setValue(value)
-            self.applySymbology()
+            self._applySymbologyAndClearPending()
 
     def connectUiSignals(self):
         self.ui.visibilityChanged.connect(self.handleUiClose)
@@ -718,92 +884,195 @@ class GuiController(QObject):
         )
 
     def connectMapSignals(self):
-        self.ui.cb_select_field.currentTextChanged.connect(self.selectVectorFieldChanged)
+        if not hasattr(self, "_range_source"):
+            self._range_source = RangeSource.CUSTOM
+        if not hasattr(self, "_range_source_raw_values"):
+            self._range_source_raw_values = None
+        if not hasattr(self, "_range_programmatic_update"):
+            self._range_programmatic_update = False
+        self.ui.cb_select_field.currentIndexChanged.connect(self.selectVectorFieldChanged)
         self.ui.pb_symbology.clicked.connect(self.applySymbologyClicked)
         self.ui.sb_symbol_lower_range.valueChanged.connect(self.setSymbologyLowerRange)
         self.ui.sb_symbol_upper_range.valueChanged.connect(self.setSymbologyUpperRange)
-        self.ui.cb_symbol_range_sync.clicked.connect(self.symbologyRangeSyncClicked)
+        self.ui.cmb_symbol_range_source.currentIndexChanged.connect(
+            self.symbologyRangeSourceChanged
+        )
+        self.ui.cb_symbol_range_symmetric.toggled.connect(
+            self.symbologyRangeSymmetryChanged
+        )
         self.ui.sb_symbol_value_offset.valueChanged.connect(self.setSymbologyOffset)
         self.ui.sb_symbol_classes.valueChanged.connect(self.applyLiveSymbology)
         self.ui.sb_symbol_size.valueChanged.connect(self.applyLiveSymbology)
         self.ui.sb_symbol_opacity.valueChanged.connect(self.applyLiveSymbology)
-        self.ui.pb_symbology_live.toggled.connect(self.activateLiveSymbology)
+        self.ui.cb_symbology_live.toggled.connect(self.activateLiveSymbology)
         self.ui.cmb_colormap.currentIndexChanged.connect(self.applyLiveSymbology)
         self.ui.pb_colormap_reverse.toggled.connect(self.colormapReverseClicked)
+        self._setSymbologyDirty(False)
 
-    def setDataRangeMenu(self):
-        """creat a menu for setting data range"""
-        menu = QMenu(self.ui)
-        menu.addAction("Range from data", self.setSymbologyRangeFromData)
-        menu.addAction("1xStd", self.setSymbologyRangeFromData)
-        menu.addAction("2xStd", self.setSymbologyRangeFromData)
-        menu.addAction("3xStd", self.setSymbologyRangeFromData)
-        self.ui.pb_range_from_data.setMenu(menu)
+    def _setRangeSource(self, source):
+        """Set semantic source and project it into the popup without feedback."""
+        if not isinstance(source, RangeSource):
+            raise ValueError("Unsupported Map Settings range source: {!r}".format(source))
+        self._range_source = source
+        combo = getattr(self.ui, "cmb_symbol_range_source", None)
+        if combo is None:
+            return
+        index = combo.findData(source.value)
+        if index < 0 or index == combo.currentIndex():
+            return
+        combo.blockSignals(True)
+        try:
+            combo.setCurrentIndex(index)
+        finally:
+            combo.blockSignals(False)
+
+    def _setCustomRangeSource(self):
+        """Mark the displayed range as user-owned and discard computed-source state."""
+        self._range_source_raw_values = None
+        self._setRangeSource(RangeSource.CUSTOM)
+
+    def _setDisplayedRange(self, minimum, maximum):
+        """Project a controller-owned range without triggering manual-edit semantics."""
+        self._range_programmatic_update = True
+        lower = self.ui.sb_symbol_lower_range
+        upper = self.ui.sb_symbol_upper_range
+        lower.blockSignals(True)
+        upper.blockSignals(True)
+        try:
+            lower.setValue(float(minimum))
+            upper.setValue(float(maximum))
+        finally:
+            lower.blockSignals(False)
+            upper.blockSignals(False)
+            self._range_programmatic_update = False
+
+    def _symmetricRange(self, minimum, maximum):
+        """Return the largest-absolute range symmetric around zero."""
+        limit = max(abs(float(minimum)), abs(float(maximum)))
+        return -limit, limit
 
     def setSymbologyUpperRange(self):
-        self.ui.sb_symbol_lower_range.blockSignals(True)
-        if self.ui.cb_symbol_range_sync.isChecked():
-            value = self.ui.sb_symbol_upper_range.value()
-            self.ui.sb_symbol_lower_range.setValue(-value)
-        self.ui.sb_symbol_lower_range.blockSignals(False)
+        if not self._range_programmatic_update:
+            self._setCustomRangeSource()
+        if self.ui.cb_symbol_range_symmetric.isChecked():
+            limit = abs(self.ui.sb_symbol_upper_range.value())
+            self._setDisplayedRange(-limit, limit)
         self.applyLiveSymbology()
 
     def setSymbologyLowerRange(self):
-        self.ui.sb_symbol_upper_range.blockSignals(True)
-        if self.ui.cb_symbol_range_sync.isChecked():
-            value = self.ui.sb_symbol_lower_range.value()
-            self.ui.sb_symbol_upper_range.setValue(-value)
-        self.ui.sb_symbol_upper_range.blockSignals(False)
+        if not self._range_programmatic_update:
+            self._setCustomRangeSource()
+        if self.ui.cb_symbol_range_symmetric.isChecked():
+            limit = abs(self.ui.sb_symbol_lower_range.value())
+            self._setDisplayedRange(-limit, limit)
         self.applyLiveSymbology()
 
-    def symbologyRangeSyncClicked(self, status):
-        if status:
-            self.setSymbologyLowerRange()
-            self.msg_signal.emit("Symbology range synced: changing one value updates the other.", 't', 0)
+    def symbologyRangeSourceChanged(self, index):
+        """Apply the source selected in the range settings popup."""
+        value = self.ui.cmb_symbol_range_source.itemData(index)
+        try:
+            source = RangeSource(value)
+        except (TypeError, ValueError):
+            return
+        self.setSymbologyRangeSource(source)
+
+    def symbologyRangeSymmetryChanged(self, status):
+        if self._range_source is RangeSource.CUSTOM or self._range_source_raw_values is None:
+            minimum = self.ui.sb_symbol_lower_range.value()
+            maximum = self.ui.sb_symbol_upper_range.value()
+            if status:
+                minimum, maximum = self._symmetricRange(minimum, maximum)
+                self._setDisplayedRange(minimum, maximum)
         else:
-            self.msg_signal.emit("Symbology ranges unsynced.", 'i', 0)
+            minimum, maximum = self._range_source_raw_values
+            if status:
+                minimum, maximum = self._symmetricRange(minimum, maximum)
+            self._setDisplayedRange(minimum, maximum)
+
+        if status:
+            self.msg_signal.emit("Range symmetry enabled.", 't', 0)
+        else:
+            self.msg_signal.emit("Range symmetry disabled.", 'i', 0)
+        self.applyLiveSymbology()
 
     def setSymbologyOffset(self):
         self.insar_map.offset_value = self.ui.sb_symbol_value_offset.value()
         self.applyLiveSymbology()
 
-    def setSymbologyRangeFromData(self):
-        button = self.sender()
-        if button.text() == "Range from data":
-            message = self.insar_map.setSymbologyRangeFromData()
-            message = "Symbology range set from data."
-        elif button.text() == "1xStd":
-            message = self.insar_map.setSymbologyRangeFromData(n_std=1)
-            message = "Symbology range set to mean±1σ."
-        elif button.text() == "2xStd":
-            message = self.insar_map.setSymbologyRangeFromData(n_std=2)
-            message = "Symbology range set to mean±2σ."
-        elif button.text() == "3xStd":
-            message = self.insar_map.setSymbologyRangeFromData(n_std=3)
-            message = "Symbology range set to mean±3σ."
+    def _computeRangeSourceValues(self, source):
+        """Return raw values for one computed range source without changing UI state."""
+        error = self.insar_map.setSymbologyRangeFromData(
+            n_std=source.standard_deviations
+        )
+        if error:
+            return None, error
+        return (float(self.insar_map.min_value), float(self.insar_map.max_value)), ""
 
-        self.msg_signal.emit(message, 'i', 0)
-        min_value = self.insar_map.min_value
-        max_value = self.insar_map.max_value
-        if self.ui.cb_symbol_range_sync.isChecked():
-            max_value = max(abs(min_value), abs(max_value))
-            min_value = -max_value
-        self.ui.sb_symbol_lower_range.setValue(min_value)
-        self.ui.sb_symbol_upper_range.setValue(max_value)
+    def _projectComputedRangeSource(self, source, raw_values):
+        """Store and display a successfully computed range source."""
+        raw_minimum, raw_maximum = raw_values
+        self._range_source_raw_values = (raw_minimum, raw_maximum)
+        minimum, maximum = raw_minimum, raw_maximum
+        if self.ui.cb_symbol_range_symmetric.isChecked():
+            minimum, maximum = self._symmetricRange(minimum, maximum)
+        self._setDisplayedRange(minimum, maximum)
+        self._setRangeSource(source)
+
+    def setSymbologyRangeSource(self, source):
+        """Compute and project one explicit range source using existing map statistics."""
+        if not isinstance(source, RangeSource):
+            raise ValueError("Unsupported Map Settings range source: {!r}".format(source))
+        if source is RangeSource.CUSTOM:
+            self._setCustomRangeSource()
+            return
+
+        previous_source = self._range_source
+        previous_raw_values = self._range_source_raw_values
+        raw_values, error = self._computeRangeSourceValues(source)
+        if error:
+            self._range_source_raw_values = previous_raw_values
+            self._setRangeSource(previous_source)
+            self.msg_signal.emit(error, 'i', 0)
+            return
+
+        self._projectComputedRangeSource(source, raw_values)
+
+        messages = {
+            RangeSource.DATA_EXTENT: "Symbology range set from data extent.",
+            RangeSource.STD_1: "Symbology range set to mean±1σ.",
+            RangeSource.STD_2: "Symbology range set to mean±2σ.",
+            RangeSource.STD_3: "Symbology range set to mean±3σ.",
+        }
+        self.msg_signal.emit(messages[source], 'i', 0)
+        self.applyLiveSymbology()
+
+    def _setSymbologyDirty(self, dirty):
+        """Project unapplied Map Settings state onto the manual Apply action."""
+        self._symbology_dirty = bool(dirty)
+        self.ui.pb_symbology.setEnabled(self._symbology_dirty)
+
+    def _applySymbologyAndClearPending(self):
+        """Apply current Map Settings and update pending state from the result."""
+        applied = self.applySymbology()
+        self._setSymbologyDirty(not applied)
+        return applied
 
     def applyLiveSymbology(self):
-        if self.ui.pb_symbology_live.isChecked():
-            self.applySymbology()
+        if self.ui.cb_symbology_live.isChecked():
+            self._applySymbologyAndClearPending()
+        else:
+            self._setSymbologyDirty(True)
 
     def activateLiveSymbology(self, status):
         if status:
-            self.applyLiveSymbology()
+            self._applySymbologyAndClearPending()
             self.msg_signal.emit("Live symbology enabled: changes will apply immediately.", 'done', 0)
         else:
+            self._setSymbologyDirty(False)
             self.msg_signal.emit("Live symbology disabled.", 'i', 0)
 
     def applySymbologyNow(self):
-        QTimer.singleShot(0, self.applySymbology)
+        QTimer.singleShot(0, self._applySymbologyAndClearPending)
 
     def applySymbology(self):
         self.insar_map.selected_field_name = self.ui.cb_select_field.currentText()
@@ -812,16 +1081,17 @@ class GuiController(QObject):
         self.insar_map.num_classes = int(self.ui.sb_symbol_classes.value())
         self.insar_map.alpha = float(self.ui.sb_symbol_opacity.value()) / 100
         self.insar_map.symbol_size = float(self.ui.sb_symbol_size.value())
-        self.insar_map.color_ramp_name = self.ui.cmb_colormap.currentText()
+        self.insar_map.color_ramp_name = str(self.ui.cmb_colormap.currentData())
         message = self.insar_map.setSymbology()
         if message != "":
             self.msg_signal.emit(message, "i", 0)
         else:
             self.msg_signal.emit("", "", 0)
+        return message == ""
 
     def applySymbologyClicked(self, status):
-        self.applySymbology()
-        self.msg_signal.emit("Symbology applied.", "done", 5000)
+        if self._applySymbologyAndClearPending():
+            self.msg_signal.emit("Symbology applied.", "done", 5000)
 
     def colormapReverseClicked(self, status):
         if status:
@@ -2900,10 +3170,9 @@ class GuiController(QObject):
     def syncOffsetWithReferenceClicked(self, status):
         if status:
             self.syncOffsetWithReference()
-            self.msg_signal.emit("Map reference update enabled: map will update when the reference point changes.",
-                                 "done", 0)
+            self.msg_signal.emit("Reference offset synchronization enabled.", "done", 0)
         else:
-            self.msg_signal.emit("Map reference update disabled.", "i", 0)
+            self.msg_signal.emit("Reference offset synchronization disabled.", "i", 0)
 
     def addSelectedLayers(self):
         """

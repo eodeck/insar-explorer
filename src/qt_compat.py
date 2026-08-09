@@ -11,13 +11,19 @@ try:
     except ImportError:
         from qgis.PyQt.QtWidgets import QAction, QActionGroup
         from qgis.PyQt.QtGui import QGuiApplication, QPalette
-    from qgis.PyQt.QtWidgets import (QApplication, QAbstractItemView, QColorDialog, QFrame, QHeaderView, QMessageBox,
-                                     QSizePolicy, QStyle, QToolButton)
+    from qgis.PyQt.QtWidgets import (
+        QApplication, QAbstractItemView, QAbstractSpinBox, QColorDialog, QComboBox,
+        QCompleter, QFrame, QHeaderView, QMessageBox, QSizePolicy, QStyle,
+        QToolButton,
+    )
 except ImportError:
     from PySide6.QtCore import QEvent, QItemSelectionModel, QPoint, QRect, QSize, Qt
     from PySide6.QtGui import QAction, QActionGroup, QGuiApplication, QPalette
-    from PySide6.QtWidgets import (QApplication, QAbstractItemView, QColorDialog, QFrame, QHeaderView, QMessageBox,
-                                   QSizePolicy, QStyle, QToolButton)
+    from PySide6.QtWidgets import (
+        QApplication, QAbstractItemView, QAbstractSpinBox, QColorDialog, QComboBox,
+        QCompleter, QFrame, QHeaderView, QMessageBox, QSizePolicy, QStyle,
+        QToolButton,
+    )
 
 try:
     from qgis.core import QgsMapLayer, QgsWkbTypes
@@ -57,12 +63,15 @@ KEY_F2 = _enum_value(Qt, "Key", "Key_F2")
 KEY_RETURN = _enum_value(Qt, "Key", "Key_Return")
 KEY_ENTER = _enum_value(Qt, "Key", "Key_Enter")
 KEY_ESCAPE = _enum_value(Qt, "Key", "Key_Escape")
+KEY_DOWN = _enum_value(Qt, "Key", "Key_Down")
 RIGHT_MOUSE_BUTTON = _enum_value(Qt, "MouseButton", "RightButton")
 DOWN_ARROW = _enum_value(Qt, "ArrowType", "DownArrow")
 ITEM_IS_EDITABLE = _enum_value(Qt, "ItemFlag", "ItemIsEditable")
 ITEM_IS_ENABLED = _enum_value(Qt, "ItemFlag", "ItemIsEnabled")
 ITEM_IS_SELECTABLE = _enum_value(Qt, "ItemFlag", "ItemIsSelectable")
 ITEM_IS_USER_CHECKABLE = _enum_value(Qt, "ItemFlag", "ItemIsUserCheckable")
+CASE_INSENSITIVE = _enum_value(Qt, "CaseSensitivity", "CaseInsensitive")
+MATCH_CONTAINS = _enum_value(Qt, "MatchFlag", "MatchContains")
 DISPLAY_ROLE = _enum_value(Qt, "ItemDataRole", "DisplayRole")
 EDIT_ROLE = _enum_value(Qt, "ItemDataRole", "EditRole")
 DECORATION_ROLE = _enum_value(Qt, "ItemDataRole", "DecorationRole")
@@ -128,10 +137,22 @@ STYLE_STATE_MOUSE_OVER = _enum_value(QStyle, "StateFlag", "State_MouseOver", "St
 # QFrame enums
 FRAME_SHAPE_STYLED_PANEL = _enum_value(QFrame, "Shape", "StyledPanel")
 
+# QComboBox / QCompleter enums
+COMBO_NO_INSERT = _enum_value(QComboBox, "InsertPolicy", "NoInsert")
+COMPLETER_POPUP_COMPLETION = _enum_value(
+    QCompleter, "CompletionMode", "PopupCompletion"
+)
+
+# QAbstractSpinBox enums
+SPIN_BOX_UP_DOWN_ARROWS = _enum_value(
+    QAbstractSpinBox, "ButtonSymbols", "UpDownArrows"
+)
+
 # QSizePolicy enums
 SIZE_POLICY_FIXED = _enum_value(QSizePolicy, "Policy", "Fixed")
 SIZE_POLICY_MAXIMUM = _enum_value(QSizePolicy, "Policy", "Maximum")
 SIZE_POLICY_EXPANDING = _enum_value(QSizePolicy, "Policy", "Expanding")
+SIZE_POLICY_IGNORED = _enum_value(QSizePolicy, "Policy", "Ignored")
 SIZE_POLICY_PREFERRED = _enum_value(QSizePolicy, "Policy", "Preferred")
 
 # QToolButton enums

@@ -34,7 +34,7 @@ class InsarMap:
         self.stroke_width = 0.01
         self.alpha = 0.9
         self.num_classes = 9
-        self.color_ramp_name = 'Roma'
+        self.color_ramp_name = color_maps.DEFAULT_COLORMAP_ID
         self.color_ramp_reverse_flag = False
         self.data_type = "vector"
 
@@ -146,15 +146,9 @@ class InsarMap:
         if status_vector or status_raster:
             interval = (self.max_value - self.min_value) / self.num_classes
 
-            color_map_dict = {
-                'Turbo_r': color_maps.TurboR,
-                'Roma': color_maps.Roma,
-                'Vik': color_maps.Vik,
-                'Gray': color_maps.Gray}
-
-            if color_ramp_name not in color_map_dict.keys():
-                color_ramp_name = 'Gray'
-            color_ramp = color_map_dict[color_ramp_name]()
+            color_ramp_id = color_maps.canonical_colormap_id(color_ramp_name)
+            self.color_ramp_name = color_ramp_id
+            color_ramp = color_maps.COLORMAP_BY_ID[color_ramp_id].factory()
 
             if self.color_ramp_reverse_flag:
                 color_ramp.reverse()

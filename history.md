@@ -1,6 +1,13 @@
 ### History
 
 v2.8.0
+- Simplify map settings panel.
+- Move symbology controls into popup.
+- Used Turbo instead of reversed Turbo in colormaps.
+- Improved field search and filtering.
+- Recompute derived ranges on field/layer change.
+- Allow adaptive precision in data range spinboxes.
+- Enhanced map settings panel.
 - Added distinct color assignment to record list context menu.
 - Added time series rename actions using F2 and context menu.
 - Added map indicator settings popup.
