@@ -1,6 +1,7 @@
 ### History
 
 v2.8.0
+- Added support for continuous colormaps.
 - Added fast calculation mode for field statistics.
 - Simplified map settings panel.
 - Move symbology controls into popup.
