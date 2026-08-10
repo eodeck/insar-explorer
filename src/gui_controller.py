@@ -605,6 +605,7 @@ class GuiController(QObject):
         )
 
         if reference:
+            self._syncStandaloneReferenceOverlay()
             self.syncOffsetWithReference()
 
     def removeClickTool(self, reference=False):
@@ -664,9 +665,21 @@ class GuiController(QObject):
         self.clear_reference_drawing_feedback()
 
     def polygonDrawnCallback(self, polygon):
-        self.choose_point_click_handler.choosePolygonDrawn(polygon=polygon,
-                                                           ref=self.ui.pb_set_reference_polygon.isChecked())
+        reference = self.ui.pb_set_reference_polygon.isChecked()
+        self.choose_point_click_handler.choosePolygonDrawn(polygon=polygon, ref=reference)
+        if reference:
+            self._syncStandaloneReferenceOverlay()
         self.syncOffsetWithReference()
+
+    def _syncStandaloneReferenceOverlay(self) -> None:
+        """Project an accepted Reference while no Target/pending record exists."""
+        if self.choose_point_click_handler.plot_ts.pending_record() is not None:
+            return
+        reference = self.choose_point_click_handler.reference_session.current()
+        if reference is None:
+            self.pending_time_series_map_overlays.clear()
+            return
+        self.pending_time_series_map_overlays.project_reference(reference.selection)
 
     def _setReferenceValue(self, value):
         """Project one Reference value without relying on valueChanged feedback."""
@@ -3312,6 +3325,7 @@ class GuiController(QObject):
         if status:
             tool = self.initializeClickTool(reference=False)
             self.iface.mapCanvas().setMapTool(tool)
+            self._syncStandaloneReferenceOverlay()
             self.msg_signal.emit("Click any point on the map to view its time series.", "t", 0)
         else:
             self.removeClickTool(reference=False)
@@ -3334,6 +3348,7 @@ class GuiController(QObject):
         self.ui.pb_set_reference_polygon.setChecked(False)
         if status:
             self.initializePolygonDrawingTool()
+            self._syncStandaloneReferenceOverlay()
             self.msg_signal.emit("Click to add polygon vertices; double-click or right-click to finish and plot time "
                                  "series.", "t", 0)
         else:
@@ -3351,6 +3366,7 @@ class GuiController(QObject):
 
     def resetReferencePoint(self):
         self.choose_point_click_handler.resetReferencePoint()
+        self._syncStandaloneReferenceOverlay()
         self.activateReferencePointSelection(status=False)
 
         if self.ui.cb_symbol_value_offset_sync_with_ref.isChecked():
