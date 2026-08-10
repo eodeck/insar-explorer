@@ -144,6 +144,8 @@ QPushButton {
         self.cb_symbol_value_offset_sync_with_ref.setObjectName(
             "cb_symbol_value_offset_sync_with_ref"
         )
+        self.pb_reference_reset = QtWidgets.QPushButton(self)
+        self.pb_reference_reset.setObjectName("pb_reference_reset")
         self.cmb_colormap = QtWidgets.QComboBox(self)
         self.cmb_colormap.setObjectName("cmb_colormap")
         self.pb_colormap_reverse = QtWidgets.QPushButton(self)
@@ -207,6 +209,12 @@ QPushButton {
             value=0.0,
             single_step=0.1,
         )
+        self._configure_flat_button(
+            self.pb_reference_reset,
+            icon=":/icons/icons/reset_offset.svg",
+            tooltip="Reset Reference to zero",
+        )
+        self.pb_reference_reset.clicked.connect(self._reset_reference_value)
         self._configure_toggle_button(
             self.cb_symbol_value_offset_sync_with_ref,
             icon=":/icons/icons/sync_map_with_reference.svg",
@@ -352,8 +360,9 @@ QPushButton {
         self._reference_offset_label.setObjectName("map_reference_offset_label")
         layout.addWidget(self._reference_offset_label, 4, 0, 1, 3)
         reference_layout.addWidget(self.sb_symbol_value_offset, 0, 0)
+        reference_layout.addWidget(self.pb_reference_reset, 0, 1)
         reference_layout.addWidget(
-            self.cb_symbol_value_offset_sync_with_ref, 0, 1
+            self.cb_symbol_value_offset_sync_with_ref, 0, 2
         )
         layout.addLayout(reference_layout, 5, 0, 1, 3)
         return layout
@@ -546,14 +555,23 @@ QPushButton {
         popup.raise_()
 
     def _sync_reference_editability(self, checked=None):
-        """Synchronize Reference editability with the link control state."""
+        """Synchronize Reference controls with the link state."""
         linked = self.cb_symbol_value_offset_sync_with_ref.isChecked()
         self.sb_symbol_value_offset.setReadOnly(linked)
+        self.pb_reference_reset.setEnabled(not linked)
         self.cb_symbol_value_offset_sync_with_ref.setToolTip(
             "Reference is linked to the selected reference location"
             if linked
             else "Link Reference to the selected reference location"
         )
+
+    def _reset_reference_value(self, checked=False):
+        """Reset an unlinked Reference through the normal valueChanged path."""
+        if self.cb_symbol_value_offset_sync_with_ref.isChecked():
+            return
+        if self.sb_symbol_value_offset.value() == 0.0:
+            return
+        self.sb_symbol_value_offset.setValue(0.0)
 
     def set_reference_sync_checked(self, checked):
         """Set Reference linking programmatically and synchronize presentation."""

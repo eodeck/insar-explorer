@@ -1,6 +1,7 @@
 ### History
 
 v2.8.0
+- Added an offset-reset button.
 - Improve reference offset behavior and apply only when user explicitly clicks on apply or live apply is active.
 - Added support for continuous colormaps.
 - Added fast calculation mode for field statistics.
