@@ -1,6 +1,7 @@
 ### History
 
 v2.8.0
+- Previewed polygon while drawing.
 - Added support for double-click to finish a polygon.
 - Support exporting one or multiple time series data.
 - Added an offset-reset button.

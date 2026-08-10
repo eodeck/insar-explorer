@@ -23,15 +23,19 @@ class PolygonMarker(QgsMapTool):
 
     def setStyle(self) -> None:
         """Apply the shared target/reference feedback presentation."""
+        self.applyStyle(self.rubber_band)
+
+    def applyStyle(self, rubber_band) -> None:
+        """Apply this marker's semantic drawing style to a rubber band."""
         settings = self._settings_provider()
         alpha = round(255 * settings.opacity_percent / 100.0)
         stroke = semantic_indicator_color(self.role, settings, alpha=alpha)
         fill = semantic_indicator_color(
             self.role, settings, alpha=round(PENDING_FILL_ALPHA * settings.opacity_percent / 100.0)
         )
-        self.rubber_band.setFillColor(fill)
-        self.rubber_band.setStrokeColor(stroke)
-        self.rubber_band.setWidth(PENDING_LINE_WIDTH)
+        rubber_band.setFillColor(fill)
+        rubber_band.setStrokeColor(stroke)
+        rubber_band.setWidth(PENDING_LINE_WIDTH)
 
     def addPoint(self, point):
         self.points.append(point)
@@ -52,6 +56,8 @@ class PolygonDrawingTool(QgsMapTool):
         self.callback = callback  # Function to call when polygon is complete
         self.start_callback = start_callback  # Function to call before starting the drawing
         self.polygon_marker = PolygonMarker(self.canvas, role=role, settings_provider=settings_provider)
+        self.preview_rubber_band = QgsRubberBand(self.canvas, POLYGON_GEOMETRY)
+        self.polygon_marker.applyStyle(self.preview_rubber_band)
         self.first_point = True
         self.last_point = False
 
@@ -70,6 +76,21 @@ class PolygonDrawingTool(QgsMapTool):
             # Add the clicked point to the polygon
             point = self.toMapCoordinates(event.pos())
             self.polygon_marker.addPoint(point)
+            self._clearPreview()
+
+    def canvasMoveEvent(self, event) -> None:
+        """Preview the next polygon edge/shape without committing a vertex."""
+        committed_points = self.polygon_marker.points
+        if not committed_points:
+            self._clearPreview()
+            return
+
+        cursor_point = self.toMapCoordinates(event.pos())
+        preview_points = list(committed_points)
+        preview_points.append(cursor_point)
+        if len(committed_points) >= 2:
+            preview_points.append(committed_points[0])
+        self._setPreview(preview_points)
 
     def canvasReleaseEvent(self, event) -> None:
         """Check for right-click to finalize the polygon"""
@@ -87,8 +108,20 @@ class PolygonDrawingTool(QgsMapTool):
         if hasattr(event, "accept"):
             event.accept()
 
+    def _setPreview(self, points) -> None:
+        """Render preview-only points without mutating committed geometry."""
+        self.preview_rubber_band.reset(POLYGON_GEOMETRY)
+        last_index = len(points) - 1
+        for index, point in enumerate(points):
+            self.preview_rubber_band.addPoint(point, index == last_index)
+
+    def _clearPreview(self) -> None:
+        """Remove temporary cursor-following polygon feedback."""
+        self.preview_rubber_band.reset(POLYGON_GEOMETRY)
+
     def _finishDrawingIfValid(self) -> bool:
         """Finalize the current polygon and apply the shared finish state."""
+        self._clearPreview()
         if len(self.polygon_marker.points) < 3:
             return False
 
@@ -105,18 +138,23 @@ class PolygonDrawingTool(QgsMapTool):
                 self.callback(polygon)
         # self.clear()
 
+    def _clearDrawingState(self) -> None:
+        """Remove all in-progress polygon feedback and committed points."""
+        self._clearPreview()
+        self.polygon_marker.reset()
+
     def cancelDrawing(self) -> None:
-        """Clear the drawing"""
-        # self.clear()
-        self.polygon_marker.stopDrawing()
+        """Discard the current in-progress polygon drawing."""
+        self._clearDrawingState()
 
     def refresh_style(self) -> None:
         """Refresh temporary polygon feedback styling."""
         self.polygon_marker.setStyle()
+        self.polygon_marker.applyStyle(self.preview_rubber_band)
 
     def clear_feedback(self) -> None:
         """Clear temporary polygon interaction feedback without changing sessions."""
-        self.polygon_marker.reset()
+        self._clearDrawingState()
         self.first_point = True
         self.last_point = False
 
@@ -126,10 +164,11 @@ class PolygonDrawingTool(QgsMapTool):
         self.deactivate()
 
     def activate(self):
-        self.polygon_marker.reset()
+        self._clearDrawingState()
         # super().activate()
 
     def deactivate(self) -> None:
-        """Clear the drawing and deactivate the tool"""
+        """Clear all in-progress drawing feedback and deactivate the tool."""
+        self._clearDrawingState()
         super().deactivate()
         # self.clear()
