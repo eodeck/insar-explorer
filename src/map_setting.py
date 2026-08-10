@@ -10,9 +10,11 @@ from qgis.core import (
     QgsProperty,
     QgsRectangle,
     QgsRendererRange,
+    QgsSimpleMarkerSymbolLayer,
     QgsSingleSymbolRenderer,
     QgsSymbol,
     QgsSymbolLayer,
+    QgsUnitTypes,
 )
 from qgis.core import QgsRasterShader, QgsColorRampShader, QgsSingleBandPseudoColorRenderer
 from osgeo import gdal
@@ -28,6 +30,11 @@ from .std_statistics import (
     STD_FAST_SAMPLE_SIZE,
     summarize_std_values,
 )
+from .ui.map_settings.marker_state import (
+    DEFAULT_MARKER_SHAPE, DEFAULT_OUTLINE_COLOR, DEFAULT_OUTLINE_WIDTH_MM,
+    normalize_marker_shape,
+)
+from .qt_compat import NO_PEN, SOLID_LINE
 from .ui.map_settings.range_state import StdCalculationMode
 
 
@@ -51,7 +58,9 @@ class InsarMap:
         self.data_max = None
         self.data_mean = None
         self.data_stdv = None
-        self.stroke_width = 0.01
+        self.marker_shape = DEFAULT_MARKER_SHAPE
+        self.stroke_color = DEFAULT_OUTLINE_COLOR
+        self.stroke_width = DEFAULT_OUTLINE_WIDTH_MM
         self.alpha = 0.9
         self.num_classes = 9
         self.color_ramp_name = color_maps.DEFAULT_COLORMAP_ID
@@ -398,6 +407,55 @@ class InsarMap:
             message = '<span style="color:red;">Could not set the symbology. Check layer validity.</span>'
             return message
 
+
+    @staticmethod
+    def _markerShape(shape_name):
+        """Resolve one stable marker-shape value across QGIS enum layouts."""
+        shape_owner = getattr(QgsSimpleMarkerSymbolLayer, "Shape", None)
+        if shape_owner is None:
+            shape_owner = QgsSimpleMarkerSymbolLayer
+        enum_names = {
+            "circle": "Circle",
+            "square": "Square",
+            "triangle_up": "Triangle",
+            "triangle_down": "Triangle",
+            "diamond": "Diamond",
+            "star": "Star",
+        }
+        shape_name = normalize_marker_shape(shape_name)
+        return getattr(shape_owner, enum_names.get(shape_name, "Circle"))
+
+    @staticmethod
+    def _millimeterRenderUnit():
+        """Return the QGIS millimetre render unit across QGIS 3 and QGIS 4."""
+        render_unit = getattr(Qgis, "RenderUnit", None)
+        if render_unit is not None and hasattr(render_unit, "Millimeters"):
+            return render_unit.Millimeters
+        return QgsUnitTypes.RenderMillimeters
+
+    def _configurePointMarkerSymbol(self, symbol):
+        """Apply point-marker shape, size, outline, and opacity consistently."""
+        symbol_layer = symbol.symbolLayer(0)
+        if not isinstance(symbol_layer, QgsSimpleMarkerSymbolLayer):
+            return symbol_layer
+        marker_shape = normalize_marker_shape(self.marker_shape)
+        symbol_layer.setShape(self._markerShape(marker_shape))
+        symbol_layer.setAngle(180.0 if marker_shape == "triangle_down" else 0.0)
+        symbol_layer.setSize(float(self.symbol_size))
+        if hasattr(symbol_layer, "setSizeUnit"):
+            symbol_layer.setSizeUnit(self._millimeterRenderUnit())
+        stroke_width = float(self.stroke_width)
+        if stroke_width <= 0.0:
+            symbol_layer.setStrokeStyle(NO_PEN)
+        else:
+            symbol_layer.setStrokeStyle(SOLID_LINE)
+            symbol_layer.setStrokeColor(QColor(self.stroke_color))
+            symbol_layer.setStrokeWidth(stroke_width)
+            if hasattr(symbol_layer, "setStrokeWidthUnit"):
+                symbol_layer.setStrokeWidthUnit(self._millimeterRenderUnit())
+        symbol.setOpacity(self.alpha)
+        return symbol_layer
+
     @staticmethod
     def _qgisGradientColorRamp(color_ramp):
         """Convert the plugin ramp to a native smooth QGIS gradient ramp."""
@@ -469,16 +527,11 @@ class InsarMap:
             return "layer field name is None"
 
         symbol = QgsSymbol.defaultSymbol(layer.geometryType())
-        if hasattr(symbol, "setSize"):
-            symbol.setSize(self.symbol_size)
-        if hasattr(symbol, "setOpacity"):
-            symbol.setOpacity(self.alpha)
-
         symbol_layer = symbol.symbolLayer(0)
-        if hasattr(symbol_layer, "setStrokeWidth"):
-            symbol_layer.setStrokeWidth(self.stroke_width)
-        if int(layer.geometryType()) != 1 and hasattr(symbol_layer, "setStrokeColor"):
-            symbol_layer.setStrokeColor(QColor("gray"))
+        if int(layer.geometryType()) == 0:
+            symbol_layer = self._configurePointMarkerSymbol(symbol)
+        elif hasattr(symbol, "setOpacity"):
+            symbol.setOpacity(self.alpha)
 
         property_value = QgsProperty.fromField(field_name)
         property_value.setTransformer(
@@ -556,9 +609,10 @@ class InsarMap:
             color = color_ramp.getColor(color_ratio)
             color.setAlphaF(self.alpha)
             symbol.setColor(color)
-            symbol.setSize(self.symbol_size)
-            symbol.symbolLayer(0).setStrokeWidth(self.stroke_width)
-            symbol.symbolLayer(0).setStrokeColor(QColor("gray"))
+            if int(layer.geometryType()) == 0:
+                self._configurePointMarkerSymbol(symbol)
+            elif hasattr(symbol, "setOpacity"):
+                symbol.setOpacity(self.alpha)
 
             if i == 0:
                 lower = float('-inf')

@@ -25,10 +25,15 @@ from .ui.popups.appearance_popup import AppearancePopup
 from .ui.popups.replica_popup import ReplicaPopup
 from .ui.popups.map_indicator_settings_popup import MapIndicatorSettingsPopup
 from .ui.map_settings.range_state import RangeSource, STD_RANGE_SOURCES, StdCalculationMode
+from .ui.map_settings.symbology_defaults import (
+    MapSymbologySettings, MapSymbologySettingsService,
+    normalize_map_symbology_settings,
+)
 from .ui.widgets.split_tool_button import SplitButtonPopupHoverReconciler
 from .qt_compat import (
     ITEM_IS_ENABLED,
     ITEM_IS_SELECTABLE,
+    POINT_GEOMETRY,
     RASTER_LAYER,
     VECTOR_LAYER,
     available_screen_geometry,
@@ -160,6 +165,7 @@ class GuiController(QObject):
         self._last_fit_statistics_message = None
         services = ensure_time_series_services(plugin)
         self.map_indicator_settings = services.map_indicator_settings
+        self.map_symbology_defaults = MapSymbologySettingsService()
         self.choose_point_click_handler = cph.ClickHandler(
             plugin,
             msg_signal=self.msg_signal,
@@ -352,6 +358,7 @@ class GuiController(QObject):
         if layer is None:
             layer = self.iface.activeLayer()
 
+        self._syncPointMarkerControls(layer)
         layer_id = self._layerIdentity(layer)
         pending_layer_id = self._pending_default_range_layer_id
         if pending_layer_id is not None and pending_layer_id != layer_id:
@@ -391,6 +398,21 @@ class GuiController(QObject):
                 self.ui.settings_panel.setEnabled(True)
                 message = ""
             self.msg_signal.emit(message, "i", 0)
+
+    def _syncPointMarkerControls(self, layer=None):
+        """Project active-layer geometry onto point-only marker controls."""
+        is_point_vector = False
+        if layer is not None:
+            try:
+                is_point_vector = (
+                    layer.type() == VECTOR_LAYER
+                    and layer.geometryType() == POINT_GEOMETRY
+                )
+            except (AttributeError, RuntimeError):
+                is_point_vector = False
+        self.ui.map_settings_panel.symbology_settings_popup.set_point_marker_available(
+            is_point_vector
+        )
 
     @staticmethod
     def _findSelectableFieldIndex(field_combo, field_name):
@@ -986,7 +1008,26 @@ class GuiController(QObject):
             self.continuousColormapChanged
         )
         self.ui.sb_symbol_size.valueChanged.connect(self.applyLiveSymbology)
+        self.ui.cmb_symbol_marker_shape.currentIndexChanged.connect(
+            self.applyLiveSymbology
+        )
+        self.ui.pb_symbol_outline_color.colorChanged.connect(
+            self.applyLiveSymbology
+        )
+        self.ui.sb_symbol_outline_width.valueChanged.connect(
+            self.applyLiveSymbology
+        )
         self.ui.sb_symbol_opacity.valueChanged.connect(self.applyLiveSymbology)
+        symbology_popup = self.ui.map_settings_panel.symbology_settings_popup
+        symbology_popup.applySavedDefaultRequested.connect(
+            self.restoreMapSymbologyDefaults
+        )
+        symbology_popup.applyFactoryDefaultRequested.connect(
+            self.applyFactoryMapSymbologyDefaults
+        )
+        symbology_popup.saveCurrentAsDefaultRequested.connect(
+            self.setCurrentMapSymbologyAsDefault
+        )
         self.ui.cb_symbology_live.toggled.connect(self.activateLiveSymbology)
         self.ui.cmb_colormap.currentIndexChanged.connect(self.applyLiveSymbology)
         self.ui.pb_colormap_reverse.toggled.connect(self.colormapReverseClicked)
@@ -1236,6 +1277,73 @@ class GuiController(QObject):
         self.msg_signal.emit(messages[source], 'i', 0)
         self.applyLiveSymbology()
 
+    def _currentMapSymbologySettings(self):
+        """Capture the settings owned by the Symbology settings popup."""
+        return normalize_map_symbology_settings(MapSymbologySettings(
+            continuous_colormap=bool(
+                self.ui.cb_symbol_continuous_colormap.isChecked()
+            ),
+            classes=int(self.ui.sb_symbol_classes.value()),
+            marker_shape=str(self.ui.cmb_symbol_marker_shape.currentData()),
+            marker_size=float(self.ui.sb_symbol_size.value()),
+            outline_color=str(self.ui.pb_symbol_outline_color.color()),
+            outline_width_mm=float(self.ui.sb_symbol_outline_width.value()),
+            opacity_percent=int(self.ui.sb_symbol_opacity.value()),
+        ))
+
+    def _applyMapSymbologySettingsBundle(self, settings):
+        """Project one normalized popup settings bundle and publish one edit."""
+        settings = normalize_map_symbology_settings(settings)
+        controls = (
+            self.ui.cb_symbol_continuous_colormap,
+            self.ui.sb_symbol_classes,
+            self.ui.cmb_symbol_marker_shape,
+            self.ui.sb_symbol_size,
+            self.ui.pb_symbol_outline_color,
+            self.ui.sb_symbol_outline_width,
+            self.ui.sb_symbol_opacity,
+        )
+        blockers = [QSignalBlocker(control) for control in controls]
+        try:
+            self.ui.cb_symbol_continuous_colormap.setChecked(
+                settings.continuous_colormap
+            )
+            self.ui.sb_symbol_classes.setValue(settings.classes)
+            shape_index = self.ui.cmb_symbol_marker_shape.findData(
+                settings.marker_shape
+            )
+            if shape_index >= 0:
+                self.ui.cmb_symbol_marker_shape.setCurrentIndex(shape_index)
+            self.ui.sb_symbol_size.setValue(settings.marker_size)
+            self.ui.pb_symbol_outline_color.setColor(settings.outline_color)
+            self.ui.sb_symbol_outline_width.setValue(settings.outline_width_mm)
+            self.ui.sb_symbol_opacity.setValue(settings.opacity_percent)
+        finally:
+            del blockers
+        self.ui.map_settings_panel.symbology_settings_popup.set_continuous_colormap(
+            settings.continuous_colormap
+        )
+        self.applyLiveSymbology()
+
+    def restoreMapSymbologyDefaults(self):
+        """Apply the user's saved Map Symbology default as one normal edit."""
+        self._applyMapSymbologySettingsBundle(
+            self.map_symbology_defaults.load_defaults()
+        )
+
+    def applyFactoryMapSymbologyDefaults(self):
+        """Apply factory Map Symbology values without changing saved defaults."""
+        self._applyMapSymbologySettingsBundle(
+            self.map_symbology_defaults.factory_defaults()
+        )
+
+    def setCurrentMapSymbologyAsDefault(self):
+        """Persist current popup-owned Map Symbology values as the user default."""
+        self.map_symbology_defaults.save_defaults(
+            self._currentMapSymbologySettings()
+        )
+        self.msg_signal.emit("Map symbology default saved.", "done", 5000)
+
     def _setSymbologyDirty(self, dirty):
         """Project unapplied Map Settings state onto the manual Apply action."""
         self._symbology_dirty = bool(dirty)
@@ -1274,6 +1382,15 @@ class GuiController(QObject):
         )
         self.insar_map.alpha = float(self.ui.sb_symbol_opacity.value()) / 100
         self.insar_map.symbol_size = float(self.ui.sb_symbol_size.value())
+        self.insar_map.marker_shape = str(
+            self.ui.cmb_symbol_marker_shape.currentData()
+        )
+        self.insar_map.stroke_color = str(
+            self.ui.pb_symbol_outline_color.color()
+        )
+        self.insar_map.stroke_width = float(
+            self.ui.sb_symbol_outline_width.value()
+        )
         self.insar_map.color_ramp_name = str(self.ui.cmb_colormap.currentData())
         message = self.insar_map.setSymbology()
         if message != "":

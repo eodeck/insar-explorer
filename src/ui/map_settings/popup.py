@@ -1,8 +1,15 @@
 """Compact popups for secondary Map Settings controls."""
 
 from qgis.PyQt import QtWidgets
+from qgis.PyQt.QtCore import pyqtSignal
 
-from ...qt_compat import POPUP_WINDOW_FLAG
+from ...qt_compat import POPUP_WINDOW_FLAG, TOOLTIP_ROLE
+from ..popups.defaults_menu import createDefaultsMenu
+from ..popups.time_series_style_popup import CompactColorButton
+from .marker_state import (
+    DEFAULT_MARKER_SHAPE, DEFAULT_OUTLINE_COLOR, DEFAULT_OUTLINE_WIDTH_MM,
+    MARKER_SHAPES,
+)
 from .range_state import RangeSource, StdCalculationMode
 
 
@@ -77,6 +84,10 @@ class RangeSettingsPopup(QtWidgets.QWidget):
 class SymbologySettingsPopup(QtWidgets.QWidget):
     """Present secondary symbology controls in a compact popup."""
 
+    applySavedDefaultRequested = pyqtSignal()
+    saveCurrentAsDefaultRequested = pyqtSignal()
+    applyFactoryDefaultRequested = pyqtSignal()
+
     def __init__(
         self,
         classes_spin_box,
@@ -110,25 +121,105 @@ class SymbologySettingsPopup(QtWidgets.QWidget):
             self._sync_continuous_colormap_controls
         )
 
+        self.cmb_symbol_marker_shape = QtWidgets.QComboBox(self)
+        self.cmb_symbol_marker_shape.setObjectName("cmb_symbol_marker_shape")
+        self.cmb_symbol_marker_shape.setEditable(False)
+        self.cmb_symbol_marker_shape.setToolTip("Point marker type")
+        self.cmb_symbol_marker_shape.setAccessibleName("Marker type")
+        for token, value, accessible_label in MARKER_SHAPES:
+            index = self.cmb_symbol_marker_shape.count()
+            self.cmb_symbol_marker_shape.addItem(token, value)
+            description = "{} — {}".format(token, accessible_label)
+            self.cmb_symbol_marker_shape.setItemData(index, description, TOOLTIP_ROLE)
+            item = self.cmb_symbol_marker_shape.model().item(index)
+            if item is not None:
+                if hasattr(item, "setAccessibleText"):
+                    item.setAccessibleText(accessible_label)
+                if hasattr(item, "setAccessibleDescription"):
+                    item.setAccessibleDescription(description)
+        self.cmb_symbol_marker_shape.setCurrentIndex(
+            self.cmb_symbol_marker_shape.findData(DEFAULT_MARKER_SHAPE)
+        )
+
+        self.pb_symbol_outline_color = CompactColorButton(
+            "●", "Select marker outline color", self,
+            accessible_name="Marker outline color",
+        )
+        self.pb_symbol_outline_color.setObjectName("pb_symbol_outline_color")
+        self.pb_symbol_outline_color.setColor(DEFAULT_OUTLINE_COLOR)
+
+        self.sb_symbol_outline_width = QtWidgets.QDoubleSpinBox(self)
+        self.sb_symbol_outline_width.setObjectName("sb_symbol_outline_width")
+        self.sb_symbol_outline_width.setRange(0.0, 2.0)
+        self.sb_symbol_outline_width.setDecimals(2)
+        self.sb_symbol_outline_width.setSingleStep(0.05)
+        self.sb_symbol_outline_width.setValue(DEFAULT_OUTLINE_WIDTH_MM)
+        self.sb_symbol_outline_width.setSuffix(" mm")
+        self.sb_symbol_outline_width.setToolTip(
+            "Marker outline width; 0.00 mm removes the outline"
+        )
+
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(9, 9, 9, 9)
         layout.setSpacing(6)
-        layout.addWidget(self.cb_symbol_continuous_colormap)
 
-        form = QtWidgets.QFormLayout()
-        form.setContentsMargins(0, 0, 0, 0)
-        form.setHorizontalSpacing(8)
-        form.setVerticalSpacing(6)
-        form.addRow("Classes", self.sb_symbol_classes)
-        form.addRow("Marker size", self.sb_symbol_size)
-        form.addRow("Opacity", self.sb_symbol_opacity)
-        layout.addLayout(form)
+        groups = QtWidgets.QHBoxLayout()
+        groups.setContentsMargins(0, 0, 0, 0)
+        groups.setSpacing(8)
 
-        self._form_layout = form
+        self.color_group = QtWidgets.QGroupBox("Color", self)
+        self.color_group.setObjectName("map_symbology_color_group")
+        color_layout = QtWidgets.QVBoxLayout(self.color_group)
+        color_layout.setContentsMargins(8, 8, 8, 8)
+        color_layout.setSpacing(6)
+        color_layout.addWidget(self.cb_symbol_continuous_colormap)
+        color_form = QtWidgets.QFormLayout()
+        color_form.setContentsMargins(0, 0, 0, 0)
+        color_form.setHorizontalSpacing(8)
+        color_form.setVerticalSpacing(6)
+        color_form.addRow("Classes", self.sb_symbol_classes)
+        color_form.addRow("Opacity", self.sb_symbol_opacity)
+        color_layout.addLayout(color_form)
+        groups.addWidget(self.color_group)
+
+        self.marker_group = QtWidgets.QGroupBox("Marker", self)
+        self.marker_group.setObjectName("map_symbology_marker_group")
+        marker_form = QtWidgets.QFormLayout(self.marker_group)
+        marker_form.setContentsMargins(8, 8, 8, 8)
+        marker_form.setHorizontalSpacing(8)
+        marker_form.setVerticalSpacing(6)
+        marker_form.addRow("Type", self.cmb_symbol_marker_shape)
+        marker_form.addRow("Size", self.sb_symbol_size)
+        marker_form.addRow("Outline", self.pb_symbol_outline_color)
+        marker_form.addRow("Width", self.sb_symbol_outline_width)
+        groups.addWidget(self.marker_group)
+        layout.addLayout(groups)
+
+        actions = QtWidgets.QHBoxLayout()
+        actions.addStretch(1)
+        self.defaults_button = createDefaultsMenu(
+            self,
+            self.applySavedDefaultRequested.emit,
+            self.saveCurrentAsDefaultRequested.emit,
+            self.applyFactoryDefaultRequested.emit,
+            "button_map_symbology_defaults",
+        )
+        actions.addWidget(self.defaults_button)
+        layout.addLayout(actions)
+
+        # Compatibility alias retained for callers/tests introduced with the first
+        # marker-controls implementation; the QGroupBox is the single real owner.
+        self.marker_section = self.marker_group
+        self._form_layout = color_form
         self._sync_continuous_colormap_controls(
             self.cb_symbol_continuous_colormap.isChecked()
         )
-        self.setMaximumWidth(280)
+        self.setMaximumWidth(360)
+
+    def set_point_marker_available(self, available):
+        """Show point-only marker controls only for a point-vector layer."""
+        self.marker_group.setVisible(bool(available))
+        self.adjustSize()
 
     def set_continuous_colormap(self, continuous):
         """Set continuous mode programmatically and synchronize dependent UI."""

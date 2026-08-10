@@ -112,6 +112,9 @@ QPushButton {
             self.cb_symbol_continuous_colormap,
             self.sb_symbol_classes,
             self.sb_symbol_size,
+            self.cmb_symbol_marker_shape,
+            self.pb_symbol_outline_color,
+            self.sb_symbol_outline_width,
             self.sb_symbol_opacity,
             self.cb_symbology_live,
             self.pb_symbology,
@@ -166,6 +169,15 @@ QPushButton {
         )
         self.cb_symbol_continuous_colormap = (
             self.symbology_settings_popup.cb_symbol_continuous_colormap
+        )
+        self.cmb_symbol_marker_shape = (
+            self.symbology_settings_popup.cmb_symbol_marker_shape
+        )
+        self.pb_symbol_outline_color = (
+            self.symbology_settings_popup.pb_symbol_outline_color
+        )
+        self.sb_symbol_outline_width = (
+            self.symbology_settings_popup.sb_symbol_outline_width
         )
 
         self.cb_symbology_live = QtWidgets.QCheckBox(self)
