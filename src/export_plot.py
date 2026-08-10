@@ -39,8 +39,12 @@ class TimeSeriesPlotExporter:
         """Export one plot and return an explicit validated result."""
         if not filename:
             return ExportResult(False, error="No export filename was provided.")
-        if not self.plotter.series_history:
-            return ExportResult(False, filename, "No time-series plot is available to export.")
+        if not self.plotter.has_exportable_plot():
+            return ExportResult(
+                False,
+                filename,
+                "No time-series plot is available to export.",
+            )
 
         plot_widget = self.plotter.ui.plot_widget
         export_item = getattr(plot_widget, 'ci', None) or plot_widget.scene()

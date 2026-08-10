@@ -1,6 +1,7 @@
 ### History
 
 v2.8.0
+- Support exporting one or multiple time series data.
 - Added an offset-reset button.
 - Improve reference offset behavior and apply only when user explicitly clicks on apply or live apply is active.
 - Added support for continuous colormaps.

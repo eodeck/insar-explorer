@@ -3,7 +3,7 @@ import math
 from dataclasses import replace
 
 from qgis.gui import QgsMapToolEmitPoint
-from qgis.PyQt.QtWidgets import QFileDialog, QComboBox
+from qgis.PyQt.QtWidgets import QFileDialog, QComboBox, QMessageBox
 from qgis.PyQt.QtCore import QObject, QPoint, QRect, QSettings, QStandardPaths, QTimer, QVariant, pyqtSignal
 from qgis.PyQt.QtGui import QColor, QIcon, QTransform
 
@@ -31,6 +31,11 @@ from .qt_compat import (
     VECTOR_LAYER,
     available_screen_geometry,
     screen_aware_popup_position,
+    exec_dialog,
+    MESSAGE_ICON_WARNING,
+    MESSAGE_ROLE_ACTION,
+    MESSAGE_ROLE_DESTRUCTIVE,
+    MESSAGE_ROLE_REJECT,
 )
 from .time_series.fit_state import TimeSeriesFitState
 from .time_series.list_state import TimeSeriesListState
@@ -759,6 +764,9 @@ class GuiController(QObject):
         panel.removeSelectedCommittedRequested.connect(
             self.removeSelectedCommittedTimeSeries
         )
+        panel.exportSelectedCommittedRequested.connect(
+            self.exportSelectedCommittedTimeSeries
+        )
         panel.copyCommittedSettingsRequested.connect(
             self.copyCommittedTimeSeriesSettings
         )
@@ -894,7 +902,6 @@ class GuiController(QObject):
         self.ui.time_series_toolbar.exportSettingsRequested.connect(self.showExportSettingsPopup)
         self.ui.time_series_toolbar.appearanceRequested.connect(self.showAppearancePopup)
         self.ui.time_series_toolbar.plotExportRequested.connect(self.saveTsPlot)
-        self.ui.time_series_toolbar.dataExportRequested.connect(self.exportTs)
 
         self.export_settings_popup.settingsChanged.connect(self.updateExportSettings)
         self.export_settings_popup.applySavedDefaultRequested.connect(self.restoreExportDefaults)
@@ -1878,7 +1885,8 @@ class GuiController(QObject):
         self.choose_point_click_handler.clearReferenceFeatureHighlight()
         self.clear_all_pending_drawing_feedback()
         self.time_series_map_overlays.set_pending_active(True)
-        self.ui.time_series_toolbar.setEnabled(True)
+        self.ui.time_series_toolbar.setSeriesControlsEnabled(True)
+        self._refreshTimeSeriesPlotExportState()
 
     def addPendingTimeSeries(self):
         """Atomically commit pending ownership and create committed-list metadata."""
@@ -1911,6 +1919,7 @@ class GuiController(QObject):
                 self.time_series_list_state.clear()
         if panel.committed_model is not None:
             panel.refresh_committed_model()
+        self._refreshTimeSeriesPlotExportState()
 
     def _clipboard_available_categories(self):
         """Return all paste categories when one coherent clipboard exists."""
@@ -2201,6 +2210,7 @@ class GuiController(QObject):
             raise
         panel = self.ui.time_series_point_panel
         panel.refresh_committed_model()
+        self._refreshTimeSeriesPlotExportState()
 
     def setCommittedTimeSeriesVisibilityBatch(self, record_ids, visible):
         """Set committed visibility for UUIDs as one renderer/list transaction."""
@@ -2246,6 +2256,7 @@ class GuiController(QObject):
                 self._plugin_diagnostic("committed_visibility_refresh", error)
             else:
                 self.msg_signal.emit(str(error), "c", 0)
+        self._refreshTimeSeriesPlotExportState()
         return True
 
     def toggleSelectedCommittedTimeSeriesVisibility(self):
@@ -2291,25 +2302,35 @@ class GuiController(QObject):
         self.ui.time_series_point_panel.refresh_committed_model()
 
     def committedTimeSeriesSelectionChanged(self, record_ids):
-        """Project selected UUIDs to map overlays and the single-record toolbar."""
+        """Project selected UUIDs and enable only record-owned toolbar controls."""
         plotter = self.choose_point_click_handler.plot_ts
         self.time_series_map_overlays.update_selection(
             record_ids, plotter.committed_record
         )
         toolbar = self.ui.time_series_toolbar
         if plotter.pending_record() is not None:
-            toolbar.setEnabled(True)
+            toolbar.setSeriesControlsEnabled(True)
+            self._refreshTimeSeriesPlotExportState()
             return
         if len(record_ids) == 1:
             plotter.setActiveSeries(record_ids[0])
-            toolbar.setEnabled(True)
+            toolbar.setSeriesControlsEnabled(True)
             self._syncActiveAnalysisControls(plotter.current_series())
+            self._refreshTimeSeriesPlotExportState()
             return
         plotter._series_store.set_active(None)
         plotter._set_current_series(None)
-        toolbar.setEnabled(False)
+        toolbar.setSeriesControlsEnabled(False)
+        self._refreshTimeSeriesPlotExportState()
         if len(record_ids) > 1:
             self.msg_signal.emit("Multiple time series selected", "i", 0)
+
+    def _refreshTimeSeriesPlotExportState(self):
+        """Project renderer-owned plot availability into the Export Plot action."""
+        plotter = self.choose_point_click_handler.plot_ts
+        self.ui.time_series_toolbar.plot_export_button.setPrimaryEnabled(
+            plotter.has_exportable_plot()
+        )
 
     def discardPendingTimeSeries(self):
         """Discard only the pending preview and preserve the active reference."""
@@ -3355,7 +3376,8 @@ class GuiController(QObject):
     def saveTsPlot(self):
         self.msg_signal.emit("", "", 0)
 
-        if self.choose_point_click_handler.plot_ts.current_series() is None:
+        plotter = self.choose_point_click_handler.plot_ts
+        if not plotter.has_exportable_plot():
             self.msg_signal.emit('No time-series plot to export.', 'w', 0)
             return
 
@@ -3390,7 +3412,7 @@ class GuiController(QObject):
         elif ext == '':
             file_path = base + '.png'
 
-        result = self.choose_point_click_handler.plot_ts.savePlotAsImage(file_path)
+        result = plotter.savePlotAsImage(file_path)
         if not result.success:
             self.msg_signal.emit(result.error or "Plot export failed.", 'e', 0)
             return
@@ -3408,11 +3430,150 @@ class GuiController(QObject):
             f"Plot exported to {exported_filename}", 'done', 0
         )
 
-    def exportTs(self):
-        """Export the latest plotted time series to CSV or TXT."""
+    @staticmethod
+    def _sanitizeTimeSeriesExportLabel(label):
+        """Return a conservative cross-platform filename component."""
+        invalid = set('<>:"/\\|?*')
+        sanitized = "".join(
+            "_" if character in invalid or ord(character) < 32 else character
+            for character in str(label or "")
+        ).strip()
+        sanitized = sanitized.rstrip(". ")
+        if not sanitized:
+            return "time_series"
+        reserved = {"CON", "PRN", "AUX", "NUL"}
+        reserved.update(f"COM{index}" for index in range(1, 10))
+        reserved.update(f"LPT{index}" for index in range(1, 10))
+        if sanitized.upper() in reserved:
+            sanitized += "_"
+        return sanitized
+
+    def _timeSeriesBatchTargets(self, directory, records, extension):
+        """Return deterministic numbered target paths for records in model order."""
+        extension = str(extension or "csv").lower().lstrip(".") or "csv"
+        return tuple(
+            os.path.join(
+                directory,
+                f"{index:03d}_{self._sanitizeTimeSeriesExportLabel(record.presentation.label)}.{extension}",
+            )
+            for index, record in enumerate(records, 1)
+        )
+
+    def _timeSeriesBatchCollisionChoice(self, collisions):
+        """Ask once how to handle preflighted batch filename collisions."""
+        dialog = QMessageBox(self.ui)
+        dialog.setWindowTitle("Export selected time series")
+        dialog.setIcon(MESSAGE_ICON_WARNING)
+        count = len(collisions)
+        noun = "file already exists" if count == 1 else "files already exist"
+        dialog.setText(f"{count} generated {noun} in the selected folder.")
+        dialog.setInformativeText(
+            "Replace only those generated files, choose another folder, or cancel the export."
+        )
+        replace_button = dialog.addButton("Replace existing", MESSAGE_ROLE_DESTRUCTIVE)
+        another_button = dialog.addButton("Choose another folder", MESSAGE_ROLE_ACTION)
+        cancel_button = dialog.addButton("Cancel", MESSAGE_ROLE_REJECT)
+        dialog.setDefaultButton(cancel_button)
+        exec_dialog(dialog)
+        clicked = dialog.clickedButton()
+        if clicked is replace_button:
+            return "replace"
+        if clicked is another_button:
+            return "another"
+        return "cancel"
+
+    @staticmethod
+    def _recordHasExportableTimeSeriesData(record):
+        """Return whether one committed record has non-empty exportable data."""
+        data = getattr(record, "data", None)
+        dates = getattr(data, "dates", None)
+        plot_values = getattr(data, "plot_values", None)
+        if dates is None or plot_values is None:
+            return False
+        try:
+            sample_count = len(dates)
+            return sample_count > 0 and sample_count == len(plot_values)
+        except TypeError:
+            return False
+
+    def _exportCommittedTimeSeriesRecord(self, file_path, record):
+        """Serialize one committed record through the established export helper."""
+        self.choose_point_click_handler.plot_ts.exportAscii(file_path, record=record)
+
+    def _exportMultipleCommittedTimeSeries(self, records):
+        """Export committed records to separate deterministic files in one folder."""
+        if any(not self._recordHasExportableTimeSeriesData(record) for record in records):
+            self.msg_signal.emit(
+                "One or more selected time series have no exportable data.", "w", 0
+            )
+            return False
+
+        extension = self.last_ts_export_format.lower().lstrip(".") or "csv"
+        directory = self.last_save_path
+        if not directory or not os.path.isdir(directory):
+            directory = self._initialExportDirectory()
+
+        while True:
+            directory = QFileDialog.getExistingDirectory(
+                self.ui,
+                "Export selected time series",
+                directory,
+            )
+            if not directory:
+                return False
+
+            targets = self._timeSeriesBatchTargets(directory, records, extension)
+            collisions = tuple(path for path in targets if os.path.lexists(path))
+            if not collisions:
+                break
+
+            choice = self._timeSeriesBatchCollisionChoice(collisions)
+            if choice == "cancel":
+                return False
+            if choice == "another":
+                continue
+            break
+
+        written = []
+        for record, file_path in zip(records, targets):
+            try:
+                self._exportCommittedTimeSeriesRecord(file_path, record)
+            except (OSError, IOError, ValueError) as error:
+                self.msg_signal.emit(
+                    f"Time-series export failed for {file_path}: {error}. "
+                    f"Exported {len(written)} of {len(targets)} files.",
+                    "e",
+                    0,
+                )
+                return False
+            written.append(file_path)
+
+        self._rememberExportPath(targets[0])
+        self.msg_signal.emit(
+            f"Exported {len(targets)} time series to {directory}", "done", 3000
+        )
+        return True
+
+    def exportSelectedCommittedTimeSeries(self):
+        """Export selected committed time series using single or batch flow."""
         self.msg_signal.emit("", "", 0)
 
-        if self.choose_point_click_handler.plot_ts.dates is None:
+        selected_ids = self.ui.time_series_point_panel.selected_committed_ids()
+        if not selected_ids:
+            return
+
+        plotter = self.choose_point_click_handler.plot_ts
+        records = tuple(plotter.committed_record(record_id) for record_id in selected_ids)
+        if any(record is None for record in records):
+            self.ui.time_series_point_panel.refresh_removal_actions()
+            return
+
+        if len(records) > 1:
+            self._exportMultipleCommittedTimeSeries(records)
+            return
+
+        record = records[0]
+        if not self._recordHasExportableTimeSeriesData(record):
             self.msg_signal.emit('No time series to export.', 'w', 0)
             return
 
@@ -3446,7 +3607,13 @@ class GuiController(QObject):
         elif ext == '':
             file_path = base + '.csv'
 
-        self.choose_point_click_handler.plot_ts.exportAscii(file_path)
+        try:
+            self._exportCommittedTimeSeriesRecord(file_path, record)
+        except (OSError, IOError, ValueError) as error:
+            self.msg_signal.emit(
+                f"Time-series export failed for {file_path}: {error}", 'e', 0
+            )
+            return
 
         self._rememberExportPath(file_path)
         self._rememberExportFormat('insar_explorer/ts_export_format', file_path)
@@ -3454,3 +3621,4 @@ class GuiController(QObject):
         self.last_export_ts_name = os.path.basename(file_path)
 
         self.msg_signal.emit(f'Time series exported: {file_path}', 'done', 3000)
+

@@ -2024,6 +2024,20 @@ class PlotTs():
         """Return the uncommitted record, if any."""
         return self._pending_session.record()
 
+    def has_exportable_plot(self) -> bool:
+        """Return whether renderer-owned visible time-series graphics exist."""
+        graphics_groups = (
+            tuple(self._pending_graphics_by_series_id.values()),
+            tuple(self._graphics_by_series_id.values()),
+        )
+        for graphics_group in graphics_groups:
+            for graphics in graphics_group:
+                for item in self._graphics_items(graphics):
+                    is_visible = getattr(item, "isVisible", None)
+                    if is_visible is None or bool(is_visible()):
+                        return True
+        return False
+
     def editable_time_series_record(self) -> Optional[TimeSeriesRecord]:
         """Return pending first, otherwise the active committed record."""
         return resolve_editable_record(self.pending_record(), self.current_series())
@@ -2407,10 +2421,12 @@ class PlotTs():
         """Return the legacy point/polygon label for export headers."""
         return (selection.kind.value if selection is not None else SpatialSelectionKind.POINT.value)
 
-    def exportAscii(self, filename=None):
+    def exportAscii(self, filename=None, record=None):
+        """Export one explicit record, retaining the legacy active-series fallback."""
         if filename is None:
             return
-        record = self.editable_time_series_record()
+        if record is None:
+            record = self.editable_time_series_record()
         if record is None:
             if self.dates is None or self.plot_values is None:
                 return

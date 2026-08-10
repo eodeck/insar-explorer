@@ -32,7 +32,6 @@ class TimeSeriesToolbar(QToolBar):
     appearanceRequested = pyqtSignal()
     exportSettingsRequested = pyqtSignal()
     plotExportRequested = pyqtSignal()
-    dataExportRequested = pyqtSignal()
     fitEnabledChanged = pyqtSignal(bool)
     fitSettingsRequested = pyqtSignal()
     fitModelChanged = pyqtSignal(str)
@@ -239,13 +238,7 @@ class TimeSeriesToolbar(QToolBar):
         self.plot_export_button.setStatusTip(
             "Export plot; use the arrow for export settings."
         )
-        self.data_export_action = self._createAction(
-            ":/icons/icons/export.svg",
-            "Export data",
-            "Export the current time-series data",
-            "action_ts_export_data",
-        )
-
+        self.plot_export_button.setPrimaryEnabled(False)
         self.addAction(self.plot_style_action)
         self.addSeparator()
         self.addWidget(self.x_axis_button)
@@ -265,11 +258,9 @@ class TimeSeriesToolbar(QToolBar):
         self.addAction(self.appearance_action)
         self.addSeparator()
         self.addWidget(self.plot_export_button)
-        self.addAction(self.data_export_action)
 
         for action in (
             self.appearance_action,
-            self.data_export_action,
             self.plot_style_action,
         ):
             self._setActionControlRole(action, "command")
@@ -282,7 +273,6 @@ class TimeSeriesToolbar(QToolBar):
         self.plot_export_button.secondaryTriggered.connect(
             self.exportSettingsRequested.emit
         )
-        self.data_export_action.triggered.connect(self.dataExportRequested.emit)
         self.fit_button.primaryToggled.connect(self.fitEnabledChanged.emit)
         self.fit_button.secondaryTriggered.connect(self.fitSettingsRequested.emit)
         self.x_axis_group.triggered.connect(self._xAxisActionTriggered)
@@ -291,6 +281,16 @@ class TimeSeriesToolbar(QToolBar):
         self.edit_manual_y_axis_action.triggered.connect(self.manualYAxisEditRequested.emit)
         self.replica_button.primaryToggled.connect(self.replicaEnabledChanged.emit)
         self.replica_button.secondaryTriggered.connect(self.replicaSettingsRequested.emit)
+
+    def setSeriesControlsEnabled(self, enabled):
+        """Enable controls that require one editable time-series record."""
+        enabled = bool(enabled)
+        self.plot_style_action.setEnabled(enabled)
+        self.appearance_action.setEnabled(enabled)
+        self.x_axis_button.setEnabled(enabled)
+        self.y_axis_button.setEnabled(enabled)
+        self.fit_button.setEnabled(enabled)
+        self.replica_button.setEnabled(enabled)
 
     def setFitEnabled(self, enabled):
         """Update the Fit primary state without emitting a user-change signal."""
