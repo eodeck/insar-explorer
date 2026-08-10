@@ -57,6 +57,7 @@ ALIGN_RIGHT_VCENTER = ALIGN_RIGHT | ALIGN_VCENTER
 YELLOW = _enum_value(Qt, "GlobalColor", "yellow")
 RED = _enum_value(Qt, "GlobalColor", "red")
 WAIT_CURSOR = _enum_value(Qt, "CursorShape", "WaitCursor")
+CROSS_CURSOR = _enum_value(Qt, "CursorShape", "CrossCursor")
 LEFT_MOUSE_BUTTON = _enum_value(Qt, "MouseButton", "LeftButton")
 KEY_SPACE = _enum_value(Qt, "Key", "Key_Space")
 KEY_F2 = _enum_value(Qt, "Key", "Key_F2")
