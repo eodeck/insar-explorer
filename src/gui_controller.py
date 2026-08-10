@@ -3253,7 +3253,7 @@ class GuiController(QObject):
         self.ui.pb_set_reference_polygon.setChecked(False)
         if status:
             self.initializePolygonDrawingTool()
-            self.msg_signal.emit("Click multiple points to draw polygon; right‑click to close polygon and plot time "
+            self.msg_signal.emit("Click to add polygon vertices; double-click or right-click to finish and plot time "
                                  "series.", "t", 0)
         else:
             self.deactivatePolygonDrawingTool(reference=False)
@@ -3264,8 +3264,7 @@ class GuiController(QObject):
         self.ui.pb_choose_polygon.setChecked(False)
         if status:
             self.initializePolygonDrawingTool(reference=True)
-            self.msg_signal.emit("Click multiple points to draw reference polygon; right‑click to close polygon.", "t",
-                                 0)
+            self.msg_signal.emit("Click to add polygon vertices; double-click or right-click to finish.", "t", 0)
         else:
             self.deactivatePolygonDrawingTool(reference=True)
 
