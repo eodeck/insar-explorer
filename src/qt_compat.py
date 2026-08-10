@@ -184,6 +184,7 @@ MESSAGE_ICON_WARNING = _enum_value(QMessageBox, "Icon", "Warning")
 MESSAGE_BUTTON_OK = _enum_value(QMessageBox, "StandardButton", "Ok")
 MESSAGE_BUTTON_CANCEL = _enum_value(QMessageBox, "StandardButton", "Cancel")
 MESSAGE_ROLE_DESTRUCTIVE = _enum_value(QMessageBox, "ButtonRole", "DestructiveRole")
+MESSAGE_ROLE_ACTION = _enum_value(QMessageBox, "ButtonRole", "ActionRole")
 MESSAGE_ROLE_REJECT = _enum_value(QMessageBox, "ButtonRole", "RejectRole")
 
 # QColorDialog enums

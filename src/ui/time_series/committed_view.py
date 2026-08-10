@@ -231,7 +231,7 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
         selected_ids = self._selected_record_ids()
         self.rename_action.setEnabled(not editing and len(selected_ids) == 1)
         self.remove_action.setEnabled(not editing and bool(selected_ids))
-        self.export_action.setEnabled(not editing and len(selected_ids) == 1)
+        self.export_action.setEnabled(not editing and bool(selected_ids))
         self.assign_distinct_colors_action.setEnabled(
             not editing and len(selected_ids) >= 2
         )
@@ -316,8 +316,8 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
             self.removeSelectedRequested.emit()
 
     def _request_selected_export(self):
-        """Emit export intent only for exactly one committed UUID selection."""
-        if self.state() != EDITING_STATE and len(self._selected_record_ids()) == 1:
+        """Emit export intent when one or more committed UUIDs are selected."""
+        if self.state() != EDITING_STATE and self._selected_record_ids():
             self.exportDataRequested.emit()
 
     def _prepare_context_selection(self, index):

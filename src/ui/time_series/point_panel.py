@@ -16,6 +16,7 @@ from ...qt_compat import (
     EDIT_DOUBLE_CLICKED,
     EDIT_KEY_PRESSED,
     EDIT_SELECTED_CLICKED,
+    EDITING_STATE,
     NO_EDIT_TRIGGERS,
     HEADER_FIXED,
     HEADER_STRETCH,
@@ -464,7 +465,10 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         """Return selected committed UUIDs without using row identity."""
         if self.committed_model is None or self.committed_view.selectionModel() is None:
             return ()
-        rows = self.committed_view.selectionModel().selectedRows()
+        rows = sorted(
+            self.committed_view.selectionModel().selectedRows(),
+            key=lambda index: index.row(),
+        )
         return tuple(
             record_id for record_id in (
                 self.committed_model.record_id_at(index.row()) for index in rows
@@ -571,21 +575,25 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
     def refresh_removal_actions(self):
         """Enable committed-list commands from selection and clipboard projection."""
         selected_ids = self.selected_committed_ids()
-        selected = bool(selected_ids)
+        selection_count = len(selected_ids)
+        single_selected = selection_count == 1
+        any_selected = selection_count >= 1
+        editing = self.committed_view.state() == EDITING_STATE
         committed_count = (
             0 if self.committed_model is None else self.committed_model.rowCount()
         )
         self.copy_paste_button.setEnabled(committed_count > 0)
         self.committed_view.refresh_action_enabled_states()
+
+        export_enabled = any_selected and not editing
+        self.committed_view.export_action.setEnabled(export_enabled)
         self.remove_selected_button.setEnabled(
             self.committed_view.remove_action.isEnabled()
         )
-        self.export_selected_button.setEnabled(
-            self.committed_view.export_action.isEnabled()
-        )
+        self.export_selected_button.setEnabled(export_enabled)
         self.committed_view.set_copy_paste_enabled(
-            copy_enabled=len(selected_ids) == 1,
-            paste_categories=self._clipboard_categories if selected else (),
+            copy_enabled=single_selected,
+            paste_categories=self._clipboard_categories if any_selected else (),
         )
 
     def _emit_committed_selection(self, *_):

@@ -3,7 +3,7 @@ import math
 from dataclasses import replace
 
 from qgis.gui import QgsMapToolEmitPoint
-from qgis.PyQt.QtWidgets import QFileDialog, QComboBox
+from qgis.PyQt.QtWidgets import QFileDialog, QComboBox, QMessageBox
 from qgis.PyQt.QtCore import QObject, QPoint, QRect, QSettings, QStandardPaths, QTimer, QVariant, pyqtSignal
 from qgis.PyQt.QtGui import QColor, QIcon, QTransform
 
@@ -31,6 +31,11 @@ from .qt_compat import (
     VECTOR_LAYER,
     available_screen_geometry,
     screen_aware_popup_position,
+    exec_dialog,
+    MESSAGE_ICON_WARNING,
+    MESSAGE_ROLE_ACTION,
+    MESSAGE_ROLE_DESTRUCTIVE,
+    MESSAGE_ROLE_REJECT,
 )
 from .time_series.fit_state import TimeSeriesFitState
 from .time_series.list_state import TimeSeriesListState
@@ -3410,20 +3415,150 @@ class GuiController(QObject):
             f"Plot exported to {exported_filename}", 'done', 0
         )
 
+    @staticmethod
+    def _sanitizeTimeSeriesExportLabel(label):
+        """Return a conservative cross-platform filename component."""
+        invalid = set('<>:"/\\|?*')
+        sanitized = "".join(
+            "_" if character in invalid or ord(character) < 32 else character
+            for character in str(label or "")
+        ).strip()
+        sanitized = sanitized.rstrip(". ")
+        if not sanitized:
+            return "time_series"
+        reserved = {"CON", "PRN", "AUX", "NUL"}
+        reserved.update(f"COM{index}" for index in range(1, 10))
+        reserved.update(f"LPT{index}" for index in range(1, 10))
+        if sanitized.upper() in reserved:
+            sanitized += "_"
+        return sanitized
+
+    def _timeSeriesBatchTargets(self, directory, records, extension):
+        """Return deterministic numbered target paths for records in model order."""
+        extension = str(extension or "csv").lower().lstrip(".") or "csv"
+        return tuple(
+            os.path.join(
+                directory,
+                f"{index:03d}_{self._sanitizeTimeSeriesExportLabel(record.presentation.label)}.{extension}",
+            )
+            for index, record in enumerate(records, 1)
+        )
+
+    def _timeSeriesBatchCollisionChoice(self, collisions):
+        """Ask once how to handle preflighted batch filename collisions."""
+        dialog = QMessageBox(self.ui)
+        dialog.setWindowTitle("Export selected time series")
+        dialog.setIcon(MESSAGE_ICON_WARNING)
+        count = len(collisions)
+        noun = "file already exists" if count == 1 else "files already exist"
+        dialog.setText(f"{count} generated {noun} in the selected folder.")
+        dialog.setInformativeText(
+            "Replace only those generated files, choose another folder, or cancel the export."
+        )
+        replace_button = dialog.addButton("Replace existing", MESSAGE_ROLE_DESTRUCTIVE)
+        another_button = dialog.addButton("Choose another folder", MESSAGE_ROLE_ACTION)
+        cancel_button = dialog.addButton("Cancel", MESSAGE_ROLE_REJECT)
+        dialog.setDefaultButton(cancel_button)
+        exec_dialog(dialog)
+        clicked = dialog.clickedButton()
+        if clicked is replace_button:
+            return "replace"
+        if clicked is another_button:
+            return "another"
+        return "cancel"
+
+    @staticmethod
+    def _recordHasExportableTimeSeriesData(record):
+        """Return whether one committed record has non-empty exportable data."""
+        data = getattr(record, "data", None)
+        dates = getattr(data, "dates", None)
+        plot_values = getattr(data, "plot_values", None)
+        if dates is None or plot_values is None:
+            return False
+        try:
+            sample_count = len(dates)
+            return sample_count > 0 and sample_count == len(plot_values)
+        except TypeError:
+            return False
+
+    def _exportCommittedTimeSeriesRecord(self, file_path, record):
+        """Serialize one committed record through the established export helper."""
+        self.choose_point_click_handler.plot_ts.exportAscii(file_path, record=record)
+
+    def _exportMultipleCommittedTimeSeries(self, records):
+        """Export committed records to separate deterministic files in one folder."""
+        if any(not self._recordHasExportableTimeSeriesData(record) for record in records):
+            self.msg_signal.emit(
+                "One or more selected time series have no exportable data.", "w", 0
+            )
+            return False
+
+        extension = self.last_ts_export_format.lower().lstrip(".") or "csv"
+        directory = self.last_save_path
+        if not directory or not os.path.isdir(directory):
+            directory = self._initialExportDirectory()
+
+        while True:
+            directory = QFileDialog.getExistingDirectory(
+                self.ui,
+                "Export selected time series",
+                directory,
+            )
+            if not directory:
+                return False
+
+            targets = self._timeSeriesBatchTargets(directory, records, extension)
+            collisions = tuple(path for path in targets if os.path.lexists(path))
+            if not collisions:
+                break
+
+            choice = self._timeSeriesBatchCollisionChoice(collisions)
+            if choice == "cancel":
+                return False
+            if choice == "another":
+                continue
+            break
+
+        written = []
+        for record, file_path in zip(records, targets):
+            try:
+                self._exportCommittedTimeSeriesRecord(file_path, record)
+            except (OSError, IOError, ValueError) as error:
+                self.msg_signal.emit(
+                    f"Time-series export failed for {file_path}: {error}. "
+                    f"Exported {len(written)} of {len(targets)} files.",
+                    "e",
+                    0,
+                )
+                return False
+            written.append(file_path)
+
+        self._rememberExportPath(targets[0])
+        self.msg_signal.emit(
+            f"Exported {len(targets)} time series to {directory}", "done", 3000
+        )
+        return True
+
     def exportSelectedCommittedTimeSeries(self):
-        """Export the exactly-one selected committed time series to CSV or TXT."""
+        """Export selected committed time series using single or batch flow."""
         self.msg_signal.emit("", "", 0)
 
         selected_ids = self.ui.time_series_point_panel.selected_committed_ids()
-        if len(selected_ids) != 1:
+        if not selected_ids:
             return
 
         plotter = self.choose_point_click_handler.plot_ts
-        record = plotter.committed_record(selected_ids[0])
-        if record is None:
+        records = tuple(plotter.committed_record(record_id) for record_id in selected_ids)
+        if any(record is None for record in records):
             self.ui.time_series_point_panel.refresh_removal_actions()
             return
-        if record.data.dates is None or record.data.plot_values is None:
+
+        if len(records) > 1:
+            self._exportMultipleCommittedTimeSeries(records)
+            return
+
+        record = records[0]
+        if not self._recordHasExportableTimeSeriesData(record):
             self.msg_signal.emit('No time series to export.', 'w', 0)
             return
 
@@ -3457,7 +3592,13 @@ class GuiController(QObject):
         elif ext == '':
             file_path = base + '.csv'
 
-        plotter.exportAscii(file_path, record=record)
+        try:
+            self._exportCommittedTimeSeriesRecord(file_path, record)
+        except (OSError, IOError, ValueError) as error:
+            self.msg_signal.emit(
+                f"Time-series export failed for {file_path}: {error}", 'e', 0
+            )
+            return
 
         self._rememberExportPath(file_path)
         self._rememberExportFormat('insar_explorer/ts_export_format', file_path)
