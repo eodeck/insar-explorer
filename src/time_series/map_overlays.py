@@ -51,13 +51,13 @@ _POINT_INNER_RING = "inner_ring"
 def point_marker_icon_for_role(role: str):
     """Return the fixed point-marker icon for a target or reference role.
 
-    Targets use hollow squares and references use hollow circles. The mapping
+    Targets use hollow circles and references use hollow squares. The mapping
     is presentation-only and is shared by pending and committed overlays.
     """
     if role == "target":
-        return _VERTEX_MARKER_BOX
-    if role == "reference":
         return _VERTEX_MARKER_CIRCLE
+    if role == "reference":
+        return _VERTEX_MARKER_BOX
     raise ValueError("unsupported point-indicator role: {!r}".format(role))
 
 
