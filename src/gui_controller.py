@@ -4,7 +4,9 @@ from dataclasses import replace
 
 from qgis.gui import QgsMapToolEmitPoint
 from qgis.PyQt.QtWidgets import QFileDialog, QComboBox, QMessageBox
-from qgis.PyQt.QtCore import QObject, QPoint, QRect, QSettings, QStandardPaths, QTimer, QVariant, pyqtSignal
+from qgis.PyQt.QtCore import (
+    QObject, QPoint, QRect, QSettings, QSignalBlocker, QStandardPaths, QTimer, QVariant, pyqtSignal,
+)
 from qgis.PyQt.QtGui import QColor, QIcon, QTransform
 
 from . import map_click_handler as cph
@@ -191,7 +193,8 @@ class GuiController(QObject):
             self.time_series_list_state, plotter.committed_record
         )
         self._refreshTimeSeriesClipboardProjection()
-        self.click_tool = None  # plugin.click_tool
+        self.click_tool = None  # target point selection tool
+        self.reference_click_tool = None  # reference point selection tool
         self.drawing_tool = None  # for polygon drawing
         self.drawing_tool_reference = None  # for reference polygon drawing
         self.selection_type = "point"  # "point" or "polygon" or "reference polygon"
@@ -258,11 +261,10 @@ class GuiController(QObject):
         self._range_programmatic_update = False
         self._std_calculation_mode = StdCalculationMode.FAST
         self._pending_default_range_layer_id = None
+        self._map_tool_signal_connected = False
         self.initializeUiParams()
         self.connectUiSignals()
-        # make point selection active by default
-        self.ui.pb_choose_point.setChecked(True)
-        self.activatePointSelection(True)
+        self._syncSelectionControlsToActiveMapTool()
 
         self.iface.currentLayerChanged.connect(self.onLayerChanged)
         self.onLayerChanged()
@@ -387,7 +389,6 @@ class GuiController(QObject):
                 message = "Unsupported layer selected. Please choose a layer compatible with InSAR Explorer."
             else:
                 self.ui.settings_panel.setEnabled(True)
-                self.ui.pb_choose_point.setChecked(True)
                 message = ""
             self.msg_signal.emit(message, "i", 0)
 
@@ -580,24 +581,40 @@ class GuiController(QObject):
         self._projectComputedRangeSource(source, raw_values)
         self.applyLiveSymbology()
 
-    def initializeClickTool(self):
-        if not self.click_tool:
-            self.click_tool = QgsMapToolEmitPoint(self.iface.mapCanvas())
-            self.click_tool.canvasClicked.connect(lambda point: self.onMapClicked(point=point))
+    def initializeClickTool(self, reference=False):
+        """Create the role-specific point map tool on first use."""
+        attribute = "reference_click_tool" if reference else "click_tool"
+        tool = getattr(self, attribute)
+        if tool is None:
+            tool = QgsMapToolEmitPoint(self.iface.mapCanvas())
+            tool.canvasClicked.connect(
+                lambda point, *args, ref=reference: self.onMapClicked(
+                    point=point, reference=ref
+                )
+            )
+            setattr(self, attribute, tool)
+        return tool
 
-    def onMapClicked(self, point):
+    def onMapClicked(self, point, reference=False):
         self.msg_signal.emit("", "i", 0)
-        self.choose_point_click_handler.choosePointClicked(point=point, layer=None,
-                                                           ref=self.ui.pb_set_reference.isChecked(),
-                                                           start_callback=self.removePolygonDrawingTool(
-                                                               self.ui.pb_set_reference.isChecked()))
+        self.choose_point_click_handler.choosePointClicked(
+            point=point,
+            layer=None,
+            ref=reference,
+            start_callback=self.removePolygonDrawingTool(reference),
+        )
 
-        if self.ui.pb_set_reference.isChecked():
+        if reference:
             self.syncOffsetWithReference()
 
-    def removeClickTool(self):
-        self.iface.mapCanvas().unsetMapTool(self.click_tool)
-        self.click_tool = None
+    def removeClickTool(self, reference=False):
+        """Remove one role-specific point tool without affecting the other role."""
+        attribute = "reference_click_tool" if reference else "click_tool"
+        tool = getattr(self, attribute)
+        if tool is None:
+            return
+        self.iface.mapCanvas().unsetMapTool(tool)
+        setattr(self, attribute, None)
 
     def initializePolygonDrawingTool(self, reference=False):
         if not reference:
@@ -960,7 +977,70 @@ class GuiController(QObject):
         self.ui.cb_symbology_live.toggled.connect(self.activateLiveSymbology)
         self.ui.cmb_colormap.currentIndexChanged.connect(self.applyLiveSymbology)
         self.ui.pb_colormap_reverse.toggled.connect(self.colormapReverseClicked)
+        self._connectMapToolSync()
         self._setSymbologyDirty(False)
+
+    def _connectMapToolSync(self):
+        """Connect once to the canvas map-tool lifecycle."""
+        if self._map_tool_signal_connected:
+            return
+        self.iface.mapCanvas().mapToolSet.connect(self._onMapToolChanged)
+        self._map_tool_signal_connected = True
+
+    def disconnectMapToolSync(self):
+        """Disconnect the long-lived canvas map-tool signal during teardown."""
+        if not self._map_tool_signal_connected:
+            return
+        try:
+            self.iface.mapCanvas().mapToolSet.disconnect(self._onMapToolChanged)
+        except (TypeError, RuntimeError):
+            pass
+        self._map_tool_signal_connected = False
+
+    def _syncSelectionControlsToActiveMapTool(self):
+        """Project the current canvas tool without changing QGIS interaction state."""
+        self._onMapToolChanged(self.iface.mapCanvas().mapTool())
+
+    @staticmethod
+    def _isActiveMapTool(new_tool, tool):
+        """Return whether an initialized plugin tool is the active canvas tool."""
+        return tool is not None and new_tool is tool
+
+    def _onMapToolChanged(self, new_tool, old_tool=None):
+        """Project the actual active QGIS map tool into selection-button state."""
+        del old_tool
+        if new_tool is None:
+            button_states = (
+                (self.ui.pb_choose_point, False),
+                (self.ui.pb_choose_polygon, False),
+                (self.ui.pb_set_reference, False),
+                (self.ui.pb_set_reference_polygon, False),
+            )
+        else:
+            button_states = (
+                (
+                    self.ui.pb_choose_point,
+                    self._isActiveMapTool(new_tool, self.click_tool),
+                ),
+                (
+                    self.ui.pb_choose_polygon,
+                    self._isActiveMapTool(new_tool, self.drawing_tool),
+                ),
+                (
+                    self.ui.pb_set_reference,
+                    self._isActiveMapTool(new_tool, self.reference_click_tool),
+                ),
+                (
+                    self.ui.pb_set_reference_polygon,
+                    self._isActiveMapTool(new_tool, self.drawing_tool_reference),
+                ),
+            )
+        blockers = [QSignalBlocker(button) for button, _ in button_states]
+        try:
+            for button, checked in button_states:
+                button.setChecked(checked)
+        finally:
+            del blockers
 
     def _setRangeSource(self, source):
         """Set semantic source and project it into the popup without feedback."""
@@ -3217,7 +3297,8 @@ class GuiController(QObject):
             self.clearTimeSeriesMapOverlays()
             self.choose_point_click_handler.clearFeatureHighlight()
             self.choose_point_click_handler.clearReferenceFeatureHighlight()
-            self.removeClickTool()
+            self.removeClickTool(reference=False)
+            self.removeClickTool(reference=True)
             self.removePolygonDrawingTool(reference=False)
             self.removePolygonDrawingTool(reference=True)
             self.ui.pb_choose_point.setChecked(False)
@@ -3229,23 +3310,23 @@ class GuiController(QObject):
         self.ui.pb_choose_polygon.setChecked(False)
         self.ui.pb_set_reference_polygon.setChecked(False)
         if status:
-            self.initializeClickTool()
-            self.iface.mapCanvas().setMapTool(self.click_tool)
+            tool = self.initializeClickTool(reference=False)
+            self.iface.mapCanvas().setMapTool(tool)
             self.msg_signal.emit("Click any point on the map to view its time series.", "t", 0)
         else:
-            self.removeClickTool()
+            self.removeClickTool(reference=False)
 
     def activateReferencePointSelection(self, status):
         self.ui.pb_choose_point.setChecked(False)
         self.ui.pb_choose_polygon.setChecked(False)
         self.ui.pb_set_reference_polygon.setChecked(False)
         if status:
-            self.initializeClickTool()
-            self.iface.mapCanvas().setMapTool(self.click_tool)
+            tool = self.initializeClickTool(reference=True)
+            self.iface.mapCanvas().setMapTool(tool)
             self.msg_signal.emit("Click any point on the map to set it as reference.", "t", 0)
         else:
             self.ui.pb_set_reference.setChecked(False)
-            self.removeClickTool()
+            self.removeClickTool(reference=True)
 
     def activatePolygonSelection(self, status):
         self.ui.pb_choose_point.setChecked(False)
