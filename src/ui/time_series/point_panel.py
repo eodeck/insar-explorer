@@ -103,6 +103,7 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
     committedSelectionChanged = pyqtSignal(tuple)
     committedVisibilityAllRequested = pyqtSignal(bool)
     removeSelectedCommittedRequested = pyqtSignal()
+    exportSelectedCommittedRequested = pyqtSignal()
     copyCommittedSettingsRequested = pyqtSignal()
     pasteCommittedRequested = pyqtSignal(object)
     assignDistinctColorsRequested = pyqtSignal()
@@ -354,6 +355,21 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
             self.committed_view.create_copy_paste_menu(self.copy_paste_button)
         )
         removal_actions.addWidget(self.copy_paste_button, 0, ALIGN_VCENTER)
+        self.export_selected_button = self._pending_action_button(
+            "pb_export_selected_time_series",
+            ":/icons/icons/export.svg",
+            "Export selected time-series data",
+            "Export selected time-series data",
+        )
+        self.export_selected_button.clicked.connect(
+            self.committed_view.export_action.trigger
+        )
+        self.committed_view.export_action.changed.connect(
+            self._sync_export_button_enabled
+        )
+        removal_actions.addWidget(
+            self.export_selected_button, 0, ALIGN_VCENTER
+        )
         self.remove_selected_button = self._pending_action_button(
             "pb_remove_selected_time_series",
             ":/icons/icons/item_remove.svg",
@@ -386,6 +402,9 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         layout.addLayout(removal_actions)
         self.committed_view.removeSelectedRequested.connect(
             self.removeSelectedCommittedRequested.emit
+        )
+        self.committed_view.exportDataRequested.connect(
+            self.exportSelectedCommittedRequested.emit
         )
         self.committed_view.copySettingsRequested.connect(
             self.copyCommittedSettingsRequested.emit
@@ -543,6 +562,12 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
             self.committed_view.remove_action.isEnabled()
         )
 
+    def _sync_export_button_enabled(self):
+        """Mirror the shared Export action state onto the bottom button."""
+        self.export_selected_button.setEnabled(
+            self.committed_view.export_action.isEnabled()
+        )
+
     def refresh_removal_actions(self):
         """Enable committed-list commands from selection and clipboard projection."""
         selected_ids = self.selected_committed_ids()
@@ -554,6 +579,9 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         self.committed_view.refresh_action_enabled_states()
         self.remove_selected_button.setEnabled(
             self.committed_view.remove_action.isEnabled()
+        )
+        self.export_selected_button.setEnabled(
+            self.committed_view.export_action.isEnabled()
         )
         self.committed_view.set_copy_paste_enabled(
             copy_enabled=len(selected_ids) == 1,

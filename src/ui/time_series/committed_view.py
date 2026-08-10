@@ -26,6 +26,7 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
     pasteRequested = pyqtSignal(object)
     assignDistinctColorsRequested = pyqtSignal()
     toggleSelectedVisibilityRequested = pyqtSignal()
+    exportDataRequested = pyqtSignal()
 
     def __init__(self, parent=None):
         """Create an intent-only view with a shared removal context action."""
@@ -61,6 +62,20 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
         self.remove_action.setEnabled(False)
         self.remove_action.triggered.connect(self._request_selected_removal)
         self.addAction(self.remove_action)
+        self.export_action = QAction(
+            QtGui.QIcon(":/icons/icons/export.svg"), "Export data", self
+        )
+        self.export_action.setObjectName("action_export_selected_time_series")
+        self.export_action.setToolTip("Export selected time-series data")
+        self.export_action.setStatusTip("Export selected time-series data")
+        set_export_accessible_name = getattr(
+            self.export_action, "setAccessibleName", None
+        )
+        if callable(set_export_accessible_name):
+            set_export_accessible_name("Export selected time-series data")
+        self.export_action.setEnabled(False)
+        self.export_action.triggered.connect(self._request_selected_export)
+        self.addAction(self.export_action)
         from ...time_series.copy_paste import CopyPasteCategory
         self.copy_settings_action = QAction("Copy Style, Fit and Replica", self)
         self.copy_settings_action.setObjectName("action_copy_time_series_settings")
@@ -216,6 +231,7 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
         selected_ids = self._selected_record_ids()
         self.rename_action.setEnabled(not editing and len(selected_ids) == 1)
         self.remove_action.setEnabled(not editing and bool(selected_ids))
+        self.export_action.setEnabled(not editing and len(selected_ids) == 1)
         self.assign_distinct_colors_action.setEnabled(
             not editing and len(selected_ids) >= 2
         )
@@ -299,6 +315,11 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
         if self.state() != EDITING_STATE and self._has_selected_rows():
             self.removeSelectedRequested.emit()
 
+    def _request_selected_export(self):
+        """Emit export intent only for exactly one committed UUID selection."""
+        if self.state() != EDITING_STATE and len(self._selected_record_ids()) == 1:
+            self.exportDataRequested.emit()
+
     def _prepare_context_selection(self, index):
         """Select an unselected right-clicked row and preserve existing groups."""
         if not index.isValid():
@@ -334,6 +355,7 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
         menu = QtWidgets.QMenu(self)
         menu.addAction(self.copy_settings_action)
         menu.addMenu(self.paste_menu)
+        menu.addAction(self.export_action)
         menu.addAction(self.assign_distinct_colors_action)
         menu.addSeparator()
         menu.addAction(self.rename_action)

@@ -2407,10 +2407,12 @@ class PlotTs():
         """Return the legacy point/polygon label for export headers."""
         return (selection.kind.value if selection is not None else SpatialSelectionKind.POINT.value)
 
-    def exportAscii(self, filename=None):
+    def exportAscii(self, filename=None, record=None):
+        """Export one explicit record, retaining the legacy active-series fallback."""
         if filename is None:
             return
-        record = self.editable_time_series_record()
+        if record is None:
+            record = self.editable_time_series_record()
         if record is None:
             if self.dates is None or self.plot_values is None:
                 return

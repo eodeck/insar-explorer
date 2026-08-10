@@ -759,6 +759,9 @@ class GuiController(QObject):
         panel.removeSelectedCommittedRequested.connect(
             self.removeSelectedCommittedTimeSeries
         )
+        panel.exportSelectedCommittedRequested.connect(
+            self.exportSelectedCommittedTimeSeries
+        )
         panel.copyCommittedSettingsRequested.connect(
             self.copyCommittedTimeSeriesSettings
         )
@@ -894,7 +897,6 @@ class GuiController(QObject):
         self.ui.time_series_toolbar.exportSettingsRequested.connect(self.showExportSettingsPopup)
         self.ui.time_series_toolbar.appearanceRequested.connect(self.showAppearancePopup)
         self.ui.time_series_toolbar.plotExportRequested.connect(self.saveTsPlot)
-        self.ui.time_series_toolbar.dataExportRequested.connect(self.exportTs)
 
         self.export_settings_popup.settingsChanged.connect(self.updateExportSettings)
         self.export_settings_popup.applySavedDefaultRequested.connect(self.restoreExportDefaults)
@@ -3408,11 +3410,20 @@ class GuiController(QObject):
             f"Plot exported to {exported_filename}", 'done', 0
         )
 
-    def exportTs(self):
-        """Export the latest plotted time series to CSV or TXT."""
+    def exportSelectedCommittedTimeSeries(self):
+        """Export the exactly-one selected committed time series to CSV or TXT."""
         self.msg_signal.emit("", "", 0)
 
-        if self.choose_point_click_handler.plot_ts.dates is None:
+        selected_ids = self.ui.time_series_point_panel.selected_committed_ids()
+        if len(selected_ids) != 1:
+            return
+
+        plotter = self.choose_point_click_handler.plot_ts
+        record = plotter.committed_record(selected_ids[0])
+        if record is None:
+            self.ui.time_series_point_panel.refresh_removal_actions()
+            return
+        if record.data.dates is None or record.data.plot_values is None:
             self.msg_signal.emit('No time series to export.', 'w', 0)
             return
 
@@ -3446,7 +3457,7 @@ class GuiController(QObject):
         elif ext == '':
             file_path = base + '.csv'
 
-        self.choose_point_click_handler.plot_ts.exportAscii(file_path)
+        plotter.exportAscii(file_path, record=record)
 
         self._rememberExportPath(file_path)
         self._rememberExportFormat('insar_explorer/ts_export_format', file_path)
