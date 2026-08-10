@@ -81,6 +81,10 @@ class PolygonDrawingTool(QgsMapTool):
 
     def canvasMoveEvent(self, event) -> None:
         """Preview the next polygon edge/shape without committing a vertex."""
+        if self.last_point:
+            self._clearPreview()
+            return
+
         committed_points = self.polygon_marker.points
         if not committed_points:
             self._clearPreview()
