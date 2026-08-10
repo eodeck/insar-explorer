@@ -74,13 +74,28 @@ class PolygonDrawingTool(QgsMapTool):
     def canvasReleaseEvent(self, event) -> None:
         """Check for right-click to finalize the polygon"""
         if event.button() == RIGHT_MOUSE_BUTTON:
-            if len(self.polygon_marker.points) > 2:  # A valid polygon requires at least 3 points
-                self.finalizePolygon()
-                self.last_point = True
-                self.first_point = True
-            else:
+            if not self._finishDrawingIfValid():
                 self.cancelDrawing()
                 self.first_point = True
+
+    def canvasDoubleClickEvent(self, event) -> None:
+        """Finish a valid polygon on a left-button double-click."""
+        if event.button() != LEFT_MOUSE_BUTTON:
+            return
+
+        self._finishDrawingIfValid()
+        if hasattr(event, "accept"):
+            event.accept()
+
+    def _finishDrawingIfValid(self) -> bool:
+        """Finalize the current polygon and apply the shared finish state."""
+        if len(self.polygon_marker.points) < 3:
+            return False
+
+        self.finalizePolygon()
+        self.last_point = True
+        self.first_point = True
+        return True
 
     def finalizePolygon(self) -> None:
         """Create a polygon geometry"""
