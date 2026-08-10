@@ -19,6 +19,7 @@ from ...qt_compat import (
     SIZE_POLICY_PREFERRED,
     SPIN_BOX_UP_DOWN_ARROWS,
     SCROLL_BAR_ALWAYS_OFF,
+    configure_compact_command_button,
     available_screen_geometry,
     screen_aware_popup_position,
 )
@@ -36,7 +37,6 @@ class MapSettingsPanel(QtWidgets.QWidget):
     CONTENT_MAXIMUM_WIDTH = 280
     BUTTON_SIZE = 24
     ICON_SIZE = 20
-    HOVER_STYLE = "QPushButton:hover {\n    border: 1px solid #bbb;\n}\n"
     TOGGLE_STYLE = """
 QPushButton {
     border: 1px solid transparent;
@@ -209,7 +209,7 @@ QPushButton {
             value=0.0,
             single_step=0.1,
         )
-        self._configure_flat_button(
+        self._configure_command_button(
             self.pb_reference_reset,
             icon=":/icons/icons/reset_offset.svg",
             tooltip="Reset Reference to zero",
@@ -225,7 +225,7 @@ QPushButton {
             self._sync_reference_editability
         )
         self._sync_reference_editability()
-        self._configure_flat_button(
+        self._configure_command_button(
             self.pb_symbol_range_settings,
             icon=":/icons/icons/edit.svg",
             tooltip="Configure range source and symmetry",
@@ -250,7 +250,7 @@ QPushButton {
             tooltip="Reverse colormap",
             checked=False,
         )
-        self._configure_flat_button(
+        self._configure_command_button(
             self.pb_symbology_settings,
             icon=":/icons/icons/setting.svg",
             tooltip="Configure symbology",
@@ -517,16 +517,20 @@ QPushButton {
         spin_box.setSizePolicy(horizontal_policy, SIZE_POLICY_FIXED)
 
     def _configure_toggle_button(self, button, *, icon, tooltip, checked):
-        self._configure_button_base(button, icon=icon, tooltip=tooltip)
-        button.setFlat(True)
+        button.setText("")
+        button.setIcon(QtGui.QIcon(icon))
+        button.setToolTip(tooltip)
+        button.setAccessibleName(tooltip)
         button.setCheckable(True)
         button.setChecked(checked)
+        button.setFlat(True)
+        button.setFixedSize(self.BUTTON_SIZE, self.BUTTON_SIZE)
+        button.setIconSize(QSize(self.ICON_SIZE, self.ICON_SIZE))
+        button.setSizePolicy(SIZE_POLICY_FIXED, SIZE_POLICY_FIXED)
         button.setStyleSheet(self.TOGGLE_STYLE)
 
-    def _configure_flat_button(self, button, *, icon, tooltip):
+    def _configure_command_button(self, button, *, icon, tooltip):
         self._configure_button_base(button, icon=icon, tooltip=tooltip)
-        button.setFlat(True)
-        button.setStyleSheet(self.HOVER_STYLE)
 
     def _show_range_settings_popup(self, checked=False):
         """Open the compact range settings popup next to its anchor button."""
@@ -610,6 +614,8 @@ QPushButton {
         button.setIcon(QtGui.QIcon(icon))
         button.setToolTip(tooltip)
         button.setAccessibleName(tooltip)
-        button.setMaximumSize(self.BUTTON_SIZE, self.BUTTON_SIZE)
-        button.setIconSize(QSize(self.ICON_SIZE, self.ICON_SIZE))
-        button.setSizePolicy(SIZE_POLICY_FIXED, SIZE_POLICY_FIXED)
+        configure_compact_command_button(
+            button,
+            size=self.BUTTON_SIZE,
+            icon_size=self.ICON_SIZE,
+        )
