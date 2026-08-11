@@ -221,6 +221,8 @@ class InsarExplorer:
         self.dockwidget = None
 
         # Released memory when widget is closed
+        if self.gui_controller is not None:
+            self.gui_controller.disconnectMapToolSync()
         self.gui_controller = None
 
         self.pluginIsActive = False
@@ -239,6 +241,7 @@ class InsarExplorer:
         if click_handler is not None:
             click_handler.clearReferenceFeatureHighlight()
         if controller is not None:
+            controller.disconnectMapToolSync()
             controller.clearTimeSeriesMapOverlays()
             controller.clearTimeSeriesClipboard()
             controller.removePolygonDrawingTool(reference=True)

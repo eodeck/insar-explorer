@@ -57,6 +57,7 @@ ALIGN_RIGHT_VCENTER = ALIGN_RIGHT | ALIGN_VCENTER
 YELLOW = _enum_value(Qt, "GlobalColor", "yellow")
 RED = _enum_value(Qt, "GlobalColor", "red")
 WAIT_CURSOR = _enum_value(Qt, "CursorShape", "WaitCursor")
+CROSS_CURSOR = _enum_value(Qt, "CursorShape", "CrossCursor")
 LEFT_MOUSE_BUTTON = _enum_value(Qt, "MouseButton", "LeftButton")
 KEY_SPACE = _enum_value(Qt, "Key", "Key_Space")
 KEY_F2 = _enum_value(Qt, "Key", "Key_F2")
@@ -92,6 +93,8 @@ WIDGET_SHORTCUT = _enum_value(Qt, "ShortcutContext", "WidgetShortcut")
 DASH_LINE = _enum_value(Qt, "PenStyle", "DashLine")
 DOT_LINE = _enum_value(Qt, "PenStyle", "DotLine")
 DASH_DOT_LINE = _enum_value(Qt, "PenStyle", "DashDotLine")
+NO_PEN = _enum_value(Qt, "PenStyle", "NoPen")
+SOLID_LINE = _enum_value(Qt, "PenStyle", "SolidLine")
 PEN_STYLE_BY_NAME = {
     "--": DASH_LINE,
     ":": DOT_LINE,
@@ -191,6 +194,10 @@ MESSAGE_ROLE_REJECT = _enum_value(QMessageBox, "ButtonRole", "RejectRole")
 DONT_USE_NATIVE_DIALOG = _enum_value(QColorDialog, "ColorDialogOption", "DontUseNativeDialog")
 
 # QGIS enums with scoped/legacy compatibility. These are only available inside QGIS.
+POINT_GEOMETRY = (
+    _enum_value(QgsWkbTypes, "GeometryType", "PointGeometry")
+    if QgsWkbTypes is not None else None
+)
 POLYGON_GEOMETRY = (
     _enum_value(QgsWkbTypes, "GeometryType", "PolygonGeometry")
     if QgsWkbTypes is not None else None

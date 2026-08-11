@@ -1,6 +1,7 @@
 ### History
 
 v2.8.0
+- Added marker type and stroke te settings.
 - Previewed polygon while drawing.
 - Added support for double-click to finish a polygon.
 - Support exporting one or multiple time series data.

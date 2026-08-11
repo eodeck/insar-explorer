@@ -1,5 +1,6 @@
 from qgis.gui import QgsMapTool, QgsRubberBand
 from qgis.core import QgsGeometry
+from qgis.PyQt.QtGui import QCursor
 
 from ..time_series.map_indicator_settings import factory_map_indicator_settings
 from ..time_series.map_indicator_style import (
@@ -7,7 +8,9 @@ from ..time_series.map_indicator_style import (
     PENDING_LINE_WIDTH,
     semantic_indicator_color,
 )
-from ..qt_compat import POLYGON_GEOMETRY, LEFT_MOUSE_BUTTON, RIGHT_MOUSE_BUTTON
+from ..qt_compat import (
+    CROSS_CURSOR, LEFT_MOUSE_BUTTON, POLYGON_GEOMETRY, RIGHT_MOUSE_BUTTON,
+)
 
 
 class PolygonMarker(QgsMapTool):
@@ -53,6 +56,7 @@ class PolygonDrawingTool(QgsMapTool):
     def __init__(self, canvas, callback=None, start_callback=None, role="target", settings_provider=None) -> None:
         super().__init__(canvas)
         self.canvas = canvas
+        self.setCursor(QCursor(CROSS_CURSOR))
         self.callback = callback  # Function to call when polygon is complete
         self.start_callback = start_callback  # Function to call before starting the drawing
         self.polygon_marker = PolygonMarker(self.canvas, role=role, settings_provider=settings_provider)
@@ -65,10 +69,7 @@ class PolygonDrawingTool(QgsMapTool):
         """Add the clicked point to the polygon"""
         if event.button() == LEFT_MOUSE_BUTTON:
             if self.first_point:
-                self.activate()
-                if self.start_callback:
-                    self.start_callback()
-                self.first_point = False
+                self._startNewDrawing()
             if self.last_point:
                 self.cancelDrawing()
                 self.last_point = False
@@ -80,6 +81,10 @@ class PolygonDrawingTool(QgsMapTool):
 
     def canvasMoveEvent(self, event) -> None:
         """Preview the next polygon edge/shape without committing a vertex."""
+        if self.last_point:
+            self._clearPreview()
+            return
+
         committed_points = self.polygon_marker.points
         if not committed_points:
             self._clearPreview()
@@ -163,9 +168,18 @@ class PolygonDrawingTool(QgsMapTool):
         self.clear_feedback()
         self.deactivate()
 
-    def activate(self):
+    def _startNewDrawing(self) -> None:
+        """Reset drawing feedback and begin a new polygon session."""
         self._clearDrawingState()
-        # super().activate()
+        if self.start_callback:
+            self.start_callback()
+        self.first_point = False
+        self.last_point = False
+
+    def activate(self) -> None:
+        """Reset drawing feedback and run the normal QGIS activation lifecycle."""
+        self._clearDrawingState()
+        super().activate()
 
     def deactivate(self) -> None:
         """Clear all in-progress drawing feedback and deactivate the tool."""

@@ -4,7 +4,9 @@ from dataclasses import replace
 
 from qgis.gui import QgsMapToolEmitPoint
 from qgis.PyQt.QtWidgets import QFileDialog, QComboBox, QMessageBox
-from qgis.PyQt.QtCore import QObject, QPoint, QRect, QSettings, QStandardPaths, QTimer, QVariant, pyqtSignal
+from qgis.PyQt.QtCore import (
+    QObject, QPoint, QRect, QSettings, QSignalBlocker, QStandardPaths, QTimer, QVariant, pyqtSignal,
+)
 from qgis.PyQt.QtGui import QColor, QIcon, QTransform
 
 from . import map_click_handler as cph
@@ -23,10 +25,15 @@ from .ui.popups.appearance_popup import AppearancePopup
 from .ui.popups.replica_popup import ReplicaPopup
 from .ui.popups.map_indicator_settings_popup import MapIndicatorSettingsPopup
 from .ui.map_settings.range_state import RangeSource, STD_RANGE_SOURCES, StdCalculationMode
+from .ui.map_settings.symbology_defaults import (
+    MapSymbologySettings, MapSymbologySettingsService,
+    normalize_map_symbology_settings,
+)
 from .ui.widgets.split_tool_button import SplitButtonPopupHoverReconciler
 from .qt_compat import (
     ITEM_IS_ENABLED,
     ITEM_IS_SELECTABLE,
+    POINT_GEOMETRY,
     RASTER_LAYER,
     VECTOR_LAYER,
     available_screen_geometry,
@@ -158,6 +165,7 @@ class GuiController(QObject):
         self._last_fit_statistics_message = None
         services = ensure_time_series_services(plugin)
         self.map_indicator_settings = services.map_indicator_settings
+        self.map_symbology_defaults = MapSymbologySettingsService()
         self.choose_point_click_handler = cph.ClickHandler(
             plugin,
             msg_signal=self.msg_signal,
@@ -191,7 +199,8 @@ class GuiController(QObject):
             self.time_series_list_state, plotter.committed_record
         )
         self._refreshTimeSeriesClipboardProjection()
-        self.click_tool = None  # plugin.click_tool
+        self.click_tool = None  # target point selection tool
+        self.reference_click_tool = None  # reference point selection tool
         self.drawing_tool = None  # for polygon drawing
         self.drawing_tool_reference = None  # for reference polygon drawing
         self.selection_type = "point"  # "point" or "polygon" or "reference polygon"
@@ -258,11 +267,10 @@ class GuiController(QObject):
         self._range_programmatic_update = False
         self._std_calculation_mode = StdCalculationMode.FAST
         self._pending_default_range_layer_id = None
+        self._map_tool_signal_connected = False
         self.initializeUiParams()
         self.connectUiSignals()
-        # make point selection active by default
-        self.ui.pb_choose_point.setChecked(True)
-        self.activatePointSelection(True)
+        self._syncSelectionControlsToActiveMapTool()
 
         self.iface.currentLayerChanged.connect(self.onLayerChanged)
         self.onLayerChanged()
@@ -350,6 +358,7 @@ class GuiController(QObject):
         if layer is None:
             layer = self.iface.activeLayer()
 
+        self._syncPointMarkerControls(layer)
         layer_id = self._layerIdentity(layer)
         pending_layer_id = self._pending_default_range_layer_id
         if pending_layer_id is not None and pending_layer_id != layer_id:
@@ -387,9 +396,23 @@ class GuiController(QObject):
                 message = "Unsupported layer selected. Please choose a layer compatible with InSAR Explorer."
             else:
                 self.ui.settings_panel.setEnabled(True)
-                self.ui.pb_choose_point.setChecked(True)
                 message = ""
             self.msg_signal.emit(message, "i", 0)
+
+    def _syncPointMarkerControls(self, layer=None):
+        """Project active-layer geometry onto point-only marker controls."""
+        is_point_vector = False
+        if layer is not None:
+            try:
+                is_point_vector = (
+                    layer.type() == VECTOR_LAYER
+                    and layer.geometryType() == POINT_GEOMETRY
+                )
+            except (AttributeError, RuntimeError):
+                is_point_vector = False
+        self.ui.map_settings_panel.symbology_settings_popup.set_point_marker_available(
+            is_point_vector
+        )
 
     @staticmethod
     def _findSelectableFieldIndex(field_combo, field_name):
@@ -580,24 +603,41 @@ class GuiController(QObject):
         self._projectComputedRangeSource(source, raw_values)
         self.applyLiveSymbology()
 
-    def initializeClickTool(self):
-        if not self.click_tool:
-            self.click_tool = QgsMapToolEmitPoint(self.iface.mapCanvas())
-            self.click_tool.canvasClicked.connect(lambda point: self.onMapClicked(point=point))
+    def initializeClickTool(self, reference=False):
+        """Create the role-specific point map tool on first use."""
+        attribute = "reference_click_tool" if reference else "click_tool"
+        tool = getattr(self, attribute)
+        if tool is None:
+            tool = QgsMapToolEmitPoint(self.iface.mapCanvas())
+            tool.canvasClicked.connect(
+                lambda point, *args, ref=reference: self.onMapClicked(
+                    point=point, reference=ref
+                )
+            )
+            setattr(self, attribute, tool)
+        return tool
 
-    def onMapClicked(self, point):
+    def onMapClicked(self, point, reference=False):
         self.msg_signal.emit("", "i", 0)
-        self.choose_point_click_handler.choosePointClicked(point=point, layer=None,
-                                                           ref=self.ui.pb_set_reference.isChecked(),
-                                                           start_callback=self.removePolygonDrawingTool(
-                                                               self.ui.pb_set_reference.isChecked()))
+        self.choose_point_click_handler.choosePointClicked(
+            point=point,
+            layer=None,
+            ref=reference,
+            start_callback=self.removePolygonDrawingTool(reference),
+        )
 
-        if self.ui.pb_set_reference.isChecked():
+        if reference:
+            self._syncStandaloneReferenceOverlay()
             self.syncOffsetWithReference()
 
-    def removeClickTool(self):
-        self.iface.mapCanvas().unsetMapTool(self.click_tool)
-        self.click_tool = None
+    def removeClickTool(self, reference=False):
+        """Remove one role-specific point tool without affecting the other role."""
+        attribute = "reference_click_tool" if reference else "click_tool"
+        tool = getattr(self, attribute)
+        if tool is None:
+            return
+        self.iface.mapCanvas().unsetMapTool(tool)
+        setattr(self, attribute, None)
 
     def initializePolygonDrawingTool(self, reference=False):
         if not reference:
@@ -647,9 +687,21 @@ class GuiController(QObject):
         self.clear_reference_drawing_feedback()
 
     def polygonDrawnCallback(self, polygon):
-        self.choose_point_click_handler.choosePolygonDrawn(polygon=polygon,
-                                                           ref=self.ui.pb_set_reference_polygon.isChecked())
+        reference = self.ui.pb_set_reference_polygon.isChecked()
+        self.choose_point_click_handler.choosePolygonDrawn(polygon=polygon, ref=reference)
+        if reference:
+            self._syncStandaloneReferenceOverlay()
         self.syncOffsetWithReference()
+
+    def _syncStandaloneReferenceOverlay(self) -> None:
+        """Project an accepted Reference while no Target/pending record exists."""
+        if self.choose_point_click_handler.plot_ts.pending_record() is not None:
+            return
+        reference = self.choose_point_click_handler.reference_session.current()
+        if reference is None:
+            self.pending_time_series_map_overlays.clear()
+            return
+        self.pending_time_series_map_overlays.project_reference(reference.selection)
 
     def _setReferenceValue(self, value):
         """Project one Reference value without relying on valueChanged feedback."""
@@ -956,11 +1008,93 @@ class GuiController(QObject):
             self.continuousColormapChanged
         )
         self.ui.sb_symbol_size.valueChanged.connect(self.applyLiveSymbology)
+        self.ui.cmb_symbol_marker_shape.currentIndexChanged.connect(
+            self.applyLiveSymbology
+        )
+        self.ui.pb_symbol_outline_color.colorChanged.connect(
+            self.applyLiveSymbology
+        )
+        self.ui.sb_symbol_outline_width.valueChanged.connect(
+            self.applyLiveSymbology
+        )
         self.ui.sb_symbol_opacity.valueChanged.connect(self.applyLiveSymbology)
+        symbology_popup = self.ui.map_settings_panel.symbology_settings_popup
+        symbology_popup.applySavedDefaultRequested.connect(
+            self.restoreMapSymbologyDefaults
+        )
+        symbology_popup.applyFactoryDefaultRequested.connect(
+            self.applyFactoryMapSymbologyDefaults
+        )
+        symbology_popup.saveCurrentAsDefaultRequested.connect(
+            self.setCurrentMapSymbologyAsDefault
+        )
         self.ui.cb_symbology_live.toggled.connect(self.activateLiveSymbology)
         self.ui.cmb_colormap.currentIndexChanged.connect(self.applyLiveSymbology)
         self.ui.pb_colormap_reverse.toggled.connect(self.colormapReverseClicked)
+        self._connectMapToolSync()
         self._setSymbologyDirty(False)
+
+    def _connectMapToolSync(self):
+        """Connect once to the canvas map-tool lifecycle."""
+        if self._map_tool_signal_connected:
+            return
+        self.iface.mapCanvas().mapToolSet.connect(self._onMapToolChanged)
+        self._map_tool_signal_connected = True
+
+    def disconnectMapToolSync(self):
+        """Disconnect the long-lived canvas map-tool signal during teardown."""
+        if not self._map_tool_signal_connected:
+            return
+        try:
+            self.iface.mapCanvas().mapToolSet.disconnect(self._onMapToolChanged)
+        except (TypeError, RuntimeError):
+            pass
+        self._map_tool_signal_connected = False
+
+    def _syncSelectionControlsToActiveMapTool(self):
+        """Project the current canvas tool without changing QGIS interaction state."""
+        self._onMapToolChanged(self.iface.mapCanvas().mapTool())
+
+    @staticmethod
+    def _isActiveMapTool(new_tool, tool):
+        """Return whether an initialized plugin tool is the active canvas tool."""
+        return tool is not None and new_tool is tool
+
+    def _onMapToolChanged(self, new_tool, old_tool=None):
+        """Project the actual active QGIS map tool into selection-button state."""
+        del old_tool
+        if new_tool is None:
+            button_states = (
+                (self.ui.pb_choose_point, False),
+                (self.ui.pb_choose_polygon, False),
+                (self.ui.pb_set_reference, False),
+                (self.ui.pb_set_reference_polygon, False),
+            )
+        else:
+            button_states = (
+                (
+                    self.ui.pb_choose_point,
+                    self._isActiveMapTool(new_tool, self.click_tool),
+                ),
+                (
+                    self.ui.pb_choose_polygon,
+                    self._isActiveMapTool(new_tool, self.drawing_tool),
+                ),
+                (
+                    self.ui.pb_set_reference,
+                    self._isActiveMapTool(new_tool, self.reference_click_tool),
+                ),
+                (
+                    self.ui.pb_set_reference_polygon,
+                    self._isActiveMapTool(new_tool, self.drawing_tool_reference),
+                ),
+            )
+        blockers = [QSignalBlocker(button) for button, _ in button_states]
+        try:
+            for button, checked in button_states:
+                button.setChecked(checked)
+        finally:
+            del blockers
 
     def _setRangeSource(self, source):
         """Set semantic source and project it into the popup without feedback."""
@@ -1143,6 +1277,73 @@ class GuiController(QObject):
         self.msg_signal.emit(messages[source], 'i', 0)
         self.applyLiveSymbology()
 
+    def _currentMapSymbologySettings(self):
+        """Capture the settings owned by the Symbology settings popup."""
+        return normalize_map_symbology_settings(MapSymbologySettings(
+            continuous_colormap=bool(
+                self.ui.cb_symbol_continuous_colormap.isChecked()
+            ),
+            classes=int(self.ui.sb_symbol_classes.value()),
+            marker_shape=str(self.ui.cmb_symbol_marker_shape.currentData()),
+            marker_size=float(self.ui.sb_symbol_size.value()),
+            outline_color=str(self.ui.pb_symbol_outline_color.color()),
+            outline_width_mm=float(self.ui.sb_symbol_outline_width.value()),
+            opacity_percent=int(self.ui.sb_symbol_opacity.value()),
+        ))
+
+    def _applyMapSymbologySettingsBundle(self, settings):
+        """Project one normalized popup settings bundle and publish one edit."""
+        settings = normalize_map_symbology_settings(settings)
+        controls = (
+            self.ui.cb_symbol_continuous_colormap,
+            self.ui.sb_symbol_classes,
+            self.ui.cmb_symbol_marker_shape,
+            self.ui.sb_symbol_size,
+            self.ui.pb_symbol_outline_color,
+            self.ui.sb_symbol_outline_width,
+            self.ui.sb_symbol_opacity,
+        )
+        blockers = [QSignalBlocker(control) for control in controls]
+        try:
+            self.ui.cb_symbol_continuous_colormap.setChecked(
+                settings.continuous_colormap
+            )
+            self.ui.sb_symbol_classes.setValue(settings.classes)
+            shape_index = self.ui.cmb_symbol_marker_shape.findData(
+                settings.marker_shape
+            )
+            if shape_index >= 0:
+                self.ui.cmb_symbol_marker_shape.setCurrentIndex(shape_index)
+            self.ui.sb_symbol_size.setValue(settings.marker_size)
+            self.ui.pb_symbol_outline_color.setColor(settings.outline_color)
+            self.ui.sb_symbol_outline_width.setValue(settings.outline_width_mm)
+            self.ui.sb_symbol_opacity.setValue(settings.opacity_percent)
+        finally:
+            del blockers
+        self.ui.map_settings_panel.symbology_settings_popup.set_continuous_colormap(
+            settings.continuous_colormap
+        )
+        self.applyLiveSymbology()
+
+    def restoreMapSymbologyDefaults(self):
+        """Apply the user's saved Map Symbology default as one normal edit."""
+        self._applyMapSymbologySettingsBundle(
+            self.map_symbology_defaults.load_defaults()
+        )
+
+    def applyFactoryMapSymbologyDefaults(self):
+        """Apply factory Map Symbology values without changing saved defaults."""
+        self._applyMapSymbologySettingsBundle(
+            self.map_symbology_defaults.factory_defaults()
+        )
+
+    def setCurrentMapSymbologyAsDefault(self):
+        """Persist current popup-owned Map Symbology values as the user default."""
+        self.map_symbology_defaults.save_defaults(
+            self._currentMapSymbologySettings()
+        )
+        self.msg_signal.emit("Map symbology default saved.", "done", 5000)
+
     def _setSymbologyDirty(self, dirty):
         """Project unapplied Map Settings state onto the manual Apply action."""
         self._symbology_dirty = bool(dirty)
@@ -1181,6 +1382,15 @@ class GuiController(QObject):
         )
         self.insar_map.alpha = float(self.ui.sb_symbol_opacity.value()) / 100
         self.insar_map.symbol_size = float(self.ui.sb_symbol_size.value())
+        self.insar_map.marker_shape = str(
+            self.ui.cmb_symbol_marker_shape.currentData()
+        )
+        self.insar_map.stroke_color = str(
+            self.ui.pb_symbol_outline_color.color()
+        )
+        self.insar_map.stroke_width = float(
+            self.ui.sb_symbol_outline_width.value()
+        )
         self.insar_map.color_ramp_name = str(self.ui.cmb_colormap.currentData())
         message = self.insar_map.setSymbology()
         if message != "":
@@ -3217,7 +3427,8 @@ class GuiController(QObject):
             self.clearTimeSeriesMapOverlays()
             self.choose_point_click_handler.clearFeatureHighlight()
             self.choose_point_click_handler.clearReferenceFeatureHighlight()
-            self.removeClickTool()
+            self.removeClickTool(reference=False)
+            self.removeClickTool(reference=True)
             self.removePolygonDrawingTool(reference=False)
             self.removePolygonDrawingTool(reference=True)
             self.ui.pb_choose_point.setChecked(False)
@@ -3229,23 +3440,24 @@ class GuiController(QObject):
         self.ui.pb_choose_polygon.setChecked(False)
         self.ui.pb_set_reference_polygon.setChecked(False)
         if status:
-            self.initializeClickTool()
-            self.iface.mapCanvas().setMapTool(self.click_tool)
+            tool = self.initializeClickTool(reference=False)
+            self.iface.mapCanvas().setMapTool(tool)
+            self._syncStandaloneReferenceOverlay()
             self.msg_signal.emit("Click any point on the map to view its time series.", "t", 0)
         else:
-            self.removeClickTool()
+            self.removeClickTool(reference=False)
 
     def activateReferencePointSelection(self, status):
         self.ui.pb_choose_point.setChecked(False)
         self.ui.pb_choose_polygon.setChecked(False)
         self.ui.pb_set_reference_polygon.setChecked(False)
         if status:
-            self.initializeClickTool()
-            self.iface.mapCanvas().setMapTool(self.click_tool)
+            tool = self.initializeClickTool(reference=True)
+            self.iface.mapCanvas().setMapTool(tool)
             self.msg_signal.emit("Click any point on the map to set it as reference.", "t", 0)
         else:
             self.ui.pb_set_reference.setChecked(False)
-            self.removeClickTool()
+            self.removeClickTool(reference=True)
 
     def activatePolygonSelection(self, status):
         self.ui.pb_choose_point.setChecked(False)
@@ -3253,6 +3465,7 @@ class GuiController(QObject):
         self.ui.pb_set_reference_polygon.setChecked(False)
         if status:
             self.initializePolygonDrawingTool()
+            self._syncStandaloneReferenceOverlay()
             self.msg_signal.emit("Click to add polygon vertices; double-click or right-click to finish and plot time "
                                  "series.", "t", 0)
         else:
@@ -3270,6 +3483,7 @@ class GuiController(QObject):
 
     def resetReferencePoint(self):
         self.choose_point_click_handler.resetReferencePoint()
+        self._syncStandaloneReferenceOverlay()
         self.activateReferencePointSelection(status=False)
 
         if self.ui.cb_symbol_value_offset_sync_with_ref.isChecked():

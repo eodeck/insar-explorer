@@ -46,9 +46,9 @@ class RangeSource(Enum):
         return {
             RangeSource.CUSTOM: "Custom",
             RangeSource.DATA_EXTENT: "Data extent",
-            RangeSource.STD_1: "1 × Std",
-            RangeSource.STD_2: "2 × Std",
-            RangeSource.STD_3: "3 × Std",
+            RangeSource.STD_1: "Mean ± 1σ",
+            RangeSource.STD_2: "Mean ± 2σ",
+            RangeSource.STD_3: "Mean ± 3σ",
         }[self]
 
     @property
