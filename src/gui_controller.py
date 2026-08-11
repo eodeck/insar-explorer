@@ -559,7 +559,7 @@ class GuiController(QObject):
             return False
 
         self._projectComputedRangeSource(RangeSource.DATA_EXTENT, raw_values)
-        self._applySymbologyAndClearPending()
+        self._setSymbologyDirty(True)
         return True
 
     def selectVectorFieldChanged(self, index=None):
