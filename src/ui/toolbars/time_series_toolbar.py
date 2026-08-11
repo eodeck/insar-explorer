@@ -213,6 +213,7 @@ class TimeSeriesToolbar(QToolBar):
             "Appearance",
             "action_ts_appearance",
         )
+        self.appearance_action.setEnabled(False)
         self.plot_export_button = SplitToolButton(
             icon=QIcon(":/icons/icons/screenshot.svg"),
             primary_checkable=False,
@@ -286,7 +287,6 @@ class TimeSeriesToolbar(QToolBar):
         """Enable controls that require one editable time-series record."""
         enabled = bool(enabled)
         self.plot_style_action.setEnabled(enabled)
-        self.appearance_action.setEnabled(enabled)
         self.x_axis_button.setEnabled(enabled)
         self.y_axis_button.setEnabled(enabled)
         self.fit_button.setEnabled(enabled)

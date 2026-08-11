@@ -2096,7 +2096,7 @@ class GuiController(QObject):
         self.clear_all_pending_drawing_feedback()
         self.time_series_map_overlays.set_pending_active(True)
         self.ui.time_series_toolbar.setSeriesControlsEnabled(True)
-        self._refreshTimeSeriesPlotExportState()
+        self._refreshTimeSeriesPlotActionState()
 
     def addPendingTimeSeries(self):
         """Atomically commit pending ownership and create committed-list metadata."""
@@ -2129,7 +2129,7 @@ class GuiController(QObject):
                 self.time_series_list_state.clear()
         if panel.committed_model is not None:
             panel.refresh_committed_model()
-        self._refreshTimeSeriesPlotExportState()
+        self._refreshTimeSeriesPlotActionState()
 
     def _clipboard_available_categories(self):
         """Return all paste categories when one coherent clipboard exists."""
@@ -2420,7 +2420,7 @@ class GuiController(QObject):
             raise
         panel = self.ui.time_series_point_panel
         panel.refresh_committed_model()
-        self._refreshTimeSeriesPlotExportState()
+        self._refreshTimeSeriesPlotActionState()
 
     def setCommittedTimeSeriesVisibilityBatch(self, record_ids, visible):
         """Set committed visibility for UUIDs as one renderer/list transaction."""
@@ -2466,7 +2466,7 @@ class GuiController(QObject):
                 self._plugin_diagnostic("committed_visibility_refresh", error)
             else:
                 self.msg_signal.emit(str(error), "c", 0)
-        self._refreshTimeSeriesPlotExportState()
+        self._refreshTimeSeriesPlotActionState()
         return True
 
     def toggleSelectedCommittedTimeSeriesVisibility(self):
@@ -2520,27 +2520,28 @@ class GuiController(QObject):
         toolbar = self.ui.time_series_toolbar
         if plotter.pending_record() is not None:
             toolbar.setSeriesControlsEnabled(True)
-            self._refreshTimeSeriesPlotExportState()
+            self._refreshTimeSeriesPlotActionState()
             return
         if len(record_ids) == 1:
             plotter.setActiveSeries(record_ids[0])
             toolbar.setSeriesControlsEnabled(True)
             self._syncActiveAnalysisControls(plotter.current_series())
-            self._refreshTimeSeriesPlotExportState()
+            self._refreshTimeSeriesPlotActionState()
             return
         plotter._series_store.set_active(None)
         plotter._set_current_series(None)
         toolbar.setSeriesControlsEnabled(False)
-        self._refreshTimeSeriesPlotExportState()
+        self._refreshTimeSeriesPlotActionState()
         if len(record_ids) > 1:
             self.msg_signal.emit("Multiple time series selected", "i", 0)
 
-    def _refreshTimeSeriesPlotExportState(self):
-        """Project renderer-owned plot availability into the Export Plot action."""
+    def _refreshTimeSeriesPlotActionState(self):
+        """Project renderer-owned plot availability into plot-level toolbar actions."""
         plotter = self.choose_point_click_handler.plot_ts
-        self.ui.time_series_toolbar.plot_export_button.setPrimaryEnabled(
-            plotter.has_exportable_plot()
-        )
+        has_plot = plotter.has_exportable_plot()
+        toolbar = self.ui.time_series_toolbar
+        toolbar.appearance_action.setEnabled(has_plot)
+        toolbar.plot_export_button.setPrimaryEnabled(has_plot)
 
     def discardPendingTimeSeries(self):
         """Discard only the pending preview and preserve the active reference."""
