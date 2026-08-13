@@ -1,12 +1,24 @@
 from ..external import pyqtgraph as pg
 
+from qgis.PyQt.QtCore import pyqtSignal
 from qgis.PyQt.QtWidgets import QVBoxLayout
 
 from .ui.toolbars import TimeSeriesToolbar
 
 
+class TimeSeriesPlotWidget(pg.GraphicsLayoutWidget):
+    """Graphics layout widget that reports when hover inspection must clear."""
+
+    mouseLeft = pyqtSignal()
+
+    def leaveEvent(self, event):
+        """Clear plot-local hover state when the pointer leaves the widget."""
+        self.mouseLeft.emit()
+        super().leaveEvent(event)
+
+
 def setupTsFrame(ui):
-    ui.plot_widget = pg.GraphicsLayoutWidget(parent=ui.frame_plot_ts)
+    ui.plot_widget = TimeSeriesPlotWidget(parent=ui.frame_plot_ts)
     ui.plot_widget.setBackground('w')
     ui.plot_widget.plot_items = []
     ui.time_series_toolbar = TimeSeriesToolbar(ui.frame_plot_ts)

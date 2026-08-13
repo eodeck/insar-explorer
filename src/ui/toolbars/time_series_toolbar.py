@@ -3,6 +3,7 @@
 from qgis.PyQt.QtCore import QSize, pyqtSignal
 from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import (
+    QLabel,
     QMenu,
     QToolBar,
     QToolButton,
@@ -213,6 +214,7 @@ class TimeSeriesToolbar(QToolBar):
             "Appearance",
             "action_ts_appearance",
         )
+        self.appearance_action.setEnabled(False)
         self.plot_export_button = SplitToolButton(
             icon=QIcon(":/icons/icons/screenshot.svg"),
             primary_checkable=False,
@@ -255,6 +257,16 @@ class TimeSeriesToolbar(QToolBar):
         )
         self.addWidget(self._spacer_widget)
 
+        self.hover_readout = QLabel(self)
+        self.hover_readout.setObjectName("timeSeriesHoverReadout")
+        self.hover_readout.setAccessibleName("Time-series hover value")
+        self.hover_readout.setToolTip(
+            "Date and value of the time-series observation under the pointer"
+        )
+        self.hover_readout.setMinimumWidth(145)
+        self.hover_readout.setText("")
+        self.addWidget(self.hover_readout)
+
         self.addAction(self.appearance_action)
         self.addSeparator()
         self.addWidget(self.plot_export_button)
@@ -282,11 +294,14 @@ class TimeSeriesToolbar(QToolBar):
         self.replica_button.primaryToggled.connect(self.replicaEnabledChanged.emit)
         self.replica_button.secondaryTriggered.connect(self.replicaSettingsRequested.emit)
 
+    def setHoverReadout(self, text):
+        """Update the secondary time-series hover readout text."""
+        self.hover_readout.setText(str(text or ""))
+
     def setSeriesControlsEnabled(self, enabled):
         """Enable controls that require one editable time-series record."""
         enabled = bool(enabled)
         self.plot_style_action.setEnabled(enabled)
-        self.appearance_action.setEnabled(enabled)
         self.x_axis_button.setEnabled(enabled)
         self.y_axis_button.setEnabled(enabled)
         self.fit_button.setEnabled(enabled)
