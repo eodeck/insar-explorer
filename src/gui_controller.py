@@ -345,16 +345,28 @@ class GuiController(QObject):
         elif self.selection_type == "reference polygon":
             self.initializePolygonDrawingTool(reference=True)
 
+    def resetTimeSeriesTransientStateForLayer(self):
+        """Clear active-layer interaction state while retaining committed series."""
+        self.time_series_map_overlays.clear_committed()
+        self.pending_time_series_map_overlays.clear()
+        self.clear_all_pending_drawing_feedback()
+        self.choose_point_click_handler.resetLayerTransientState()
+        self.clearTimeSeriesClipboard()
+
     def resetTimeSeriesWorkspaceForDataset(self):
-        """Clear dataset-scoped time-series state, overlays, and clipboard."""
+        """Compatibility alias for active-layer transient cleanup."""
+        self.resetTimeSeriesTransientStateForLayer()
+
+    def clearTimeSeriesWorkspace(self):
+        """Explicitly clear transient state and every committed time series."""
         self.time_series_map_overlays.clear_all()
         self.pending_time_series_map_overlays.clear()
         self.clear_all_pending_drawing_feedback()
-        self.choose_point_click_handler.reset()
+        self.choose_point_click_handler.clearTimeSeriesWorkspace()
         self.clearTimeSeriesClipboard()
 
     def onLayerChanged(self, layer=None):
-        """Reset the time-series workspace and map for a confirmed layer change."""
+        """Reset active-layer state while retaining the committed workspace."""
         if layer is None:
             layer = self.iface.activeLayer()
 
@@ -370,8 +382,11 @@ class GuiController(QObject):
         self._setCustomRangeSource()
         self._setRangeSymmetryChecked(False)
         self._setSymbologyDirty(False)
+        self.resetTimeSeriesTransientStateForLayer()
+        self.committedTimeSeriesSelectionChanged(
+            self.ui.time_series_point_panel.selected_committed_ids()
+        )
         if layer:
-            self.resetTimeSeriesWorkspaceForDataset()
             self._restoreTimeSeriesFitState()
             self._restoreTimeSeriesYAxisMode()
             self._restoreTimeSeriesReplicaState()
@@ -2514,8 +2529,19 @@ class GuiController(QObject):
     def committedTimeSeriesSelectionChanged(self, record_ids):
         """Project selected UUIDs and enable only record-owned toolbar controls."""
         plotter = self.choose_point_click_handler.plot_ts
+        active_layer_id = self._layerIdentity(self.iface.activeLayer())
+        active_layer_id = None if active_layer_id is None else str(active_layer_id)
+        overlay_record_ids = []
+        for record_id in record_ids:
+            record = plotter.committed_record(record_id)
+            if (
+                record is not None
+                and record.source is not None
+                and record.source.layer_id == active_layer_id
+            ):
+                overlay_record_ids.append(record_id)
         self.time_series_map_overlays.update_selection(
-            record_ids, plotter.committed_record
+            overlay_record_ids, plotter.committed_record
         )
         toolbar = self.ui.time_series_toolbar
         if plotter.pending_record() is not None:

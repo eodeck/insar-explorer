@@ -32,6 +32,7 @@ from .models.time_series import (
     TimeSeriesData,
     TimeSeriesGraphics,
     TimeSeriesRecord,
+    TimeSeriesSource,
     SpatialSelection,
     SpatialSelectionKind,
     TimeSeriesSnapshot,
@@ -520,7 +521,7 @@ class PlotTs():
     def _buildTimeSeriesRecord(
         self, *, data: TimeSeriesData, presentation: TimeSeriesPresentation,
         coords=_UNSET, ref_coords=_UNSET, record_id=None, source=None,
-        analysis=_UNSET, fit=_UNSET, replica=_UNSET,
+        source_provenance=_UNSET, analysis=_UNSET, fit=_UNSET, replica=_UNSET,
     ) -> TimeSeriesRecord:
         """Build one normalized record with explicit immutable analysis ownership."""
         if source is not None and record_id is not None and source.id != record_id:
@@ -531,6 +532,12 @@ class PlotTs():
         reference = source.reference if source is not None and ref_coords is _UNSET else SpatialSelection.from_legacy(
             None if ref_coords is _UNSET else ref_coords
         )
+        provenance = (
+            source.source if source is not None and source_provenance is _UNSET
+            else None if source_provenance is _UNSET else source_provenance
+        )
+        if provenance is not None and not isinstance(provenance, TimeSeriesSource):
+            raise TypeError("source_provenance must be a TimeSeriesSource")
         if analysis is _UNSET:
             base_analysis = source.analysis if source is not None else self.analysisForNewRecord()
         else:
@@ -541,7 +548,7 @@ class PlotTs():
             base_analysis = replace(base_analysis, replica=replica)
         kwargs = {
             "data": data, "presentation": presentation, "analysis": base_analysis,
-            "target": target, "reference": reference,
+            "target": target, "reference": reference, "source": provenance,
         }
         if record_id is not None:
             kwargs["id"] = record_id
@@ -658,14 +665,16 @@ class PlotTs():
         self.applyYAxisPolicy()
 
     def plotTs(self, *, dates=None, ts_values=None, ref_values=_UNSET, plot_multiple=True, coords=_UNSET,
-               ref_coords=_UNSET, update=False, analysis=_UNSET, report_statistics=False):
+               ref_coords=_UNSET, update=False, analysis=_UNSET, source_provenance=_UNSET,
+               report_statistics=False):
         """Render under the nested-safe axis guard and normalize first-plot state."""
         initial_plot = self.ax is None
         with self.axisViewUpdateGuard():
             result = self._plotTsGuarded(
                 dates=dates, ts_values=ts_values, ref_values=ref_values,
                 plot_multiple=plot_multiple, coords=coords, ref_coords=ref_coords,
-                update=update, analysis=analysis, report_statistics=report_statistics,
+                update=update, analysis=analysis, source_provenance=source_provenance,
+                report_statistics=report_statistics,
             )
         if initial_plot and self.ax is not None:
             x_state = replace(self.settings_model.x_axis, custom_view=False)
@@ -681,7 +690,8 @@ class PlotTs():
         return result
 
     def _plotTsGuarded(self, *, dates=None, ts_values=None, ref_values=_UNSET, plot_multiple=True, coords=_UNSET,
-                       ref_coords=_UNSET, update=False, analysis=_UNSET, report_statistics=False):
+                       ref_coords=_UNSET, update=False, analysis=_UNSET, source_provenance=_UNSET,
+                       report_statistics=False):
         # update: flag indicating if the plot should be updated or a new one created
 
         self.updateSettings()
@@ -733,7 +743,8 @@ class PlotTs():
         record = self._buildTimeSeriesRecord(
             data=series, presentation=presentation, coords=coords, ref_coords=ref_coords,
             record_id=source_snapshot.id if source_snapshot is not None else None,
-            source=source_snapshot, analysis=record_analysis,
+            source=source_snapshot, source_provenance=source_provenance,
+            analysis=record_analysis,
         )
         fit = record.analysis.fit
         self.plot_residuals_flag = bool(fit.enabled and fit.show_residuals)
@@ -2402,7 +2413,10 @@ class PlotTs():
     @staticmethod
     def _default_pending_label(record):
         kind = record.target.kind.value.title() if record.target is not None else "Time series"
-        return kind
+        source_name = record.source.layer_name.strip() if record.source is not None else ""
+        if len(source_name) > 32:
+            source_name = f"{source_name[:31]}…"
+        return f"{source_name} · {kind}" if source_name else kind
 
     def commit_pending(self) -> Optional[TimeSeriesRecord]:
         """Transfer the exact pending record and graphics into committed ownership."""

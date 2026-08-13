@@ -6,7 +6,9 @@ from qgis.core import QgsProject, QgsCoordinateTransform, QgsCoordinateReference
 from qgis.PyQt.QtGui import QColor, QCursor
 
 from .bootstrap import ensure_time_series_services
-from .models.time_series import MapPointSnapshot, SpatialSelection, SpatialSelectionKind
+from .models.time_series import (
+    MapPointSnapshot, SpatialSelection, SpatialSelectionKind, TimeSeriesSource,
+)
 from .time_series.target_session import CanonicalTargetSnapshot
 from .time_series.reference_session import ActiveReference
 from .qt_compat import WAIT_CURSOR
@@ -97,6 +99,13 @@ class PolygonGeometry:
     def as_wkt_wgs84(self) -> str:
         wgs84_geom = self.to_crs('EPSG:4326').geom
         return wgs84_geom.asWkt()
+
+
+def time_series_source_from_layer(layer: QgsMapLayer) -> TimeSeriesSource:
+    """Capture immutable provenance for a genuine new time-series extraction."""
+    if layer is None:
+        raise ValueError("a source layer is required for time-series extraction")
+    return TimeSeriesSource(layer_id=str(layer.id()), layer_name=str(layer.name()))
 
 
 class MapClickHandler:
@@ -313,14 +322,27 @@ class TSClickHandler(MapClickHandler):
         """Release renderer-owned Qt and settings subscriptions."""
         self.plot_ts.dispose()
 
-    def reset(self):
+    def resetLayerTransientState(self):
+        """Clear active-layer extraction state without touching committed records."""
         self.reference_session.clear()
         self.target_session.clear()
         self.clearFeatureHighlight()
         self.clearReferenceFeatureHighlight()
         self.raster_layer.reset()
+        self.plot_ts.discard_pending()
 
+    def clearTimeSeriesWorkspace(self):
+        """Clear active extraction state and every committed time-series record."""
+        self.reference_session.clear()
+        self.target_session.clear()
+        self.clearFeatureHighlight()
+        self.clearReferenceFeatureHighlight()
+        self.raster_layer.reset()
         self.plot_ts.clear()
+
+    def reset(self):
+        """Compatibility entry point for an intentional full workspace reset."""
+        self.clearTimeSeriesWorkspace()
 
     def choosePointClicked(self, *, point: QgsPointXY, layer: QgsMapLayer = None, ref=False, start_callback=None):
         if start_callback:  # use start_callback to remove previous polygon from map
@@ -347,10 +369,12 @@ class TSClickHandler(MapClickHandler):
         """Publish reference session state after pending update succeeds."""
         self.reference_session.set(reference)
 
-    def _commitSelectedTarget(self, *, dates, values, selection, plot_multiple=False):
+    def _commitSelectedTarget(
+        self, *, dates, values, selection, source, plot_multiple=False
+    ):
         """Publish the latest successful target extraction for future pending records."""
         self.target_session.set(CanonicalTargetSnapshot.create(
-            dates=dates, values=values, selection=selection,
+            dates=dates, values=values, selection=selection, source=source,
             plot_multiple=plot_multiple,
         ))
 
@@ -383,6 +407,7 @@ class TSClickHandler(MapClickHandler):
             analysis=(
                 self._analysisForNewRecord() if pending_before is None else None
             ),
+            source_provenance=target.source,
             report_statistics=True,
         )
         pending_after = self.plot_ts.pending_record()
@@ -441,13 +466,14 @@ class TSClickHandler(MapClickHandler):
                 self.plot_ts.plotTs(
                     dates=dates, ts_values=ts_values, ref_values=ref_values,
                     coords=coords, ref_coords=ref_coords, update=False,
-                    analysis=analysis, report_statistics=True,
+                    analysis=analysis, source_provenance=time_series_source_from_layer(layer),
+                    report_statistics=True,
                 )
                 pending = self.plot_ts.pending_record()
                 if pending is not None and pending.id != previous_id:
                     self._commitSelectedTarget(
                         dates=dates, values=ts_values, selection=pending.target,
-                        plot_multiple=False,
+                        source=pending.source, plot_multiple=False,
                     )
 
     def choosePointClickedRaster(self, *, point: QgsPointXY, layer: QgsMapLayer = None, ref=False):
@@ -503,13 +529,14 @@ class TSClickHandler(MapClickHandler):
             self.plot_ts.plotTs(
                 dates=dates, ts_values=ts_values, ref_values=ref_values,
                 coords=coords, ref_coords=ref_coords, update=False,
-                analysis=analysis, report_statistics=True,
+                analysis=analysis, source_provenance=time_series_source_from_layer(layer),
+                report_statistics=True,
             )
             pending = self.plot_ts.pending_record()
             if pending is not None and pending.id != previous_id:
                 self._commitSelectedTarget(
                     dates=dates, values=ts_values, selection=pending.target,
-                    plot_multiple=False,
+                    source=pending.source, plot_multiple=False,
                 )
 
     def resetReferencePoint(self):
@@ -631,13 +658,15 @@ class PolygonClickHandler(MapClickHandler):
                 self.plot_ts.plotTs(
                     dates=dates, ts_values=ts_values, ref_values=ref_values,
                     coords=coords, ref_coords=ref_coords, plot_multiple=True,
-                    update=False, analysis=analysis, report_statistics=True,
+                    update=False, analysis=analysis,
+                    source_provenance=time_series_source_from_layer(layer),
+                    report_statistics=True,
                 )
                 pending = self.plot_ts.pending_record()
                 if pending is not None and pending.id != previous_id:
                     self._commitSelectedTarget(
                         dates=dates, values=ts_values, selection=pending.target,
-                        plot_multiple=True,
+                        source=pending.source, plot_multiple=True,
                     )
 
 

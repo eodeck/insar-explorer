@@ -52,6 +52,20 @@ class SpatialSelectionKind(str, Enum):
 
 
 @dataclass(frozen=True)
+class TimeSeriesSource:
+    """Immutable source-layer provenance captured when a time series is created."""
+
+    layer_id: str
+    layer_name: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "layer_id", str(self.layer_id))
+        object.__setattr__(self, "layer_name", str(self.layer_name))
+        if not self.layer_id:
+            raise ValueError("source layer ID must not be empty")
+
+
+@dataclass(frozen=True)
 class MapPointSnapshot:
     """Point location expressed in one explicit map CRS."""
 
@@ -292,6 +306,7 @@ class TimeSeriesRecord:
     id: UUID = field(default_factory=uuid4)
     target: Optional[SpatialSelection] = None
     reference: Optional[SpatialSelection] = None
+    source: Optional[TimeSeriesSource] = None
 
     def __post_init__(self) -> None:
         """Normalize legacy selection values while preserving immutable ownership."""
