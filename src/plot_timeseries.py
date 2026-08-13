@@ -10,7 +10,8 @@ from uuid import UUID
 import numpy as np
 from ..external import pyqtgraph as pg
 from qgis.PyQt.QtCore import QPointF
-from qgis.PyQt.QtGui import QColor, QFont
+from qgis.PyQt.QtGui import QColor, QFont, QPalette
+from qgis.PyQt.QtWidgets import QApplication
 
 from .model_fitting import calculateFitStatistics, FittingModels, ModelFitError
 from .export_plot import TimeSeriesPlotExporter
@@ -238,6 +239,8 @@ class PlotTs():
         self._new_record_analysis = self._snapshotAnalysisDefaults()
         self._hover_scene = None
         self._hover_widget = None
+        self._hover_marker = None
+        self._hover_marker_plot = None
         self._hover_tolerance_px = 10.0
 
     @contextmanager
@@ -407,6 +410,7 @@ class PlotTs():
     def dispose(self):
         """Disconnect renderer-owned subscriptions and hover signal handlers."""
         self._disconnectHoverSignals()
+        self._discardHoverMarker()
         unsubscribe = self._settings_unsubscribe
         self._settings_unsubscribe = None
         if unsubscribe is not None:
@@ -602,6 +606,7 @@ class PlotTs():
         """Create axes matching the current residual-layout flag."""
         self._connectHoverSignals()
         self.ax = self._addPlot(row=0)
+        self._ensureHoverMarker()
         if self.plot_residuals_flag:
             self.ax_residuals = self._addPlot(row=1)
             self.ax_residuals.setXLink(self.ax)
@@ -1722,7 +1727,22 @@ class PlotTs():
 
     def savePlotAsImage(self, filename):
         """Export the current plot and return the export result."""
-        return TimeSeriesPlotExporter(self).export(filename)
+        marker = self._hover_marker
+        marker_was_visible = False
+        if marker is not None:
+            try:
+                marker_was_visible = bool(marker.isVisible())
+                marker.hide()
+            except RuntimeError:
+                marker = None
+        try:
+            return TimeSeriesPlotExporter(self).export(filename)
+        finally:
+            if marker is not None and marker_was_visible:
+                try:
+                    marker.show()
+                except RuntimeError:
+                    pass
 
     def _addPlot(self, row=0):
         axis = FormattedDateAxisItem(
@@ -1830,8 +1850,112 @@ class PlotTs():
         self._hover_widget = None
         self._hover_scene = None
 
+    def _discardHoverMarker(self):
+        """Detach and forget the transient hover marker without touching series graphics."""
+        marker = self._hover_marker
+        plot_item = self._hover_marker_plot
+        if marker is not None:
+            try:
+                marker.hide()
+            except RuntimeError:
+                pass
+        if marker is not None and plot_item is not None:
+            try:
+                plot_item.removeItem(marker)
+            except (AttributeError, RuntimeError):
+                pass
+        self._hover_marker = None
+        self._hover_marker_plot = None
+
+    def _ensureHoverMarker(self):
+        """Create the single reusable hover marker after the primary plot exists."""
+        plot_item = self.ax
+        if plot_item is None:
+            return None
+        if self._hover_marker is not None and self._hover_marker_plot is plot_item:
+            return self._hover_marker
+        self._discardHoverMarker()
+        marker = pg.ScatterPlotItem(
+            x=[], y=[], symbol='o', size=8,
+            pen=pg.mkPen(self._hoverMarkerFallbackColor(), width=10),
+            brush=pg.mkBrush(0, 0, 0, 0),
+        )
+        marker.setZValue(1e6)
+        marker.hide()
+        plot_item.addItem(marker)
+        self._hover_marker = marker
+        self._hover_marker_plot = plot_item
+        return marker
+
+    def _hoverMarkerFallbackColor(self):
+        """Return the plot foreground color for a theme-safe marker fallback."""
+        if self.ax is not None:
+            try:
+                pen = self.ax.getAxis('left').textPen()
+                if pen is not None:
+                    return pen.color()
+            except (AttributeError, RuntimeError):
+                pass
+        plot_widget = getattr(self.ui, "plot_widget", None)
+        if plot_widget is not None:
+            try:
+                return plot_widget.palette().color(QPalette.WindowText)
+            except (AttributeError, RuntimeError):
+                pass
+        try:
+            return QApplication.palette().color(QPalette.WindowText)
+        except RuntimeError:
+            return QColor()
+
+    def _hoverMarkerColor(self, series_id):
+        """Return a readily available series color for the hover ring."""
+        record = self._series_store.get(series_id) if series_id is not None else None
+        if record is None:
+            pending = self.pending_record()
+            if pending is not None and pending.id == series_id:
+                record = pending
+        if record is None:
+            return self._hoverMarkerFallbackColor()
+        graphics = self._graphics_by_series_id.get(series_id)
+        if graphics is None:
+            graphics = self._pending_graphics_by_series_id.get(series_id)
+        style = record.presentation.series
+        if graphics is not None and graphics.scatter is not None:
+            return self._color(style.marker_color)
+        if graphics is not None and graphics.line is not None:
+            return self._color(style.line_color)
+        return self._hoverMarkerFallbackColor()
+
+    def _updateHoverMarker(self, observation):
+        """Move the reusable hover ring to the already resolved observation."""
+        if observation is None:
+            self._hideHoverMarker()
+            return
+        marker = self._ensureHoverMarker()
+        if marker is None:
+            return
+        marker.setData(
+            x=[float(observation.plot_x)],
+            y=[float(observation.plot_y)],
+            pen=pg.mkPen(self._hoverMarkerColor(observation.series_id), width=1),
+            brush=pg.mkBrush(0, 0, 0, 0),
+            symbol='o',
+            size=8,
+        )
+        marker.show()
+
+    def _hideHoverMarker(self):
+        """Hide the transient hover ring if it currently exists."""
+        marker = self._hover_marker
+        if marker is not None:
+            try:
+                marker.hide()
+            except RuntimeError:
+                pass
+
     def _clearHoverReadout(self):
         """Clear the plot-local hover readout if the toolbar is available."""
+        self._hideHoverMarker()
         toolbar = getattr(self.ui, "time_series_toolbar", None)
         if toolbar is not None and hasattr(toolbar, "setHoverReadout"):
             toolbar.setHoverReadout("")
@@ -1888,6 +2012,9 @@ class PlotTs():
                     value=float(value),
                     scene_x=float(scene_point.x()),
                     scene_y=float(scene_point.y()),
+                    plot_x=float(x_value),
+                    plot_y=float(value),
+                    series_id=record.id,
                 ))
         return observations
 
@@ -1905,6 +2032,7 @@ class PlotTs():
         toolbar = getattr(self.ui, "time_series_toolbar", None)
         if toolbar is not None and hasattr(toolbar, "setHoverReadout"):
             toolbar.setHoverReadout(format_hover_text(observation))
+        self._updateHoverMarker(observation)
 
     def _stylePlotFrame(self, plot_item):
         plot_item.showAxis('top')
@@ -1921,6 +2049,7 @@ class PlotTs():
     def _clearPlotWidget(self):
         """Destroy plot axes and canvas items without deciding record lifetime."""
         self._clearHoverReadout()
+        self._discardHoverMarker()
         self.ui.plot_widget.clear()
         self.ui.plot_widget.plot_items = []
         self.ax = None

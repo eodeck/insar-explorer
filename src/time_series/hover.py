@@ -16,6 +16,9 @@ class HoverObservation:
     value: float
     scene_x: float
     scene_y: float
+    plot_x: float = 0.0
+    plot_y: float = 0.0
+    series_id: object = None
 
 
 def select_nearest_hover_observation(
