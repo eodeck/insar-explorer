@@ -9,12 +9,16 @@ from uuid import UUID
 
 import numpy as np
 from ..external import pyqtgraph as pg
+from qgis.PyQt.QtCore import QPointF
 from qgis.PyQt.QtGui import QColor, QFont
 
 from .model_fitting import calculateFitStatistics, FittingModels, ModelFitError
 from .export_plot import TimeSeriesPlotExporter
 from .time_series.y_axis_range import (
     resolve_manual_y_range, resolve_y_axis_display_range,
+)
+from .time_series.hover import (
+    HoverObservation, format_hover_text, select_nearest_hover_observation,
 )
 from .time_series.settings.persistence import build_legacy_plot_params
 from .time_series.persistence import NullProjectStateRepository
@@ -232,6 +236,9 @@ class PlotTs():
         self.analysis_state_sync_callback = None
         self._last_axis_ranges = {}
         self._new_record_analysis = self._snapshotAnalysisDefaults()
+        self._hover_scene = None
+        self._hover_widget = None
+        self._hover_tolerance_px = 10.0
 
     @contextmanager
     def axisViewUpdateGuard(self):
@@ -397,8 +404,17 @@ class PlotTs():
         """Compatibility alias that never reads persistence from the renderer."""
         self.refreshCompatibilityViews()
 
+    def dispose(self):
+        """Disconnect renderer-owned subscriptions and hover signal handlers."""
+        self._disconnectHoverSignals()
+        unsubscribe = self._settings_unsubscribe
+        self._settings_unsubscribe = None
+        if unsubscribe is not None:
+            unsubscribe()
+
     def clear(self):
         """Clear all stored series and renderer-owned graphics."""
+        self._clearHoverReadout()
         self._clearPlotWidget()
         self._discardAllSeriesState()
         self._pending_session.clear()
@@ -584,6 +600,7 @@ class PlotTs():
 
     def _createAxesForCurrentLayout(self) -> None:
         """Create axes matching the current residual-layout flag."""
+        self._connectHoverSignals()
         self.ax = self._addPlot(row=0)
         if self.plot_residuals_flag:
             self.ax_residuals = self._addPlot(row=1)
@@ -1766,6 +1783,129 @@ class PlotTs():
         if auto_button is not None:
             auto_button.hide()
 
+    def _connectHoverSignals(self):
+        """Connect one plot-scene hover handler for this renderer instance."""
+        plot_widget = getattr(self.ui, "plot_widget", None)
+        if plot_widget is None:
+            return
+        try:
+            scene = plot_widget.scene()
+        except RuntimeError:
+            return
+        if plot_widget is self._hover_widget and scene is self._hover_scene:
+            return
+        self._disconnectHoverSignals()
+        try:
+            scene.sigMouseMoved.connect(self._handleHoverMouseMoved)
+        except (AttributeError, RuntimeError):
+            return
+        mouse_left = getattr(plot_widget, "mouseLeft", None)
+        if mouse_left is not None:
+            try:
+                mouse_left.connect(self._clearHoverReadout)
+            except (AttributeError, RuntimeError):
+                try:
+                    scene.sigMouseMoved.disconnect(self._handleHoverMouseMoved)
+                except (AttributeError, TypeError, RuntimeError):
+                    pass
+                return
+        self._hover_widget = plot_widget
+        self._hover_scene = scene
+
+    def _disconnectHoverSignals(self):
+        """Disconnect renderer-owned hover signals without affecting other users."""
+        scene = self._hover_scene
+        plot_widget = self._hover_widget
+        if scene is not None:
+            try:
+                scene.sigMouseMoved.disconnect(self._handleHoverMouseMoved)
+            except (TypeError, RuntimeError):
+                pass
+        mouse_left = getattr(plot_widget, "mouseLeft", None) if plot_widget is not None else None
+        if mouse_left is not None:
+            try:
+                mouse_left.disconnect(self._clearHoverReadout)
+            except (TypeError, RuntimeError):
+                pass
+        self._hover_widget = None
+        self._hover_scene = None
+
+    def _clearHoverReadout(self):
+        """Clear the plot-local hover readout if the toolbar is available."""
+        toolbar = getattr(self.ui, "time_series_toolbar", None)
+        if toolbar is not None and hasattr(toolbar, "setHoverReadout"):
+            toolbar.setHoverReadout("")
+
+    @staticmethod
+    def _observationGraphicsVisible(graphics):
+        """Return whether the record's real observation markers or line are visible."""
+        for item in (graphics.scatter, graphics.line):
+            if item is None:
+                continue
+            is_visible = getattr(item, "isVisible", None)
+            if is_visible is None or bool(is_visible()):
+                return True
+        return False
+
+    def _iterHoverRecords(self):
+        """Yield visible records that still own live observation graphics."""
+        for record in self._series_store.records():
+            graphics = self._graphics_by_series_id.get(record.id)
+            if (
+                graphics is not None
+                and record.presentation.visible
+                and self._observationGraphicsVisible(graphics)
+            ):
+                yield record
+        pending = self.pending_record()
+        if pending is not None:
+            graphics = self._pending_graphics_by_series_id.get(pending.id)
+            if (
+                graphics is not None
+                and pending.presentation.visible
+                and self._observationGraphicsVisible(graphics)
+            ):
+                yield pending
+
+    def _hoverObservations(self):
+        """Build lightweight scene-space observations from currently plotted data."""
+        if self.ax is None:
+            return ()
+        view_box = self.ax.getViewBox()
+        observations = []
+        for record in self._iterHoverRecords():
+            dates = record.data.dates
+            values = np.asarray(record.data.plot_values, dtype=float).reshape(-1)
+            x_values = self._datesToX(dates)
+            for date, x_value, value in zip(dates, x_values, values):
+                if not np.isfinite(value) or not np.isfinite(x_value):
+                    continue
+                scene_point = view_box.mapViewToScene(
+                    QPointF(float(x_value), float(value))
+                )
+                observations.append(HoverObservation(
+                    date=date,
+                    value=float(value),
+                    scene_x=float(scene_point.x()),
+                    scene_y=float(scene_point.y()),
+                ))
+        return observations
+
+    def _handleHoverMouseMoved(self, scene_pos):
+        """Show the nearest real observation when the pointer is close enough."""
+        if self.ax is None or not self.ax.sceneBoundingRect().contains(scene_pos):
+            self._clearHoverReadout()
+            return
+        observation = select_nearest_hover_observation(
+            self._hoverObservations(),
+            float(scene_pos.x()),
+            float(scene_pos.y()),
+            tolerance_px=self._hover_tolerance_px,
+        )
+        toolbar = getattr(self.ui, "time_series_toolbar", None)
+        if toolbar is not None and hasattr(toolbar, "setHoverReadout"):
+            toolbar.setHoverReadout(format_hover_text(observation))
+
     def _stylePlotFrame(self, plot_item):
         plot_item.showAxis('top')
         plot_item.showAxis('right')
@@ -1780,6 +1920,7 @@ class PlotTs():
 
     def _clearPlotWidget(self):
         """Destroy plot axes and canvas items without deciding record lifetime."""
+        self._clearHoverReadout()
         self.ui.plot_widget.clear()
         self.ui.plot_widget.plot_items = []
         self.ax = None

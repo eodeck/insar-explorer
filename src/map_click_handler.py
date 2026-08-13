@@ -309,6 +309,10 @@ class TSClickHandler(MapClickHandler):
         self.raster_layer = raster_layer_utils.RasterTimeseries()
         self.selected_field_name = None
 
+    def dispose(self):
+        """Release renderer-owned Qt and settings subscriptions."""
+        self.plot_ts.dispose()
+
     def reset(self):
         self.reference_session.clear()
         self.target_session.clear()

@@ -223,6 +223,11 @@ class InsarExplorer:
         # Released memory when widget is closed
         if self.gui_controller is not None:
             self.gui_controller.disconnectMapToolSync()
+            click_handler = getattr(
+                self.gui_controller, "choose_point_click_handler", None
+            )
+            if click_handler is not None:
+                click_handler.dispose()
         self.gui_controller = None
 
         self.pluginIsActive = False
@@ -240,6 +245,7 @@ class InsarExplorer:
         click_handler = getattr(controller, "choose_point_click_handler", None)
         if click_handler is not None:
             click_handler.clearReferenceFeatureHighlight()
+            click_handler.dispose()
         if controller is not None:
             controller.disconnectMapToolSync()
             controller.clearTimeSeriesMapOverlays()
