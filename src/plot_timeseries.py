@@ -1418,10 +1418,11 @@ class PlotTs():
 
     def resolveXAxisRange(self, state=None, *, use_data_xlim=True, padding=30):
         """Resolve the effective X limits used by preview and committed rendering."""
-        if self.dates is None or len(self.dates) == 0:
+        date_range = self.availableDateRange()
+        if date_range is None:
             return None
         state = self.settings_model.x_axis if state is None else state
-        min_date, max_date = self.availableDateRange()
+        min_date, max_date = date_range
         if use_data_xlim:
             data_start = min_date - timedelta(days=padding)
             data_end = max_date + timedelta(days=padding)
@@ -1446,7 +1447,7 @@ class PlotTs():
         return True
 
     def resetSharedXAxisFromData(self):
-        """Restore the linked X domain from the complete canonical date extent."""
+        """Restore the linked X domain from all currently visible record dates."""
         if self.ax is None:
             return False
         state = replace(
@@ -1473,10 +1474,36 @@ class PlotTs():
             self._draw()
         return True
 
-    def availableDateRange(self):
-        """Return the nearest Python datetime endpoints available in current data."""
-        dates = [self._asDatetime(value) for value in self.dates]
+    def visibleRecordDateRange(self):
+        """Return the global valid date extent of currently visible plotted records."""
+        dates = []
+        for record in self._iterVisibleRangeRecords():
+            for value in record.data.dates:
+                try:
+                    if isinstance(value, np.datetime64) and np.isnat(value):
+                        continue
+                    date = self._asDatetime(value)
+                    if np.isfinite(date.timestamp()):
+                        dates.append(date)
+                except (AttributeError, OSError, OverflowError, TypeError, ValueError):
+                    continue
+        if not dates and not self._series_store.records() and self.pending_record() is None:
+            for value in (() if self.dates is None else self.dates):
+                try:
+                    if isinstance(value, np.datetime64) and np.isnat(value):
+                        continue
+                    date = self._asDatetime(value)
+                    if np.isfinite(date.timestamp()):
+                        dates.append(date)
+                except (AttributeError, OSError, OverflowError, TypeError, ValueError):
+                    continue
+        if not dates:
+            return None
         return min(dates), max(dates)
+
+    def availableDateRange(self):
+        """Return the canonical visible-data date range used by From Data policies."""
+        return self.visibleRecordDateRange()
 
     def currentVisibleDateRange(self):
         """Return date bounds covering the complete visible X viewport."""
@@ -1797,14 +1824,13 @@ class PlotTs():
 
     def _resetPlotView(self, plot_item):
         """Route pyqtgraph Auto through one guarded application reset transaction."""
-        if self.dates is None:
-            return
         callback = getattr(self, "auto_view_requested_callback", None)
         if callback is not None:
             callback()
         else:
             with self.axisViewUpdateGuard():
                 self.updateSettings()
+                self._rebuildYDataRanges()
                 self.resetSharedXAxisFromData()
                 self.resetYAxisFromData(self.ax)
                 if self.ax_residuals is not None:
@@ -2151,23 +2177,66 @@ class PlotTs():
         """Compatibility wrapper for UUID-based rendered-record removal."""
         self.remove_rendered_record(snapshot.id)
 
+    def _iterVisibleRangeRecords(self):
+        """Yield records whose observation graphics currently participate in plot visibility."""
+        for record in self._series_store.records():
+            if (
+                record.presentation.visible
+                and record.id not in self._hidden_committed_ids
+                and record.id in self._graphics_by_series_id
+            ):
+                yield record
+        pending = self.pending_record()
+        if (
+            pending is not None
+            and pending.presentation.visible
+            and pending.id in self._pending_graphics_by_series_id
+        ):
+            yield pending
+
+    @staticmethod
+    def _mainObservationYData(record):
+        """Return canonical observation arrays for main-axis data-range calculation."""
+        data = record.data
+        values = []
+        if data.plot_values is not None:
+            values.append(data.plot_values)
+        if data.plot_multiple_values is not None:
+            values.append(data.plot_multiple_values)
+        return values
+
+    @staticmethod
+    def _residualObservationYData(record):
+        """Return canonical residual observations for residual-axis data-range calculation."""
+        residuals = record.data.residuals_values
+        return [] if residuals is None else [residuals]
+
+    def visibleRecordYRange(self):
+        """Return finite main-observation bounds across all visible plotted records."""
+        values = []
+        for record in self._iterVisibleRangeRecords():
+            values.extend(self._mainObservationYData(record))
+        return self._finiteRange(values)
+
+    def visibleResidualYRange(self):
+        """Return finite residual bounds across all visible plotted records."""
+        values = []
+        for record in self._iterVisibleRangeRecords():
+            values.extend(self._residualObservationYData(record))
+        return self._finiteRange(values)
+
     def _rebuildYDataRanges(self):
         self._y_data_ranges = {}
-        records = list(self.series_history)
-        pending = self.pending_record()
-        if pending is not None:
-            records.append(pending)
-        for snapshot in records:
-            graphics = self._graphics_for_series(snapshot)
-            if graphics is not None:
-                self.updateYlim(ax=self.ax, y_data=graphics.main_y_data)
+        records = tuple(self._iterVisibleRangeRecords())
+        main_values = []
+        for record in records:
+            main_values.extend(self._mainObservationYData(record))
+        self.updateYlim(ax=self.ax, y_data=main_values)
         if self.ax_residuals is not None:
-            for snapshot in records:
-                graphics = self._graphics_for_series(snapshot)
-                if graphics is not None:
-                    self.updateYlim(
-                        ax=self.ax_residuals, y_data=graphics.residual_y_data
-                    )
+            residual_values = []
+            for record in records:
+                residual_values.extend(self._residualObservationYData(record))
+            self.updateYlim(ax=self.ax_residuals, y_data=residual_values)
 
     def _applyDateFormat(self, ax=None, parms={}):
         if ax is None:

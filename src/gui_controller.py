@@ -2803,6 +2803,7 @@ class GuiController(QObject):
                 self.time_series_settings.replace_domain("y_axis", updated_y)
 
             plotter.resetSharedXAxisFromData()
+            plotter._rebuildYDataRanges()
             plotter.setYlims(ax=plotter.ax)
             if plotter.ax_residuals is not None:
                 plotter.setYlims(ax=plotter.ax_residuals)
