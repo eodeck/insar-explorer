@@ -377,7 +377,7 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         )
         self.remove_selected_button = self._pending_action_button(
             "pb_remove_selected_time_series",
-            ":/icons/icons/item_remove.svg",
+            ":/icons/icons/delete.svg",
             "Remove selected time series",
             "Remove selected time series",
         )
