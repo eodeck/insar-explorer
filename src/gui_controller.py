@@ -89,6 +89,8 @@ class GuiController(QObject):
 
     @time_series_y_axis_mode.setter
     def time_series_y_axis_mode(self, value):
+        if value not in {"from_data", "symmetric", "manual"}:
+            value = "from_data"
         self.time_series_settings.update_property("y_axis", "policy", value)
 
     residual_y_axis_mode = time_series_y_axis_mode
@@ -2803,7 +2805,6 @@ class GuiController(QObject):
                 self.time_series_settings.replace_domain("y_axis", updated_y)
 
             plotter.resetSharedXAxisFromData()
-            plotter._rebuildYDataRanges()
             plotter.setYlims(ax=plotter.ax)
             if plotter.ax_residuals is not None:
                 plotter.setYlims(ax=plotter.ax_residuals)
@@ -3012,7 +3013,7 @@ class GuiController(QObject):
         residual_visible = bool(
             self.choose_point_click_handler.plot_ts.plot_residuals_flag
         )
-        if state.policy in {"symmetric", "adaptive"}:
+        if state.policy == "symmetric":
             presentation_mode = state.policy
         else:
             presentation_mode = state.policy_for_effective_display(residual_visible)
@@ -3028,7 +3029,7 @@ class GuiController(QObject):
 
     def _applyTimeSeriesYAxisMode(self, mode, refresh=True):
         """Apply an aggregate Y mode while preserving axis-local saved ranges."""
-        if mode not in {"from_data", "symmetric", "adaptive", "manual"}:
+        if mode not in {"from_data", "symmetric", "manual"}:
             mode = "from_data"
         plotter = self.choose_point_click_handler.plot_ts
         residual_available = plotter.ax_residuals is not None
@@ -3097,7 +3098,6 @@ class GuiController(QObject):
         messages = {
             "from_data": "Y-axis range set from data.",
             "symmetric": "Y-axis range set symmetric.",
-            "adaptive": "Y-axis range set adaptively.",
             "manual": "Stored manual Y-axis ranges applied.",
         }
         self.msg_signal.emit(messages[self.time_series_y_axis_mode], "i", 0)
@@ -3460,7 +3460,7 @@ class GuiController(QObject):
         return (
             not y_axis.series_custom_view
             and (
-                y_axis.policy in {"symmetric", "adaptive"}
+                y_axis.policy == "symmetric"
                 or y_axis.series_display_mode == "from_data"
             )
         )

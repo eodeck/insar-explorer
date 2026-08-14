@@ -153,13 +153,6 @@ class TimeSeriesToolbar(QToolBar):
                 "action_ts_y_symmetric",
             ),
             (
-                "adaptive",
-                "Adaptive",
-                "Adaptive Y-axis",
-                ":/icons/icons/y_axis_adaptive.svg",
-                "action_ts_y_adaptive",
-            ),
-            (
                 "manual",
                 "Manual",
                 "Apply stored manual Y-axis ranges",

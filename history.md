@@ -1,6 +1,7 @@
 ### History
 
 v2.8.0
+- Remove adaptive y-axis mode.
 - Add source layer selection and zoom to target/reference to the context menu of commited items.
 - Retain time series across active layer changes.
 - Add time series hover readout.
