@@ -2743,6 +2743,7 @@ class GuiController(QObject):
         toolbar = self.ui.time_series_toolbar
         toolbar.appearance_action.setEnabled(has_plot)
         toolbar.plot_export_button.setPrimaryEnabled(has_plot)
+        toolbar.setRangeControlsEnabled(plotter.hasPlottedTimeSeriesData())
 
     def discardPendingTimeSeries(self):
         """Discard only the pending preview and preserve the active reference."""
@@ -2878,13 +2879,13 @@ class GuiController(QObject):
         """Apply a toolbar-selected X-axis policy immediately."""
         if not self._applyTimeSeriesXAxisMode(mode):
             return
-        message = "X-axis range set from data." if mode == "from_data" else "Stored manual time range applied."
+        message = "X range set to Data range." if mode == "from_data" else "Stored manual time range applied."
         self.msg_signal.emit(message, "i", 0)
 
     def showManualXAxisPopup(self):
         """Open the transactional session-local time-range editor."""
         plotter = self.choose_point_click_handler.plot_ts
-        if plotter.dates is None or len(plotter.dates) == 0:
+        if plotter.availableDateRange() is None:
             return
         state = self.time_series_settings.x_axis
         viewport = plotter.captureViewport()
@@ -2916,7 +2917,7 @@ class GuiController(QObject):
             manual_start=manual_start, manual_end=manual_end, custom_view=False,
         )
         plotter = self.choose_point_click_handler.plot_ts
-        if plotter.dates is None or len(plotter.dates) == 0:
+        if plotter.availableDateRange() is None:
             return state, None
         return state, plotter.resolveXAxisRange(state)
 
@@ -3096,8 +3097,8 @@ class GuiController(QObject):
                 return
         self._applyTimeSeriesYAxisMode(mode)
         messages = {
-            "from_data": "Y-axis range set from data.",
-            "symmetric": "Y-axis range set symmetric.",
+            "from_data": "Y range set to Data range.",
+            "symmetric": "Y range set to Symmetric.",
             "manual": "Stored manual Y-axis ranges applied.",
         }
         self.msg_signal.emit(messages[self.time_series_y_axis_mode], "i", 0)
@@ -3229,7 +3230,7 @@ class GuiController(QObject):
         self._manual_y_axis_session = None
         self._applyTimeSeriesYAxisMode(resulting_policy, refresh=True)
         message = (
-            "Y-axis range set from data." if resulting_policy == "from_data"
+            "Y range set to Data range." if resulting_policy == "from_data"
             else "Stored manual Y-axis ranges applied."
         )
         self.msg_signal.emit(message, "i", 0)
