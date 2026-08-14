@@ -25,6 +25,7 @@ class SelectionNavigationLocation:
 
     point: QgsPointXY
     source_crs: QgsCoordinateReferenceSystem
+    canvas_compatible_without_crs: bool = False
 
 
 def _normalized_point(point) -> Optional[QgsPointXY]:
@@ -61,7 +62,9 @@ def resolve_selection_navigation_location(
         point = _normalized_point(QgsPointXY(float(snapshot.x), float(snapshot.y)))
         crs = _valid_crs_copy(snapshot.crs)
         if point is not None and crs is not None:
-            return SelectionNavigationLocation(point=point, source_crs=crs)
+            return SelectionNavigationLocation(
+                point=point, source_crs=crs, canvas_compatible_without_crs=True
+            )
         return None
 
     if selection.kind is SpatialSelectionKind.POINT:
@@ -100,7 +103,7 @@ def resolve_selection_navigation_location(
 
 
 def ensure_canvas_navigation_crs(canvas, project, source_crs):
-    """Return the destination CRS, establishing/synchronizing map CRS if needed."""
+    """Return the valid destination CRS without assigning an absent project CRS."""
     source_crs = _valid_crs_copy(source_crs)
     if source_crs is None:
         raise ValueError("selection source CRS is invalid")
@@ -114,9 +117,7 @@ def ensure_canvas_navigation_crs(canvas, project, source_crs):
         canvas.setDestinationCrs(project_crs)
         return project_crs, False
 
-    project.setCrs(source_crs)
-    canvas.setDestinationCrs(source_crs)
-    return _valid_crs_copy(source_crs), True
+    return None, False
 
 
 def transform_navigation_point(location, destination_crs, project):

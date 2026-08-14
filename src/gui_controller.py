@@ -41,6 +41,7 @@ from .qt_compat import (
     screen_aware_popup_position,
     exec_dialog,
     MESSAGE_ICON_WARNING,
+    MESSAGE_BUTTON_OK,
     MESSAGE_ROLE_ACTION,
     MESSAGE_ROLE_DESTRUCTIVE,
     MESSAGE_ROLE_REJECT,
@@ -2260,6 +2261,15 @@ class GuiController(QObject):
         )
         self._plugin_diagnostic(diagnostic_stage, error)
 
+    def _showProjectCrsRequiredWarning(self, role):
+        """Warn when explicit committed navigation needs an assigned project CRS."""
+        QMessageBox.warning(
+            self.ui,
+            "Project CRS required",
+            f"A project CRS must be set before InSAR Explorer can zoom to this {role}.",
+            MESSAGE_BUTTON_OK,
+        )
+
     def _navigateCommittedTimeSeriesSelection(self, role):
         """Recenter on one record-owned target/reference without changing active layer."""
         record = self._selectedCommittedTimeSeriesRecord()
@@ -2289,16 +2299,22 @@ class GuiController(QObject):
             )
             return False
 
-        try:
-            destination_point = transform_navigation_point(
-                location, destination_crs, project
-            )
-        except Exception as error:
-            self._reportCommittedNavigationFailure(
-                record, role, "transform", error,
-                source_crs=location.source_crs, destination_crs=destination_crs,
-            )
-            return False
+        if destination_crs is None:
+            if not location.canvas_compatible_without_crs:
+                self._showProjectCrsRequiredWarning(role)
+                return False
+            destination_point = location.point
+        else:
+            try:
+                destination_point = transform_navigation_point(
+                    location, destination_crs, project
+                )
+            except Exception as error:
+                self._reportCommittedNavigationFailure(
+                    record, role, "transform", error,
+                    source_crs=location.source_crs, destination_crs=destination_crs,
+                )
+                return False
 
         try:
             recenter_canvas_preserving_scale(
