@@ -28,6 +28,8 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
     toggleSelectedVisibilityRequested = pyqtSignal()
     exportDataRequested = pyqtSignal()
     selectSourceLayerRequested = pyqtSignal()
+    zoomMapToTargetRequested = pyqtSignal()
+    zoomMapToReferenceRequested = pyqtSignal()
     actionStateRefreshRequested = pyqtSignal()
 
     def __init__(self, parent=None):
@@ -39,6 +41,8 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
         self._rename_editor = None
         self._restore_focus_after_rename = False
         self._select_source_layer_available = False
+        self._zoom_target_available = False
+        self._zoom_reference_available = False
         self.rename_action = QAction("Rename", self)
         self.rename_action.setObjectName("action_rename_selected_time_series")
         self.rename_action.setShortcut(QtGui.QKeySequence(KEY_F2))
@@ -150,6 +154,26 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
         self.select_source_layer_action.triggered.connect(
             self.selectSourceLayerRequested.emit
         )
+        self.zoom_map_to_target_action = QAction("Zoom map to target", self)
+        self.zoom_map_to_target_action.setObjectName("action_zoom_map_to_time_series_target")
+        target_tip = "Center the QGIS map on this time series target"
+        self.zoom_map_to_target_action.setToolTip(target_tip)
+        self.zoom_map_to_target_action.setStatusTip(target_tip)
+        self.zoom_map_to_target_action.setEnabled(False)
+        self.zoom_map_to_target_action.triggered.connect(
+            self.zoomMapToTargetRequested.emit
+        )
+        self.zoom_map_to_reference_action = QAction("Zoom map to reference", self)
+        self.zoom_map_to_reference_action.setObjectName(
+            "action_zoom_map_to_time_series_reference"
+        )
+        reference_tip = "Center the QGIS map on this time series reference"
+        self.zoom_map_to_reference_action.setToolTip(reference_tip)
+        self.zoom_map_to_reference_action.setStatusTip(reference_tip)
+        self.zoom_map_to_reference_action.setEnabled(False)
+        self.zoom_map_to_reference_action.triggered.connect(
+            self.zoomMapToReferenceRequested.emit
+        )
         self.setContextMenuPolicy(CUSTOM_CONTEXT_MENU)
         self.customContextMenuRequested.connect(self._show_context_menu)
 
@@ -244,6 +268,8 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
                 pass
         super(CommittedTimeSeriesView, self).setModel(model)
         self._select_source_layer_available = False
+        self._zoom_target_available = False
+        self._zoom_reference_available = False
         selection_model = self.selectionModel()
         if selection_model is not None:
             selection_model.selectionChanged.connect(
@@ -261,15 +287,26 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
         self.assign_distinct_colors_action.setEnabled(
             not editing and len(selected_ids) >= 2
         )
+        single = not editing and len(selected_ids) == 1
         self.select_source_layer_action.setEnabled(
-            not editing
-            and len(selected_ids) == 1
-            and self._select_source_layer_available
+            single and self._select_source_layer_available
+        )
+        self.zoom_map_to_target_action.setEnabled(
+            single and self._zoom_target_available
+        )
+        self.zoom_map_to_reference_action.setEnabled(
+            single and self._zoom_reference_available
         )
 
     def set_select_source_layer_enabled(self, enabled):
         """Project controller-owned source-layer availability onto the action."""
         self._select_source_layer_available = bool(enabled)
+        self.refresh_action_enabled_states()
+
+    def set_map_navigation_enabled(self, *, target_enabled, reference_enabled):
+        """Project record-owned target/reference navigation availability."""
+        self._zoom_target_available = bool(target_enabled)
+        self._zoom_reference_available = bool(reference_enabled)
         self.refresh_action_enabled_states()
 
     def begin_rename_selected_record(self):
@@ -398,6 +435,8 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
         menu.addAction(self.rename_action)
         menu.addSeparator()
         menu.addAction(self.select_source_layer_action)
+        menu.addAction(self.zoom_map_to_target_action)
+        menu.addAction(self.zoom_map_to_reference_action)
         menu.addSeparator()
         menu.addAction(self.remove_action)
         global_position = self.viewport().mapToGlobal(position)

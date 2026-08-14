@@ -109,6 +109,8 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
     pasteCommittedRequested = pyqtSignal(object)
     assignDistinctColorsRequested = pyqtSignal()
     selectCommittedSourceLayerRequested = pyqtSignal()
+    zoomCommittedTargetRequested = pyqtSignal()
+    zoomCommittedReferenceRequested = pyqtSignal()
     committedActionStateRefreshRequested = pyqtSignal()
     indicatorSettingsRequested = pyqtSignal()
 
@@ -419,6 +421,12 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         self.committed_view.selectSourceLayerRequested.connect(
             self.selectCommittedSourceLayerRequested.emit
         )
+        self.committed_view.zoomMapToTargetRequested.connect(
+            self.zoomCommittedTargetRequested.emit
+        )
+        self.committed_view.zoomMapToReferenceRequested.connect(
+            self.zoomCommittedReferenceRequested.emit
+        )
         self.committed_view.actionStateRefreshRequested.connect(
             self.committedActionStateRefreshRequested.emit
         )
@@ -566,6 +574,12 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
     def set_select_source_layer_enabled(self, enabled):
         """Project source-layer navigation availability onto the committed view."""
         self.committed_view.set_select_source_layer_enabled(enabled)
+
+    def set_map_navigation_enabled(self, *, target_enabled, reference_enabled):
+        """Project target/reference navigation availability onto the committed view."""
+        self.committed_view.set_map_navigation_enabled(
+            target_enabled=target_enabled, reference_enabled=reference_enabled
+        )
 
     def set_clipboard_categories(self, categories):
         """Project session clipboard availability without owning clipboard state."""
