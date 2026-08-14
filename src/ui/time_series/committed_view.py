@@ -27,6 +27,8 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
     assignDistinctColorsRequested = pyqtSignal()
     toggleSelectedVisibilityRequested = pyqtSignal()
     exportDataRequested = pyqtSignal()
+    selectSourceLayerRequested = pyqtSignal()
+    actionStateRefreshRequested = pyqtSignal()
 
     def __init__(self, parent=None):
         """Create an intent-only view with a shared removal context action."""
@@ -36,6 +38,7 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
         self._rename_record_id = None
         self._rename_editor = None
         self._restore_focus_after_rename = False
+        self._select_source_layer_available = False
         self.rename_action = QAction("Rename", self)
         self.rename_action.setObjectName("action_rename_selected_time_series")
         self.rename_action.setShortcut(QtGui.QKeySequence(KEY_F2))
@@ -124,6 +127,28 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
         self.assign_distinct_colors_action.setEnabled(False)
         self.assign_distinct_colors_action.triggered.connect(
             self.assignDistinctColorsRequested.emit
+        )
+        self.select_source_layer_action = QAction(
+            "Select source in Layers", self
+        )
+        self.select_source_layer_action.setObjectName(
+            "action_select_time_series_source_layer"
+        )
+        source_layer_tip = (
+            "Select the layer this time series came from in the QGIS Layers panel"
+        )
+        self.select_source_layer_action.setToolTip(source_layer_tip)
+        self.select_source_layer_action.setStatusTip(source_layer_tip)
+        set_source_accessible_name = getattr(
+            self.select_source_layer_action, "setAccessibleName", None
+        )
+        if callable(set_source_accessible_name):
+            set_source_accessible_name(
+                "Select source layer in QGIS Layers panel"
+            )
+        self.select_source_layer_action.setEnabled(False)
+        self.select_source_layer_action.triggered.connect(
+            self.selectSourceLayerRequested.emit
         )
         self.setContextMenuPolicy(CUSTOM_CONTEXT_MENU)
         self.customContextMenuRequested.connect(self._show_context_menu)
@@ -218,6 +243,7 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
             except (TypeError, RuntimeError):
                 pass
         super(CommittedTimeSeriesView, self).setModel(model)
+        self._select_source_layer_available = False
         selection_model = self.selectionModel()
         if selection_model is not None:
             selection_model.selectionChanged.connect(
@@ -235,6 +261,16 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
         self.assign_distinct_colors_action.setEnabled(
             not editing and len(selected_ids) >= 2
         )
+        self.select_source_layer_action.setEnabled(
+            not editing
+            and len(selected_ids) == 1
+            and self._select_source_layer_available
+        )
+
+    def set_select_source_layer_enabled(self, enabled):
+        """Project controller-owned source-layer availability onto the action."""
+        self._select_source_layer_available = bool(enabled)
+        self.refresh_action_enabled_states()
 
     def begin_rename_selected_record(self):
         """Start inline label editing for the single selected committed record."""
@@ -352,6 +388,7 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
         """Prepare the pointed row, then expose committed-record commands."""
         self._prepare_context_selection(self.indexAt(position))
         self._update_remove_action_enabled()
+        self.actionStateRefreshRequested.emit()
         menu = QtWidgets.QMenu(self)
         menu.addAction(self.copy_settings_action)
         menu.addMenu(self.paste_menu)
@@ -359,6 +396,9 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
         menu.addAction(self.assign_distinct_colors_action)
         menu.addSeparator()
         menu.addAction(self.rename_action)
+        menu.addSeparator()
+        menu.addAction(self.select_source_layer_action)
+        menu.addSeparator()
         menu.addAction(self.remove_action)
         global_position = self.viewport().mapToGlobal(position)
         if hasattr(menu, "exec"):

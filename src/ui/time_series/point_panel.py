@@ -108,6 +108,8 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
     copyCommittedSettingsRequested = pyqtSignal()
     pasteCommittedRequested = pyqtSignal(object)
     assignDistinctColorsRequested = pyqtSignal()
+    selectCommittedSourceLayerRequested = pyqtSignal()
+    committedActionStateRefreshRequested = pyqtSignal()
     indicatorSettingsRequested = pyqtSignal()
 
     ICON_SIZE = 18
@@ -414,6 +416,12 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         self.committed_view.assignDistinctColorsRequested.connect(
             self.assignDistinctColorsRequested.emit
         )
+        self.committed_view.selectSourceLayerRequested.connect(
+            self.selectCommittedSourceLayerRequested.emit
+        )
+        self.committed_view.actionStateRefreshRequested.connect(
+            self.committedActionStateRefreshRequested.emit
+        )
         self.committed_view.toggleSelectedVisibilityRequested.connect(
             self.toggleSelectedCommittedVisibilityRequested.emit
         )
@@ -554,6 +562,10 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         if self.committed_view.selectionModel() is None:
             return ()
         return tuple(sorted(index.row() for index in self.committed_view.selectionModel().selectedRows()))
+
+    def set_select_source_layer_enabled(self, enabled):
+        """Project source-layer navigation availability onto the committed view."""
+        self.committed_view.set_select_source_layer_enabled(enabled)
 
     def set_clipboard_categories(self, categories):
         """Project session clipboard availability without owning clipboard state."""

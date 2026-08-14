@@ -3,6 +3,7 @@ import math
 from dataclasses import replace
 
 from qgis.gui import QgsMapToolEmitPoint
+from qgis.core import QgsProject
 from qgis.PyQt.QtWidgets import QFileDialog, QComboBox, QMessageBox
 from qgis.PyQt.QtCore import (
     QObject, QPoint, QRect, QSettings, QSignalBlocker, QStandardPaths, QTimer, QVariant, pyqtSignal,
@@ -840,6 +841,12 @@ class GuiController(QObject):
         panel.pasteCommittedRequested.connect(self.pasteCommittedTimeSeriesSettings)
         panel.assignDistinctColorsRequested.connect(
             self.assignDistinctColorsToCommitted
+        )
+        panel.selectCommittedSourceLayerRequested.connect(
+            self.selectCommittedTimeSeriesSourceLayer
+        )
+        panel.committedActionStateRefreshRequested.connect(
+            self._refreshCommittedSourceLayerActionState
         )
         panel.indicatorSettingsRequested.connect(self.showMapIndicatorSettingsPopup)
         self.ui.pb_choose_point.clicked.connect(self.activatePointSelection)
@@ -2168,6 +2175,41 @@ class GuiController(QObject):
         self.time_series_clipboard = None
         self._refreshTimeSeriesClipboardProjection()
 
+    def _resolveTimeSeriesSourceLayer(self, record):
+        """Resolve a committed record's exact source layer by stored QGIS layer ID."""
+        source = None if record is None else record.source
+        if source is None or not source.layer_id:
+            return None
+        return QgsProject.instance().mapLayer(source.layer_id)
+
+    def _refreshCommittedSourceLayerActionState(self):
+        """Enable source navigation only for one selected record with a live source."""
+        panel = self.ui.time_series_point_panel
+        selected = panel.selected_committed_ids()
+        source_layer = None
+        if len(selected) == 1:
+            record = self.choose_point_click_handler.plot_ts.committed_record(
+                selected[0]
+            )
+            source_layer = self._resolveTimeSeriesSourceLayer(record)
+        panel.set_select_source_layer_enabled(source_layer is not None)
+        return source_layer
+
+    def selectCommittedTimeSeriesSourceLayer(self):
+        """Select the exact originating QGIS layer for one committed time series."""
+        panel = self.ui.time_series_point_panel
+        selected = panel.selected_committed_ids()
+        if len(selected) != 1:
+            self._refreshCommittedSourceLayerActionState()
+            return False
+        record = self.choose_point_click_handler.plot_ts.committed_record(selected[0])
+        source_layer = self._resolveTimeSeriesSourceLayer(record)
+        if source_layer is None:
+            panel.set_select_source_layer_enabled(False)
+            return False
+        self.iface.setActiveLayer(source_layer)
+        return True
+
     def copyCommittedTimeSeriesSettings(self):
         """Atomically capture Style, Fit, and Replica from one committed source."""
         panel = self.ui.time_series_point_panel
@@ -2528,6 +2570,7 @@ class GuiController(QObject):
 
     def committedTimeSeriesSelectionChanged(self, record_ids):
         """Project selected UUIDs and enable only record-owned toolbar controls."""
+        self._refreshCommittedSourceLayerActionState()
         plotter = self.choose_point_click_handler.plot_ts
         active_layer_id = self._layerIdentity(self.iface.activeLayer())
         active_layer_id = None if active_layer_id is None else str(active_layer_id)
