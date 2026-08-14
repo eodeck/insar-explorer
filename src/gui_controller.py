@@ -2694,24 +2694,18 @@ class GuiController(QObject):
         plotter.replace_series_records((updated,))
         self.ui.time_series_point_panel.refresh_committed_model()
 
+    def _refreshCommittedTimeSeriesMapOverlays(self, record_ids):
+        """Project committed map overlays from list selection only."""
+        plotter = self.choose_point_click_handler.plot_ts
+        self.time_series_map_overlays.update_selection(
+            record_ids, plotter.committed_record
+        )
+
     def committedTimeSeriesSelectionChanged(self, record_ids):
         """Project selected UUIDs and enable only record-owned toolbar controls."""
         self._refreshCommittedNavigationActionState()
         plotter = self.choose_point_click_handler.plot_ts
-        active_layer_id = self._layerIdentity(self.iface.activeLayer())
-        active_layer_id = None if active_layer_id is None else str(active_layer_id)
-        overlay_record_ids = []
-        for record_id in record_ids:
-            record = plotter.committed_record(record_id)
-            if (
-                record is not None
-                and record.source is not None
-                and record.source.layer_id == active_layer_id
-            ):
-                overlay_record_ids.append(record_id)
-        self.time_series_map_overlays.update_selection(
-            overlay_record_ids, plotter.committed_record
-        )
+        self._refreshCommittedTimeSeriesMapOverlays(record_ids)
         toolbar = self.ui.time_series_toolbar
         if plotter.pending_record() is not None:
             toolbar.setSeriesControlsEnabled(True)
