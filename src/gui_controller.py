@@ -3,6 +3,7 @@ import math
 from dataclasses import replace
 
 from qgis.gui import QgsMapToolEmitPoint
+from qgis.core import QgsProject
 from qgis.PyQt.QtWidgets import QFileDialog, QComboBox, QMessageBox
 from qgis.PyQt.QtCore import (
     QObject, QPoint, QRect, QSettings, QSignalBlocker, QStandardPaths, QTimer, QVariant, pyqtSignal,
@@ -40,6 +41,7 @@ from .qt_compat import (
     screen_aware_popup_position,
     exec_dialog,
     MESSAGE_ICON_WARNING,
+    MESSAGE_BUTTON_OK,
     MESSAGE_ROLE_ACTION,
     MESSAGE_ROLE_DESTRUCTIVE,
     MESSAGE_ROLE_REJECT,
@@ -48,6 +50,10 @@ from .time_series.fit_state import TimeSeriesFitState
 from .time_series.list_state import TimeSeriesListState
 from .time_series.map_overlays import (
     CommittedSelectionOverlayController, PendingTimeSeriesMapOverlayController,
+)
+from .time_series.map_navigation import (
+    ensure_canvas_navigation_crs, recenter_canvas_preserving_scale,
+    resolve_selection_navigation_location, transform_navigation_point,
 )
 from .time_series.analysis_defaults import StickyAnalysisDefaultsCoordinator
 from .models.time_series import FitConfiguration, ReplicaConfiguration
@@ -345,16 +351,28 @@ class GuiController(QObject):
         elif self.selection_type == "reference polygon":
             self.initializePolygonDrawingTool(reference=True)
 
+    def resetTimeSeriesTransientStateForLayer(self):
+        """Clear active-layer interaction state while retaining committed series."""
+        self.time_series_map_overlays.clear_committed()
+        self.pending_time_series_map_overlays.clear()
+        self.clear_all_pending_drawing_feedback()
+        self.choose_point_click_handler.resetLayerTransientState()
+        self.clearTimeSeriesClipboard()
+
     def resetTimeSeriesWorkspaceForDataset(self):
-        """Clear dataset-scoped time-series state, overlays, and clipboard."""
+        """Compatibility alias for active-layer transient cleanup."""
+        self.resetTimeSeriesTransientStateForLayer()
+
+    def clearTimeSeriesWorkspace(self):
+        """Explicitly clear transient state and every committed time series."""
         self.time_series_map_overlays.clear_all()
         self.pending_time_series_map_overlays.clear()
         self.clear_all_pending_drawing_feedback()
-        self.choose_point_click_handler.reset()
+        self.choose_point_click_handler.clearTimeSeriesWorkspace()
         self.clearTimeSeriesClipboard()
 
     def onLayerChanged(self, layer=None):
-        """Reset the time-series workspace and map for a confirmed layer change."""
+        """Reset active-layer state while retaining the committed workspace."""
         if layer is None:
             layer = self.iface.activeLayer()
 
@@ -370,8 +388,11 @@ class GuiController(QObject):
         self._setCustomRangeSource()
         self._setRangeSymmetryChecked(False)
         self._setSymbologyDirty(False)
+        self.resetTimeSeriesTransientStateForLayer()
+        self.committedTimeSeriesSelectionChanged(
+            self.ui.time_series_point_panel.selected_committed_ids()
+        )
         if layer:
-            self.resetTimeSeriesWorkspaceForDataset()
             self._restoreTimeSeriesFitState()
             self._restoreTimeSeriesYAxisMode()
             self._restoreTimeSeriesReplicaState()
@@ -386,6 +407,7 @@ class GuiController(QObject):
                 self.ui.pb_choose_polygon.setEnabled(True)
                 self.ui.pb_set_reference_polygon.setEnabled(True)
             elif layer_type == RASTER_LAYER:
+                self._deactivatePolygonSelectionToolsForRaster()
                 self.ui.settings_panel.setEnabled(False)
                 self.ui.pb_choose_polygon.setEnabled(False)
                 self.ui.pb_set_reference_polygon.setEnabled(False)
@@ -398,6 +420,15 @@ class GuiController(QObject):
                 self.ui.settings_panel.setEnabled(True)
                 message = ""
             self.msg_signal.emit(message, "i", 0)
+
+    def _deactivatePolygonSelectionToolsForRaster(self):
+        """Deactivate polygon selection tools that cannot operate on raster layers."""
+        canvas = self.iface.mapCanvas()
+        if self._isActiveMapTool(canvas.mapTool(), self.drawing_tool):
+            self.deactivatePolygonDrawingTool(reference=False)
+        if self._isActiveMapTool(canvas.mapTool(), self.drawing_tool_reference):
+            self.deactivatePolygonDrawingTool(reference=True)
+        self._syncSelectionControlsToActiveMapTool()
 
     def _syncPointMarkerControls(self, layer=None):
         """Project active-layer geometry onto point-only marker controls."""
@@ -825,6 +856,18 @@ class GuiController(QObject):
         panel.pasteCommittedRequested.connect(self.pasteCommittedTimeSeriesSettings)
         panel.assignDistinctColorsRequested.connect(
             self.assignDistinctColorsToCommitted
+        )
+        panel.selectCommittedSourceLayerRequested.connect(
+            self.selectCommittedTimeSeriesSourceLayer
+        )
+        panel.zoomCommittedTargetRequested.connect(
+            self.zoomCommittedTimeSeriesTarget
+        )
+        panel.zoomCommittedReferenceRequested.connect(
+            self.zoomCommittedTimeSeriesReference
+        )
+        panel.committedActionStateRefreshRequested.connect(
+            self._refreshCommittedNavigationActionState
         )
         panel.indicatorSettingsRequested.connect(self.showMapIndicatorSettingsPopup)
         self.ui.pb_choose_point.clicked.connect(self.activatePointSelection)
@@ -2130,6 +2173,7 @@ class GuiController(QObject):
         if panel.committed_model is not None:
             panel.refresh_committed_model()
         self._refreshTimeSeriesPlotActionState()
+        self._refreshCommittedNavigationActionState()
 
     def _clipboard_available_categories(self):
         """Return all paste categories when one coherent clipboard exists."""
@@ -2152,6 +2196,155 @@ class GuiController(QObject):
         """Clear the dataset-scoped, non-persistent settings clipboard."""
         self.time_series_clipboard = None
         self._refreshTimeSeriesClipboardProjection()
+
+    def _resolveTimeSeriesSourceLayer(self, record):
+        """Resolve a committed record's exact source layer by stored QGIS layer ID."""
+        source = None if record is None else record.source
+        if source is None or not source.layer_id:
+            return None
+        return QgsProject.instance().mapLayer(source.layer_id)
+
+    def _selectedCommittedTimeSeriesRecord(self):
+        """Return the one unambiguous selected committed record, or ``None``."""
+        selected = self.ui.time_series_point_panel.selected_committed_ids()
+        if len(selected) != 1:
+            return None
+        return self.choose_point_click_handler.plot_ts.committed_record(selected[0])
+
+    def _refreshCommittedSourceLayerActionState(self):
+        """Enable source navigation only for one selected record with a live source."""
+        panel = self.ui.time_series_point_panel
+        record = self._selectedCommittedTimeSeriesRecord()
+        source_layer = self._resolveTimeSeriesSourceLayer(record)
+        panel.set_select_source_layer_enabled(source_layer is not None)
+        return source_layer
+
+    def _refreshCommittedMapNavigationActionState(self):
+        """Project record-owned target/reference navigation availability."""
+        panel = self.ui.time_series_point_panel
+        record = self._selectedCommittedTimeSeriesRecord()
+        target_location = None
+        reference_location = None
+        if record is not None:
+            target_location = resolve_selection_navigation_location(record.target)
+            reference_location = resolve_selection_navigation_location(record.reference)
+        panel.set_map_navigation_enabled(
+            target_enabled=target_location is not None,
+            reference_enabled=reference_location is not None,
+        )
+        return target_location, reference_location
+
+    def _refreshCommittedNavigationActionState(self):
+        """Refresh all single-record committed map-navigation command states."""
+        source_layer = self._refreshCommittedSourceLayerActionState()
+        self._refreshCommittedMapNavigationActionState()
+        return source_layer
+
+    def selectCommittedTimeSeriesSourceLayer(self):
+        """Select the exact originating QGIS layer for one committed time series."""
+        panel = self.ui.time_series_point_panel
+        record = self._selectedCommittedTimeSeriesRecord()
+        source_layer = self._resolveTimeSeriesSourceLayer(record)
+        if source_layer is None:
+            panel.set_select_source_layer_enabled(False)
+            return False
+        self.iface.setActiveLayer(source_layer)
+        return True
+
+    def _reportCommittedNavigationFailure(
+        self, record, role, stage, error, source_crs=None, destination_crs=None
+    ):
+        """Log a quiet committed map-navigation failure with useful context."""
+        if self._plugin_diagnostic is None:
+            return
+        source_authid = (
+            source_crs.authid() if source_crs is not None and source_crs.isValid() else "invalid"
+        )
+        destination_authid = (
+            destination_crs.authid()
+            if destination_crs is not None and destination_crs.isValid()
+            else "invalid"
+        )
+        diagnostic_stage = (
+            "committed_map_navigation:{}:{}:record={}:source_crs={}:destination_crs={}"
+            .format(role, stage, getattr(record, "id", "unknown"), source_authid, destination_authid)
+        )
+        self._plugin_diagnostic(diagnostic_stage, error)
+
+    def _showProjectCrsRequiredWarning(self, role):
+        """Warn when explicit committed navigation needs an assigned project CRS."""
+        QMessageBox.warning(
+            self.ui,
+            "Project CRS required",
+            f"A project CRS must be set before InSAR Explorer can zoom to this {role}.",
+            MESSAGE_BUTTON_OK,
+        )
+
+    def _navigateCommittedTimeSeriesSelection(self, role):
+        """Recenter on one record-owned target/reference without changing active layer."""
+        record = self._selectedCommittedTimeSeriesRecord()
+        if record is None:
+            self._refreshCommittedMapNavigationActionState()
+            return False
+        selection = record.target if role == "target" else record.reference
+        try:
+            location = resolve_selection_navigation_location(selection)
+        except Exception as error:
+            self._reportCommittedNavigationFailure(record, role, "geometry", error)
+            return False
+        if location is None:
+            self._refreshCommittedMapNavigationActionState()
+            return False
+
+        canvas = self.iface.mapCanvas()
+        project = QgsProject.instance()
+        destination_crs = None
+        try:
+            destination_crs, established_project_crs = ensure_canvas_navigation_crs(
+                canvas, project, location.source_crs
+            )
+        except Exception as error:
+            self._reportCommittedNavigationFailure(
+                record, role, "destination_crs", error, source_crs=location.source_crs
+            )
+            return False
+
+        if destination_crs is None:
+            if not location.canvas_compatible_without_crs:
+                self._showProjectCrsRequiredWarning(role)
+                return False
+            destination_point = location.point
+        else:
+            try:
+                destination_point = transform_navigation_point(
+                    location, destination_crs, project
+                )
+            except Exception as error:
+                self._reportCommittedNavigationFailure(
+                    record, role, "transform", error,
+                    source_crs=location.source_crs, destination_crs=destination_crs,
+                )
+                return False
+
+        try:
+            recenter_canvas_preserving_scale(
+                canvas, destination_point, preserve_scale=not established_project_crs
+            )
+        except Exception as error:
+            self._reportCommittedNavigationFailure(
+                record, role, "recenter", error,
+                source_crs=location.source_crs, destination_crs=destination_crs,
+            )
+            return False
+        return True
+
+    def zoomCommittedTimeSeriesTarget(self):
+        """Center the QGIS map on the selected committed record's target."""
+        return self._navigateCommittedTimeSeriesSelection("target")
+
+    def zoomCommittedTimeSeriesReference(self):
+        """Center the QGIS map on the selected committed record's reference."""
+        return self._navigateCommittedTimeSeriesSelection("reference")
 
     def copyCommittedTimeSeriesSettings(self):
         """Atomically capture Style, Fit, and Replica from one committed source."""
@@ -2511,12 +2704,18 @@ class GuiController(QObject):
         plotter.replace_series_records((updated,))
         self.ui.time_series_point_panel.refresh_committed_model()
 
-    def committedTimeSeriesSelectionChanged(self, record_ids):
-        """Project selected UUIDs and enable only record-owned toolbar controls."""
+    def _refreshCommittedTimeSeriesMapOverlays(self, record_ids):
+        """Project committed map overlays from list selection only."""
         plotter = self.choose_point_click_handler.plot_ts
         self.time_series_map_overlays.update_selection(
             record_ids, plotter.committed_record
         )
+
+    def committedTimeSeriesSelectionChanged(self, record_ids):
+        """Project selected UUIDs and enable only record-owned toolbar controls."""
+        self._refreshCommittedNavigationActionState()
+        plotter = self.choose_point_click_handler.plot_ts
+        self._refreshCommittedTimeSeriesMapOverlays(record_ids)
         toolbar = self.ui.time_series_toolbar
         if plotter.pending_record() is not None:
             toolbar.setSeriesControlsEnabled(True)

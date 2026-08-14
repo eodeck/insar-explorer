@@ -27,6 +27,10 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
     assignDistinctColorsRequested = pyqtSignal()
     toggleSelectedVisibilityRequested = pyqtSignal()
     exportDataRequested = pyqtSignal()
+    selectSourceLayerRequested = pyqtSignal()
+    zoomMapToTargetRequested = pyqtSignal()
+    zoomMapToReferenceRequested = pyqtSignal()
+    actionStateRefreshRequested = pyqtSignal()
 
     def __init__(self, parent=None):
         """Create an intent-only view with a shared removal context action."""
@@ -36,7 +40,10 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
         self._rename_record_id = None
         self._rename_editor = None
         self._restore_focus_after_rename = False
-        self.rename_action = QAction("Rename", self)
+        self._select_source_layer_available = False
+        self._zoom_target_available = False
+        self._zoom_reference_available = False
+        self.rename_action = QAction(QtGui.QIcon(":/icons/icons/rename.svg"), "Rename", self)
         self.rename_action.setObjectName("action_rename_selected_time_series")
         self.rename_action.setShortcut(QtGui.QKeySequence(KEY_F2))
         self.rename_action.setShortcutContext(WIDGET_SHORTCUT)
@@ -49,7 +56,7 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
         self.rename_action.triggered.connect(self.begin_rename_selected_record)
         self.addAction(self.rename_action)
         self.remove_action = QAction(
-            QtGui.QIcon(":/icons/icons/item_remove.svg"), "Remove", self
+            QtGui.QIcon(":/icons/icons/delete.svg"), "Remove", self
         )
         self.remove_action.setObjectName("action_remove_selected_time_series")
         self.remove_action.setToolTip("Remove selected time series")
@@ -77,10 +84,15 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
         self.export_action.triggered.connect(self._request_selected_export)
         self.addAction(self.export_action)
         from ...time_series.copy_paste import CopyPasteCategory
-        self.copy_settings_action = QAction("Copy Style, Fit and Replica", self)
+        self.copy_settings_action = QAction(
+            QtGui.QIcon(":/icons/icons/copy_content.svg"), "Copy settings", self
+        )
         self.copy_settings_action.setObjectName("action_copy_time_series_settings")
         self.copy_settings_action.setToolTip(
-            "Copy style, Fit and Replica from the selected time series"
+            "Copy style, fit, and replica settings"
+        )
+        self.copy_settings_action.setStatusTip(
+            "Copy style, fit, and replica settings"
         )
         self.copy_settings_action.triggered.connect(
             self.copySettingsRequested.emit
@@ -104,7 +116,11 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
             )
             self.paste_actions[category] = paste_action
         self.paste_menu = self._create_paste_menu(self)
-        self.assign_distinct_colors_action = QAction("Assign distinct colors", self)
+        self.assign_distinct_colors_action = QAction(
+            QtGui.QIcon(":/icons/icons/plot_random_color.svg"),
+            "Assign distinct colors",
+            self
+        )
         self.assign_distinct_colors_action.setObjectName(
             "action_assign_distinct_colors_time_series"
         )
@@ -125,12 +141,61 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
         self.assign_distinct_colors_action.triggered.connect(
             self.assignDistinctColorsRequested.emit
         )
+        self.select_source_layer_action = QAction(
+            QtGui.QIcon(":/icons/icons/layers.svg"), "Select source in Layers", self)
+        self.select_source_layer_action.setObjectName(
+            "action_select_time_series_source_layer"
+        )
+        source_layer_tip = (
+            "Select the layer this time series came from in the QGIS Layers panel"
+        )
+        self.select_source_layer_action.setToolTip(source_layer_tip)
+        self.select_source_layer_action.setStatusTip(source_layer_tip)
+        set_source_accessible_name = getattr(
+            self.select_source_layer_action, "setAccessibleName", None
+        )
+        if callable(set_source_accessible_name):
+            set_source_accessible_name(
+                "Select source layer in QGIS Layers panel"
+            )
+        self.select_source_layer_action.setEnabled(False)
+        self.select_source_layer_action.triggered.connect(
+            self.selectSourceLayerRequested.emit
+        )
+        self.zoom_map_to_target_action = QAction(
+            QtGui.QIcon(":/icons/icons/zoom.svg"), "Zoom map to target", self
+        )
+        self.zoom_map_to_target_action.setObjectName("action_zoom_map_to_time_series_target")
+        target_tip = "Center the QGIS map on this time series target"
+        self.zoom_map_to_target_action.setToolTip(target_tip)
+        self.zoom_map_to_target_action.setStatusTip(target_tip)
+        self.zoom_map_to_target_action.setEnabled(False)
+        self.zoom_map_to_target_action.triggered.connect(
+            self.zoomMapToTargetRequested.emit
+        )
+        self.zoom_map_to_reference_action = QAction(
+            QtGui.QIcon(":/icons/icons/zoom.svg"), "Zoom map to reference", self
+        )
+        self.zoom_map_to_reference_action.setObjectName(
+            "action_zoom_map_to_time_series_reference"
+        )
+        reference_tip = "Center the QGIS map on this time series reference"
+        self.zoom_map_to_reference_action.setToolTip(reference_tip)
+        self.zoom_map_to_reference_action.setStatusTip(reference_tip)
+        self.zoom_map_to_reference_action.setEnabled(False)
+        self.zoom_map_to_reference_action.triggered.connect(
+            self.zoomMapToReferenceRequested.emit
+        )
         self.setContextMenuPolicy(CUSTOM_CONTEXT_MENU)
         self.customContextMenuRequested.connect(self._show_context_menu)
 
     def _create_paste_menu(self, parent):
         """Create a Paste container that reuses the shared leaf actions."""
-        menu = QtWidgets.QMenu("Paste", parent)
+        menu = QtWidgets.QMenu("Paste settings", parent)
+        menu.setIcon(QtGui.QIcon(":/icons/icons/clipboard.svg"))
+        paste_tip = "Apply copied style, fit, and replica settings"
+        menu.menuAction().setToolTip(paste_tip)
+        menu.menuAction().setStatusTip(paste_tip)
         for action in self.paste_actions.values():
             menu.addAction(action)
         self._paste_menus.append(menu)
@@ -218,6 +283,9 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
             except (TypeError, RuntimeError):
                 pass
         super(CommittedTimeSeriesView, self).setModel(model)
+        self._select_source_layer_available = False
+        self._zoom_target_available = False
+        self._zoom_reference_available = False
         selection_model = self.selectionModel()
         if selection_model is not None:
             selection_model.selectionChanged.connect(
@@ -235,6 +303,27 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
         self.assign_distinct_colors_action.setEnabled(
             not editing and len(selected_ids) >= 2
         )
+        single = not editing and len(selected_ids) == 1
+        self.select_source_layer_action.setEnabled(
+            single and self._select_source_layer_available
+        )
+        self.zoom_map_to_target_action.setEnabled(
+            single and self._zoom_target_available
+        )
+        self.zoom_map_to_reference_action.setEnabled(
+            single and self._zoom_reference_available
+        )
+
+    def set_select_source_layer_enabled(self, enabled):
+        """Project controller-owned source-layer availability onto the action."""
+        self._select_source_layer_available = bool(enabled)
+        self.refresh_action_enabled_states()
+
+    def set_map_navigation_enabled(self, *, target_enabled, reference_enabled):
+        """Project record-owned target/reference navigation availability."""
+        self._zoom_target_available = bool(target_enabled)
+        self._zoom_reference_available = bool(reference_enabled)
+        self.refresh_action_enabled_states()
 
     def begin_rename_selected_record(self):
         """Start inline label editing for the single selected committed record."""
@@ -352,6 +441,7 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
         """Prepare the pointed row, then expose committed-record commands."""
         self._prepare_context_selection(self.indexAt(position))
         self._update_remove_action_enabled()
+        self.actionStateRefreshRequested.emit()
         menu = QtWidgets.QMenu(self)
         menu.addAction(self.copy_settings_action)
         menu.addMenu(self.paste_menu)
@@ -359,6 +449,11 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
         menu.addAction(self.assign_distinct_colors_action)
         menu.addSeparator()
         menu.addAction(self.rename_action)
+        menu.addSeparator()
+        menu.addAction(self.select_source_layer_action)
+        menu.addAction(self.zoom_map_to_target_action)
+        menu.addAction(self.zoom_map_to_reference_action)
+        menu.addSeparator()
         menu.addAction(self.remove_action)
         global_position = self.viewport().mapToGlobal(position)
         if hasattr(menu, "exec"):

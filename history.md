@@ -1,6 +1,9 @@
 ### History
 
 v2.8.0
+- Add source layer selection and zoom to target/reference to the context menu of commited items.
+- Retain time series across active layer changes.
+- Add time series hover readout.
 - Added marker type and stroke te settings.
 - Previewed polygon while drawing.
 - Added support for double-click to finish a polygon.

@@ -108,6 +108,10 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
     copyCommittedSettingsRequested = pyqtSignal()
     pasteCommittedRequested = pyqtSignal(object)
     assignDistinctColorsRequested = pyqtSignal()
+    selectCommittedSourceLayerRequested = pyqtSignal()
+    zoomCommittedTargetRequested = pyqtSignal()
+    zoomCommittedReferenceRequested = pyqtSignal()
+    committedActionStateRefreshRequested = pyqtSignal()
     indicatorSettingsRequested = pyqtSignal()
 
     ICON_SIZE = 18
@@ -373,7 +377,7 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         )
         self.remove_selected_button = self._pending_action_button(
             "pb_remove_selected_time_series",
-            ":/icons/icons/item_remove.svg",
+            ":/icons/icons/delete.svg",
             "Remove selected time series",
             "Remove selected time series",
         )
@@ -413,6 +417,18 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         self.committed_view.pasteRequested.connect(self.pasteCommittedRequested.emit)
         self.committed_view.assignDistinctColorsRequested.connect(
             self.assignDistinctColorsRequested.emit
+        )
+        self.committed_view.selectSourceLayerRequested.connect(
+            self.selectCommittedSourceLayerRequested.emit
+        )
+        self.committed_view.zoomMapToTargetRequested.connect(
+            self.zoomCommittedTargetRequested.emit
+        )
+        self.committed_view.zoomMapToReferenceRequested.connect(
+            self.zoomCommittedReferenceRequested.emit
+        )
+        self.committed_view.actionStateRefreshRequested.connect(
+            self.committedActionStateRefreshRequested.emit
         )
         self.committed_view.toggleSelectedVisibilityRequested.connect(
             self.toggleSelectedCommittedVisibilityRequested.emit
@@ -554,6 +570,16 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         if self.committed_view.selectionModel() is None:
             return ()
         return tuple(sorted(index.row() for index in self.committed_view.selectionModel().selectedRows()))
+
+    def set_select_source_layer_enabled(self, enabled):
+        """Project source-layer navigation availability onto the committed view."""
+        self.committed_view.set_select_source_layer_enabled(enabled)
+
+    def set_map_navigation_enabled(self, *, target_enabled, reference_enabled):
+        """Project target/reference navigation availability onto the committed view."""
+        self.committed_view.set_map_navigation_enabled(
+            target_enabled=target_enabled, reference_enabled=reference_enabled
+        )
 
     def set_clipboard_categories(self, categories):
         """Project session clipboard availability without owning clipboard state."""

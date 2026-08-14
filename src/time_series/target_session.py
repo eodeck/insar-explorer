@@ -7,7 +7,7 @@ from typing import Any, Optional, Tuple
 
 import numpy as np
 
-from ..models.time_series import SpatialSelection
+from ..models.time_series import SpatialSelection, TimeSeriesSource
 
 
 @dataclass(frozen=True)
@@ -21,12 +21,18 @@ class CanonicalTargetSnapshot:
     dates: Tuple[Any, ...]
     values: Tuple[Tuple[float, ...], ...]
     selection: SpatialSelection
+    source: TimeSeriesSource
     plot_multiple: bool = False
 
     @classmethod
-    def create(cls, *, dates: Any, values: Any, selection: Any, plot_multiple=False):
+    def create(
+        cls, *, dates: Any, values: Any, selection: Any, source: TimeSeriesSource,
+        plot_multiple=False,
+    ):
         """Normalize extracted target input into a renderer-independent snapshot."""
         normalized_selection = SpatialSelection.from_legacy(selection)
+        if not isinstance(source, TimeSeriesSource):
+            raise TypeError("active target source must be a TimeSeriesSource")
         if normalized_selection is None:
             raise ValueError("active target requires a spatial selection")
         date_array = np.asarray(dates)
@@ -41,6 +47,7 @@ class CanonicalTargetSnapshot:
             dates=tuple(date_array.tolist()),
             values=tuple(tuple(float(value) for value in row) for row in value_array),
             selection=normalized_selection,
+            source=source,
             plot_multiple=bool(plot_multiple),
         )
 
