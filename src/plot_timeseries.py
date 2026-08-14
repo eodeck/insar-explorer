@@ -2203,17 +2203,38 @@ class PlotTs():
         """Compatibility wrapper for UUID-based rendered-record removal."""
         self.remove_rendered_record(snapshot.id)
 
+    def _recordAutomaticMainYValues(self, record):
+        """Return record-owned values contributing to automatic main Y limits."""
+        if record is None:
+            return []
+        data = record.data
+        values = [data.plot_values]
+        if data.plot_multiple_values is not None:
+            values.append(data.plot_multiple_values)
+
+        replica = record.analysis.replica
+        if replica.enabled and data.plot_values is not None:
+            try:
+                interval = float(replica.interval_mm)
+            except (TypeError, ValueError, OverflowError):
+                interval = float("nan")
+            if np.isfinite(interval):
+                base = np.asarray(data.plot_values, dtype=float)
+                for index in range(self._validateReplicaPairCount(replica.pair_count)):
+                    offset = interval * (index + 1)
+                    values.append(base + offset)
+                    values.append(base - offset)
+        return values
+
     def _rebuildYDataRanges(self):
-        """Rebuild canonical Y extents from visible record-owned observations only."""
+        """Rebuild canonical Y extents from visible record-owned plot data."""
         self._y_data_ranges = {}
         records = self.visibleTimeSeriesRecords()
         main_values = []
         residual_values = []
         for record in records:
             data = record.data
-            main_values.append(data.plot_values)
-            if data.plot_multiple_values is not None:
-                main_values.append(data.plot_multiple_values)
+            main_values.extend(self._recordAutomaticMainYValues(record))
             if (
                 data.residuals_values is not None
                 and record.analysis.fit.enabled
