@@ -407,6 +407,7 @@ class GuiController(QObject):
                 self.ui.pb_choose_polygon.setEnabled(True)
                 self.ui.pb_set_reference_polygon.setEnabled(True)
             elif layer_type == RASTER_LAYER:
+                self._deactivatePolygonSelectionToolsForRaster()
                 self.ui.settings_panel.setEnabled(False)
                 self.ui.pb_choose_polygon.setEnabled(False)
                 self.ui.pb_set_reference_polygon.setEnabled(False)
@@ -419,6 +420,15 @@ class GuiController(QObject):
                 self.ui.settings_panel.setEnabled(True)
                 message = ""
             self.msg_signal.emit(message, "i", 0)
+
+    def _deactivatePolygonSelectionToolsForRaster(self):
+        """Deactivate polygon selection tools that cannot operate on raster layers."""
+        canvas = self.iface.mapCanvas()
+        if self._isActiveMapTool(canvas.mapTool(), self.drawing_tool):
+            self.deactivatePolygonDrawingTool(reference=False)
+        if self._isActiveMapTool(canvas.mapTool(), self.drawing_tool_reference):
+            self.deactivatePolygonDrawingTool(reference=True)
+        self._syncSelectionControlsToActiveMapTool()
 
     def _syncPointMarkerControls(self, layer=None):
         """Project active-layer geometry onto point-only marker controls."""
