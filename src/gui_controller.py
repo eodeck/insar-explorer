@@ -378,6 +378,7 @@ class GuiController(QObject):
         if layer is None:
             layer = self.iface.activeLayer()
 
+        self._setLiveSymbologyEnabled(False)
         self._syncPointMarkerControls(layer)
         layer_id = self._layerIdentity(layer)
         pending_layer_id = self._pending_default_range_layer_id
@@ -566,6 +567,15 @@ class GuiController(QObject):
             return self._initializeDefaultRangeState()
         finally:
             self._setDefaultRangeInitializationPending(False)
+
+    def _setLiveSymbologyEnabled(self, enabled):
+        """Project Live update state without triggering symbology application."""
+        checkbox = self.ui.cb_symbology_live
+        was_blocked = checkbox.blockSignals(True)
+        try:
+            checkbox.setChecked(bool(enabled))
+        finally:
+            checkbox.blockSignals(was_blocked)
 
     def _setRangeSymmetryChecked(self, checked):
         """Project range symmetry state without triggering range-change behavior."""
