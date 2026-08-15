@@ -252,7 +252,6 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         self.pending_view.setStyleSheet(
             "QTableView#pending_time_series_view {"
             " border: none;"
-            " border-bottom: 1px solid palette(mid);"
             " background: transparent;"
             "}"
             "QTableView#pending_time_series_view::item {"
@@ -322,9 +321,9 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         self.clear_pending()
 
         self.added_time_series_section_label = self._secondary_label(
-            "Added time series", "label_added_time_series_section"
+            "Selections", "label_added_time_series_section"
         )
-        self.added_time_series_section_label.setAccessibleName("Added time series")
+        self.added_time_series_section_label.setAccessibleName("Selections")
 
         self.committed_model = None
         self.committed_view = CommittedTimeSeriesView(self)
