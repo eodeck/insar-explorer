@@ -622,6 +622,7 @@ class PlotTs():
 
     def _rebuild_axes_and_rerender_history(self) -> None:
         """Recreate axes and re-render retained records with stable identity."""
+        viewport = self.captureViewport()
         retained_records = self._series_store.records()
         retained_pending = self.pending_record()
         active_id = self._series_store.active_id()
@@ -662,7 +663,8 @@ class PlotTs():
         active = self.editable_time_series_record()
         self._set_current_series(active)
         self._rebuildYDataRanges()
-        self.applyYAxisPolicy()
+        self.restoreViewport(viewport)
+        self.refreshAutomaticAxisRanges(draw=False)
 
     def plotTs(self, *, dates=None, ts_values=None, ref_values=_UNSET, plot_multiple=True, coords=_UNSET,
                ref_coords=_UNSET, update=False, analysis=_UNSET, source_provenance=_UNSET,
@@ -814,6 +816,7 @@ class PlotTs():
     ) -> Tuple[TimeSeriesGraphics, TimeSeriesRecord, _GraphicsRenderTransaction]:
         """Build complete graphics with tracked attachment and guaranteed rollback."""
         transaction = _GraphicsRenderTransaction(self)
+        viewport = self.captureViewport()
         try:
             render = self._render_time_series
             parameters = inspect.signature(render).parameters
@@ -832,7 +835,9 @@ class PlotTs():
                 graphics, residuals = render(record)
         except Exception:
             transaction.rollback()
+            self.restoreViewport(viewport)
             raise
+        self.restoreViewport(viewport)
         rendered_record = record if residuals is None else replace(
             record, data=record.data.withResiduals(residuals)
         )
@@ -879,6 +884,7 @@ class PlotTs():
             raise
         transaction.commit()
         self._rebuildYDataRanges()
+        self.refreshAutomaticAxisRanges(draw=False)
         return graphics
 
     def rerender_record(
@@ -914,7 +920,7 @@ class PlotTs():
         active = self.current_series()
         self._set_current_series(active)
         self._rebuildYDataRanges()
-        self.applyYAxisPolicy()
+        self.refreshAutomaticAxisRanges(draw=False)
         return new_graphics
 
     def replace_and_rerender_records(self, records, *, notify=True, draw=True):
@@ -1002,7 +1008,7 @@ class PlotTs():
         active = self.current_series()
         self._set_current_series(active)
         self._rebuildYDataRanges()
-        self.applyYAxisPolicy()
+        self.refreshAutomaticAxisRanges(draw=False)
         if draw:
             self._draw()
         if notify:
@@ -1416,12 +1422,37 @@ class PlotTs():
             ax = self.ax
         self._applyDateFormat(ax=ax, parms=parms)
 
+    def visibleTimeSeriesRecords(self):
+        """Return visible committed records plus the visible pending record."""
+        records = [
+            record for record in self._series_store.records()
+            if record.id not in self._hidden_committed_ids
+        ]
+        pending = self.pending_record()
+        if pending is not None and pending.presentation.visible:
+            records.append(pending)
+        return tuple(records)
+
+    def hasPlottedTimeSeriesData(self):
+        """Return whether visible record-owned observations can define a plot range."""
+        for record in self.visibleTimeSeriesRecords():
+            dates = getattr(record.data, "dates", None)
+            if dates is None or len(dates) == 0:
+                continue
+            if record.data.hasFinitePlotValues():
+                return True
+            multiple = record.data.plot_multiple_values
+            if multiple is not None and np.isfinite(np.asarray(multiple, dtype=float)).any():
+                return True
+        return False
+
     def resolveXAxisRange(self, state=None, *, use_data_xlim=True, padding=30):
         """Resolve the effective X limits used by preview and committed rendering."""
-        if self.dates is None or len(self.dates) == 0:
+        data_range = self.availableDateRange()
+        if data_range is None:
             return None
         state = self.settings_model.x_axis if state is None else state
-        min_date, max_date = self.availableDateRange()
+        min_date, max_date = data_range
         if use_data_xlim:
             data_start = min_date - timedelta(days=padding)
             data_end = max_date + timedelta(days=padding)
@@ -1475,7 +1506,14 @@ class PlotTs():
 
     def availableDateRange(self):
         """Return the nearest Python datetime endpoints available in current data."""
-        dates = [self._asDatetime(value) for value in self.dates]
+        dates = []
+        for record in self.visibleTimeSeriesRecords():
+            values = getattr(record.data, "dates", None)
+            if values is None:
+                continue
+            dates.extend(self._asDatetime(value) for value in values)
+        if not dates:
+            return None
         return min(dates), max(dates)
 
     def currentVisibleDateRange(self):
@@ -1547,7 +1585,7 @@ class PlotTs():
             return None
         if mode is None:
             state = self.settings_model.y_axis
-            if state.policy in {"symmetric", "adaptive"}:
+            if state.policy == "symmetric":
                 mode = state.policy
             else:
                 axis_name = "series_y" if ax is self.ax else "residual_y"
@@ -1565,21 +1603,12 @@ class PlotTs():
                 y_min, y_max, manual.lower, manual.upper
             )
 
-        if mode in {"symmetric", "adaptive"}:
+        if mode not in {"from_data", "symmetric", "manual"}:
+            mode = "from_data"
+
+        if mode == "symmetric":
             y_max = np.abs([y_min, y_max]).max()
             y_min = -y_max
-
-        if mode == "adaptive":
-            y_range = y_max - y_min
-            y_min_rounded = -5
-            y_max_rounded = 5
-            for i in [10000, 1000, 100, 10]:
-                if y_range >= i:
-                    y_min_rounded = np.floor(y_min / i) * i
-                    y_max_rounded = np.ceil(y_max / i) * i
-                    break
-            y_min = np.min([y_min_rounded, -5])
-            y_max = np.max([y_max_rounded, 5])
 
         if y_min == y_max:
             y_min -= 1
@@ -1597,13 +1626,36 @@ class PlotTs():
             ax.setYRange(ymin, ymax, padding=padding)
         return True
 
+    def _yAxisTracksData(self, ax):
+        """Return whether one visible Y axis currently follows an automatic policy."""
+        state = self.settings_model.y_axis
+        if ax is self.ax:
+            if state.series_custom_view:
+                return False
+            mode = state.series_display_mode
+        else:
+            if state.residual_custom_view:
+                return False
+            mode = state.residual_display_mode
+        return state.policy == "symmetric" or mode == "from_data"
+
     def applyYAxisPolicy(self) -> None:
         """Apply committed canvas Y policies after all graphics/layout changes."""
         with self.axisViewUpdateGuard():
-            if self.ax is not None:
+            if self.ax is not None and self._yAxisTracksData(self.ax):
                 self.setYlims(ax=self.ax, parms=self.parms.get("time series plot", {}))
-            if self.ax_residuals is not None:
+            if self.ax_residuals is not None and self._yAxisTracksData(self.ax_residuals):
                 self.setYlims(ax=self.ax_residuals, parms=self.parms.get("residual plot", {}))
+
+    def refreshAutomaticAxisRanges(self, *, draw=True):
+        """Refresh plot-scoped automatic ranges without disturbing Manual/Custom views."""
+        with self.axisViewUpdateGuard():
+            x_state = self.settings_model.x_axis
+            if self.ax is not None and x_state.policy == "from_data" and not x_state.custom_view:
+                self.setXlims(ax=self.ax)
+            self.applyYAxisPolicy()
+        if draw:
+            self._draw()
 
     def resetYAxisFromData(self, ax=None):
         """Restore one local Y axis using its canonical From Data display range."""
@@ -1797,7 +1849,7 @@ class PlotTs():
 
     def _resetPlotView(self, plot_item):
         """Route pyqtgraph Auto through one guarded application reset transaction."""
-        if self.dates is None:
+        if not self.hasPlottedTimeSeriesData():
             return
         callback = getattr(self, "auto_view_requested_callback", None)
         if callback is not None:
@@ -2151,23 +2203,51 @@ class PlotTs():
         """Compatibility wrapper for UUID-based rendered-record removal."""
         self.remove_rendered_record(snapshot.id)
 
+    def _recordAutomaticMainYValues(self, record):
+        """Return record-owned values contributing to automatic main Y limits."""
+        if record is None:
+            return []
+        data = record.data
+        values = [data.plot_values]
+        if data.plot_multiple_values is not None:
+            values.append(data.plot_multiple_values)
+
+        replica = record.analysis.replica
+        if replica.enabled and data.plot_values is not None:
+            try:
+                interval = float(replica.interval_mm)
+            except (TypeError, ValueError, OverflowError):
+                interval = float("nan")
+            if np.isfinite(interval):
+                base = np.asarray(data.plot_values, dtype=float)
+                for index in range(self._validateReplicaPairCount(replica.pair_count)):
+                    offset = interval * (index + 1)
+                    values.append(base + offset)
+                    values.append(base - offset)
+        return values
+
     def _rebuildYDataRanges(self):
+        """Rebuild canonical Y extents from visible record-owned plot data."""
         self._y_data_ranges = {}
-        records = list(self.series_history)
-        pending = self.pending_record()
-        if pending is not None:
-            records.append(pending)
-        for snapshot in records:
-            graphics = self._graphics_for_series(snapshot)
-            if graphics is not None:
-                self.updateYlim(ax=self.ax, y_data=graphics.main_y_data)
-        if self.ax_residuals is not None:
-            for snapshot in records:
-                graphics = self._graphics_for_series(snapshot)
-                if graphics is not None:
-                    self.updateYlim(
-                        ax=self.ax_residuals, y_data=graphics.residual_y_data
-                    )
+        records = self.visibleTimeSeriesRecords()
+        main_values = []
+        residual_values = []
+        for record in records:
+            data = record.data
+            main_values.extend(self._recordAutomaticMainYValues(record))
+            if (
+                data.residuals_values is not None
+                and record.analysis.fit.enabled
+                and record.analysis.fit.show_residuals
+            ):
+                residual_values.append(data.residuals_values)
+
+        main_range = self._finiteRange(main_values)
+        if self.ax is not None and main_range is not None:
+            self._y_data_ranges[id(self.ax)] = main_range
+        residual_range = self._finiteRange(residual_values)
+        if self.ax_residuals is not None and residual_range is not None:
+            self._y_data_ranges[id(self.ax_residuals)] = residual_range
 
     def _applyDateFormat(self, ax=None, parms={}):
         if ax is None:
@@ -2353,6 +2433,7 @@ class PlotTs():
             self._detach_graphics(previous_graphics)
         self._set_current_series(rendered_record)
         self._rebuildYDataRanges()
+        self.refreshAutomaticAxisRanges(draw=False)
         self._notify_pending_changed()
         return rendered_record
 
@@ -2383,7 +2464,7 @@ class PlotTs():
             self._detach_graphics(old_graphics)
             self._set_current_series(rendered_record)
             self._rebuildYDataRanges()
-            self.applyYAxisPolicy()
+            self.refreshAutomaticAxisRanges(draw=False)
             self._notify_pending_changed()
             return graphics
         if record.id in self._hidden_committed_ids:
@@ -2453,7 +2534,7 @@ class PlotTs():
             self._detach_graphics(graphics)
         self._set_current_series(self.current_series())
         self._rebuildYDataRanges()
-        self.applyYAxisPolicy()
+        self.refreshAutomaticAxisRanges(draw=False)
         self._draw()
         self._notify_pending_changed()
         return record
@@ -2502,7 +2583,7 @@ class PlotTs():
             self._hidden_committed_ids.discard(record.id)
         self._set_current_series(self.pending_record() or self.current_series())
         self._rebuildYDataRanges()
-        self.applyYAxisPolicy()
+        self.refreshAutomaticAxisRanges(draw=False)
         self._draw()
         if notify:
             self._notify_committed_changed()
@@ -2649,8 +2730,7 @@ class PlotTs():
         errors = []
         for operation in (
             self._rebuildYDataRanges,
-            self.applyYAxisPolicy,
-            self._draw,
+            self.refreshAutomaticAxisRanges,
         ):
             try:
                 operation()
