@@ -8,8 +8,10 @@ from typing import Callable, ClassVar, List, Optional
 
 from ..style_schema import (
     FIT_LINE_STYLE_DEFAULT, FIT_LINE_WIDTH_DEFAULT, FIT_LINE_WIDTH_RANGE,
-    LINE_WIDTH_RANGE, MARKER_SIZE_RANGE, RESIDUAL_DEFAULT_COLOR,
-    RESIDUAL_LINE_WIDTH_RANGE, RESIDUAL_MARKER_SIZE_RANGE, normalize_alpha,
+    LINE_WIDTH_RANGE, MARKER_SIZE_RANGE, REPLICA_DEFAULT_COLOR_1,
+    REPLICA_DEFAULT_COLOR_2, REPLICA_MARKER_SIZE_DEFAULT, RESIDUAL_DEFAULT_COLOR,
+    RESIDUAL_LINE_WIDTH_RANGE, RESIDUAL_MARKER_SIZE_DEFAULT,
+    RESIDUAL_MARKER_SIZE_RANGE, normalize_alpha,
     normalize_color,
     normalize_fit_line_style, normalize_line_style, normalize_marker,
     normalize_number, normalize_residual_line_style, normalize_residual_marker,
@@ -97,7 +99,7 @@ class ResidualStyleSettings:
     marker: str = "o"
     marker_color: str = RESIDUAL_DEFAULT_COLOR
     marker_edge_color: str = "black"
-    marker_size: float = 5.0
+    marker_size: float = RESIDUAL_MARKER_SIZE_DEFAULT
     marker_alpha: float = 0.8
     line_style: str = ""
     line_color: str = RESIDUAL_DEFAULT_COLOR
@@ -112,7 +114,7 @@ class ResidualStyleSettings:
             marker=normalize_residual_marker(values.get("marker"), "o"),
             marker_color=normalize_color(values.get("marker color"), RESIDUAL_DEFAULT_COLOR),
             marker_edge_color=normalize_color(values.get("marker edge color"), "black"),
-            marker_size=normalize_number(values.get("marker size"), RESIDUAL_MARKER_SIZE_RANGE, 5.0),
+            marker_size=normalize_number(values.get("marker size"), RESIDUAL_MARKER_SIZE_RANGE, RESIDUAL_MARKER_SIZE_DEFAULT),
             marker_alpha=normalize_alpha(values.get("marker alpha"), 0.8),
             line_style=normalize_residual_line_style(values.get("line style"), ""),
             line_color=normalize_color(values.get("line color"), RESIDUAL_DEFAULT_COLOR),
@@ -164,29 +166,47 @@ class EnsembleStyleSettings:
 class ReplicaStyleSettings:
     """Per-series visual settings for Replica markers."""
 
-    color_1: str = "#ff7f0e"
-    color_2: str = "#2ca02c"
+    color_1: str = REPLICA_DEFAULT_COLOR_1
+    color_2: str = REPLICA_DEFAULT_COLOR_2
     opacity: float = 0.8
     marker: str = "o"
-    marker_size: float = 5.0
+    marker_size: float = REPLICA_MARKER_SIZE_DEFAULT
 
     def __post_init__(self):
-        object.__setattr__(self, "color_1", normalize_color(self.color_1, "#ff7f0e"))
-        object.__setattr__(self, "color_2", normalize_color(self.color_2, "#2ca02c"))
+        object.__setattr__(
+            self, "color_1", normalize_color(self.color_1, REPLICA_DEFAULT_COLOR_1)
+        )
+        object.__setattr__(
+            self, "color_2", normalize_color(self.color_2, REPLICA_DEFAULT_COLOR_2)
+        )
         object.__setattr__(self, "opacity", normalize_alpha(self.opacity, 0.8))
         object.__setattr__(self, "marker", normalize_marker(self.marker, "o"))
-        object.__setattr__(self, "marker_size", normalize_number(self.marker_size, MARKER_SIZE_RANGE, 5.0))
+        object.__setattr__(
+            self, "marker_size",
+            normalize_number(
+                self.marker_size, MARKER_SIZE_RANGE, REPLICA_MARKER_SIZE_DEFAULT
+            ),
+        )
 
     @classmethod
     def fromParams(cls, params):
         """Build visual Replica settings from legacy plot parameters."""
         values = params.get("time series plot", {}) if isinstance(params, dict) else {}
         return cls(
-            color_1=values.get("replica color 1", values.get("replicate color 1", "#ff7f0e")),
-            color_2=values.get("replica color 2", values.get("replicate color 2", "#2ca02c")),
+            color_1=values.get(
+                "replica color 1",
+                values.get("replicate color 1", REPLICA_DEFAULT_COLOR_1),
+            ),
+            color_2=values.get(
+                "replica color 2",
+                values.get("replicate color 2", REPLICA_DEFAULT_COLOR_2),
+            ),
             opacity=values.get("replica alpha", values.get("replicate alpha", 0.8)),
             marker=values.get("replica marker", values.get("replicate marker", "o")),
-            marker_size=values.get("replica marker size", values.get("replicate marker size", 5.0)),
+            marker_size=values.get(
+                "replica marker size",
+                values.get("replicate marker size", REPLICA_MARKER_SIZE_DEFAULT),
+            ),
         )
 
     def asParams(self):
@@ -207,22 +227,31 @@ class ReplicaSettings:
     enabled: bool = False
     interval_mm: float = 27.8
     pair_count: int = 1
-    color_1: str = "#ff7f0e"
-    color_2: str = "#2ca02c"
+    color_1: str = REPLICA_DEFAULT_COLOR_1
+    color_2: str = REPLICA_DEFAULT_COLOR_2
     opacity: float = 0.8
     marker: str = "o"
-    marker_size: float = 5.0
+    marker_size: float = REPLICA_MARKER_SIZE_DEFAULT
 
     def __post_init__(self):
         """Normalize every Replica field at the immutable domain boundary."""
         object.__setattr__(self, "enabled", bool(self.enabled))
         object.__setattr__(self, "interval_mm", max(0.1, min(10000.0, float(self.interval_mm))))
         object.__setattr__(self, "pair_count", max(1, min(10, int(self.pair_count))))
-        object.__setattr__(self, "color_1", normalize_color(self.color_1, "#ff7f0e"))
-        object.__setattr__(self, "color_2", normalize_color(self.color_2, "#2ca02c"))
+        object.__setattr__(
+            self, "color_1", normalize_color(self.color_1, REPLICA_DEFAULT_COLOR_1)
+        )
+        object.__setattr__(
+            self, "color_2", normalize_color(self.color_2, REPLICA_DEFAULT_COLOR_2)
+        )
         object.__setattr__(self, "opacity", normalize_alpha(self.opacity, 0.8))
         object.__setattr__(self, "marker", normalize_marker(self.marker, "o"))
-        object.__setattr__(self, "marker_size", normalize_number(self.marker_size, MARKER_SIZE_RANGE, 5.0))
+        object.__setattr__(
+            self, "marker_size",
+            normalize_number(
+                self.marker_size, MARKER_SIZE_RANGE, REPLICA_MARKER_SIZE_DEFAULT
+            ),
+        )
 
 
 @dataclass(frozen=True)

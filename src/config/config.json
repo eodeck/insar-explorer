@@ -201,14 +201,14 @@
             },
             "replica color 1": {
                 "type": "color",
-                "value": "#ff7f0e",
-                "default": "#ff7f0e",
+                "value": "#666666",
+                "default": "#666666",
                 "advanced": true
             },
             "replica color 2": {
                 "type": "color",
-                "value": "#2ca02c",
-                "default": "#2ca02c",
+                "value": "#999999",
+                "default": "#999999",
                 "advanced": true
             },
             "replica alpha": {
@@ -223,8 +223,8 @@
             },
             "replica marker size": {
                 "type": "float",
-                "value": 5.0,
-                "default": 5,
+                "value": 4.0,
+                "default": 4,
                 "range": [
                     0,
                     100
@@ -359,8 +359,8 @@
             },
             "marker size": {
                 "type": "float",
-                "value": 5.0,
-                "default": 5,
+                "value": 4.0,
+                "default": 4,
                 "range": [
                     0.0,
                     100.0
