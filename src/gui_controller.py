@@ -400,11 +400,14 @@ class GuiController(QObject):
             self._restoreTimeSeriesYAxisMode()
             self._restoreTimeSeriesReplicaState()
             self.insar_map.reset()
-            self.setVectorFields(initialize_default_range=True)
 
             layer_type = layer.type()
             is_local_raster = (hasattr(layer, "dataProvider") and getattr(layer.dataProvider(), "name", lambda: "")()
                                in ["gdal"])  # "ogr"
+
+            self.setVectorFields(initialize_default_range=True)
+            if layer_type == RASTER_LAYER and is_local_raster:
+                self._scheduleDefaultRangeInitialization(layer)
 
             if layer_type == VECTOR_LAYER:
                 self.ui.pb_choose_polygon.setEnabled(True)
