@@ -89,6 +89,8 @@ class GuiController(QObject):
 
     @time_series_y_axis_mode.setter
     def time_series_y_axis_mode(self, value):
+        if value not in {"from_data", "symmetric", "manual"}:
+            value = "from_data"
         self.time_series_settings.update_property("y_axis", "policy", value)
 
     residual_y_axis_mode = time_series_y_axis_mode
@@ -2741,6 +2743,7 @@ class GuiController(QObject):
         toolbar = self.ui.time_series_toolbar
         toolbar.appearance_action.setEnabled(has_plot)
         toolbar.plot_export_button.setPrimaryEnabled(has_plot)
+        toolbar.setRangeControlsEnabled(plotter.hasPlottedTimeSeriesData())
 
     def discardPendingTimeSeries(self):
         """Discard only the pending preview and preserve the active reference."""
@@ -2876,13 +2879,13 @@ class GuiController(QObject):
         """Apply a toolbar-selected X-axis policy immediately."""
         if not self._applyTimeSeriesXAxisMode(mode):
             return
-        message = "X-axis range set from data." if mode == "from_data" else "Stored manual time range applied."
+        message = "X range set to Data range." if mode == "from_data" else "Stored manual time range applied."
         self.msg_signal.emit(message, "i", 0)
 
     def showManualXAxisPopup(self):
         """Open the transactional session-local time-range editor."""
         plotter = self.choose_point_click_handler.plot_ts
-        if plotter.dates is None or len(plotter.dates) == 0:
+        if plotter.availableDateRange() is None:
             return
         state = self.time_series_settings.x_axis
         viewport = plotter.captureViewport()
@@ -2914,7 +2917,7 @@ class GuiController(QObject):
             manual_start=manual_start, manual_end=manual_end, custom_view=False,
         )
         plotter = self.choose_point_click_handler.plot_ts
-        if plotter.dates is None or len(plotter.dates) == 0:
+        if plotter.availableDateRange() is None:
             return state, None
         return state, plotter.resolveXAxisRange(state)
 
@@ -3011,7 +3014,7 @@ class GuiController(QObject):
         residual_visible = bool(
             self.choose_point_click_handler.plot_ts.plot_residuals_flag
         )
-        if state.policy in {"symmetric", "adaptive"}:
+        if state.policy == "symmetric":
             presentation_mode = state.policy
         else:
             presentation_mode = state.policy_for_effective_display(residual_visible)
@@ -3027,7 +3030,7 @@ class GuiController(QObject):
 
     def _applyTimeSeriesYAxisMode(self, mode, refresh=True):
         """Apply an aggregate Y mode while preserving axis-local saved ranges."""
-        if mode not in {"from_data", "symmetric", "adaptive", "manual"}:
+        if mode not in {"from_data", "symmetric", "manual"}:
             mode = "from_data"
         plotter = self.choose_point_click_handler.plot_ts
         residual_available = plotter.ax_residuals is not None
@@ -3094,9 +3097,8 @@ class GuiController(QObject):
                 return
         self._applyTimeSeriesYAxisMode(mode)
         messages = {
-            "from_data": "Y-axis range set from data.",
-            "symmetric": "Y-axis range set symmetric.",
-            "adaptive": "Y-axis range set adaptively.",
+            "from_data": "Y range set to Data range.",
+            "symmetric": "Y range set to Symmetric.",
             "manual": "Stored manual Y-axis ranges applied.",
         }
         self.msg_signal.emit(messages[self.time_series_y_axis_mode], "i", 0)
@@ -3228,7 +3230,7 @@ class GuiController(QObject):
         self._manual_y_axis_session = None
         self._applyTimeSeriesYAxisMode(resulting_policy, refresh=True)
         message = (
-            "Y-axis range set from data." if resulting_policy == "from_data"
+            "Y range set to Data range." if resulting_policy == "from_data"
             else "Stored manual Y-axis ranges applied."
         )
         self.msg_signal.emit(message, "i", 0)
@@ -3459,7 +3461,7 @@ class GuiController(QObject):
         return (
             not y_axis.series_custom_view
             and (
-                y_axis.policy in {"symmetric", "adaptive"}
+                y_axis.policy == "symmetric"
                 or y_axis.series_display_mode == "from_data"
             )
         )

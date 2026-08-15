@@ -97,8 +97,8 @@ class TimeSeriesToolbar(QToolBar):
         for mode, text, tooltip, icon_path, object_name in (
             (
                 "from_data",
-                "From data",
-                "X-axis: From data\n\nUses the full available time range.",
+                "Data range",
+                "Fit the range to all visible time-series data",
                 ":/icons/icons/x_axis_from_data.svg",
                 "action_ts_x_from_data",
             ),
@@ -126,6 +126,8 @@ class TimeSeriesToolbar(QToolBar):
         self.x_axis_menu.addAction(self.edit_manual_x_axis_action)
         self.x_axis_button.setMenu(self.x_axis_menu)
         self.x_axis_button.setCheckable(False)
+        self.x_axis_button.setAccessibleName("X range")
+        self.x_axis_button.setStatusTip("Set the time-series plot X range")
         self._updateXAxisSelector(self.x_axis_actions["from_data"])
 
         self.y_axis_button = QToolButton(self)
@@ -140,24 +142,17 @@ class TimeSeriesToolbar(QToolBar):
         for mode, text, tooltip, icon_path, object_name in (
             (
                 "from_data",
-                "From data",
-                "Y-axis from data",
+                "Data range",
+                "Fit the range to all visible time-series data",
                 ":/icons/icons/y_axis_from_data.svg",
                 "action_ts_y_from_data",
             ),
             (
                 "symmetric",
                 "Symmetric",
-                "Symmetric Y-axis",
+                "Use a range symmetric around zero for all visible time-series data",
                 ":/icons/icons/y_axis_symmetric.svg",
                 "action_ts_y_symmetric",
-            ),
-            (
-                "adaptive",
-                "Adaptive",
-                "Adaptive Y-axis",
-                ":/icons/icons/y_axis_adaptive.svg",
-                "action_ts_y_adaptive",
             ),
             (
                 "manual",
@@ -183,6 +178,10 @@ class TimeSeriesToolbar(QToolBar):
         self.y_axis_menu.addAction(self.edit_manual_y_axis_action)
         self.y_axis_button.setMenu(self.y_axis_menu)
         self.y_axis_button.setCheckable(False)
+        self.x_axis_button.setEnabled(False)
+        self.y_axis_button.setEnabled(False)
+        self.y_axis_button.setAccessibleName("Y range")
+        self.y_axis_button.setStatusTip("Set the time-series plot Y range")
         self._updateYAxisSelector(self.y_axis_actions["from_data"])
 
         self.replica_button = SplitToolButton(
@@ -243,11 +242,11 @@ class TimeSeriesToolbar(QToolBar):
         self.plot_export_button.setPrimaryEnabled(False)
         self.addAction(self.plot_style_action)
         self.addSeparator()
-        self.addWidget(self.x_axis_button)
-        self.addWidget(self.y_axis_button)
-        self.addSeparator()
         self.addWidget(self.fit_button)
         self.addWidget(self.replica_button)
+        self.addSeparator()
+        self.addWidget(self.x_axis_button)
+        self.addWidget(self.y_axis_button)
 
         self._spacer_widget = QWidget(self)
         self._spacer_widget.setObjectName("timeSeriesToolbarSpacer")
@@ -302,10 +301,14 @@ class TimeSeriesToolbar(QToolBar):
         """Enable controls that require one editable time-series record."""
         enabled = bool(enabled)
         self.plot_style_action.setEnabled(enabled)
-        self.x_axis_button.setEnabled(enabled)
-        self.y_axis_button.setEnabled(enabled)
         self.fit_button.setEnabled(enabled)
         self.replica_button.setEnabled(enabled)
+
+    def setRangeControlsEnabled(self, enabled):
+        """Enable plot-scoped X/Y range controls when usable plotted data exist."""
+        enabled = bool(enabled)
+        self.x_axis_button.setEnabled(enabled)
+        self.y_axis_button.setEnabled(enabled)
 
     def setFitEnabled(self, enabled):
         """Update the Fit primary state without emitting a user-change signal."""
@@ -385,16 +388,18 @@ class TimeSeriesToolbar(QToolBar):
     def _updateXAxisSelector(self, action, *, custom_view=False):
         """Render X-axis presentation from the base policy and transient viewport state."""
         if custom_view:
-            tooltip = f"Custom X view\nBase policy: {action.text()}"
+            tooltip = "Current plot view was changed manually"
+            state_text = "Custom view"
             self.x_axis_button.setIcon(QIcon(":/icons/icons/x_axis_custom.svg"))
         else:
             tooltip = action.toolTip()
+            state_text = action.text()
             self.x_axis_button.setIcon(action.icon())
-        self.x_axis_button.setText(action.text())
-        self.x_axis_button.setToolTip(tooltip)
-        self.x_axis_button.setStatusTip(tooltip)
+        self.x_axis_button.setText("X range")
+        self.x_axis_button.setToolTip(f"Set the time-series plot X range\n\nCurrent: {state_text}\n{tooltip}")
+        self.x_axis_button.setStatusTip("Set the time-series plot X range")
         self.x_axis_button.setWhatsThis(tooltip)
-        self.x_axis_button.setAccessibleName(f"Selected X-axis mode: {action.text()}")
+        self.x_axis_button.setAccessibleName(f"X range; current: {state_text}")
 
     def setSelectedYAxisMode(self, mode, lower=None, upper=None, residual_lower=None, residual_upper=None,
                              residual_active=True, custom_view=False):
@@ -442,15 +447,17 @@ class TimeSeriesToolbar(QToolBar):
         """Render the aggregate visible Y-axis presentation for the selected policy."""
         if custom_view:
             self.y_axis_button.setIcon(QIcon(":/icons/icons/y_axis_custom.svg"))
-            tooltip = f"Custom Y view\nBase policy: {action.text()}"
+            tooltip = "Current plot view was changed manually"
+            state_text = "Custom view"
         else:
             self.y_axis_button.setIcon(action.icon())
             tooltip = action.toolTip()
-        self.y_axis_button.setText(action.text())
-        self.y_axis_button.setToolTip(tooltip)
-        self.y_axis_button.setStatusTip(tooltip)
+            state_text = action.text()
+        self.y_axis_button.setText("Y range")
+        self.y_axis_button.setToolTip(f"Set the time-series plot Y range\n\nCurrent: {state_text}\n{tooltip}")
+        self.y_axis_button.setStatusTip("Set the time-series plot Y range")
         self.y_axis_button.setWhatsThis(tooltip)
-        self.y_axis_button.setAccessibleName(f"Selected Y-axis mode: {action.text()}")
+        self.y_axis_button.setAccessibleName(f"Y range; current: {state_text}")
 
     def setReplicaPresentation(self, enabled, interval_mm, pair_count):
         """Refresh the Replica split button without changing runtime state."""
