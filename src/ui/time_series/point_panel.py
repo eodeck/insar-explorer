@@ -217,6 +217,11 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         )
         layout.addWidget(self.selection_pending_separator)
 
+        self.pending_section_label = self._secondary_label(
+            "Pending", "label_pending_time_series_section"
+        )
+        self.pending_section_label.setAccessibleName("Pending time series")
+
         self.pending_model = PendingTimeSeriesModel(self)
         self.pending_model.labelEdited.connect(self.pendingLabelEdited.emit)
         self.pending_view = QtWidgets.QTableView(self)
@@ -306,8 +311,20 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         )
         self.pending_discard_button.clicked.connect(self.discardPendingRequested)
         pending_actions.addWidget(self.pending_discard_button, 0, ALIGN_VCENTER)
-        layout.addLayout(pending_actions)
+
+        pending_section = QtWidgets.QVBoxLayout()
+        pending_section.setObjectName("pending_time_series_section_layout")
+        pending_section.setContentsMargins(0, 0, 0, 0)
+        pending_section.setSpacing(1)
+        pending_section.addWidget(self.pending_section_label)
+        pending_section.addLayout(pending_actions)
+        layout.addLayout(pending_section)
         self.clear_pending()
+
+        self.added_time_series_section_label = self._secondary_label(
+            "Added time series", "label_added_time_series_section"
+        )
+        self.added_time_series_section_label.setAccessibleName("Added time series")
 
         self.committed_model = None
         self.committed_view = CommittedTimeSeriesView(self)
@@ -340,7 +357,14 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
             self.committed_view
         )
         self.committed_view.setSizePolicy(SIZE_POLICY_EXPANDING, SIZE_POLICY_EXPANDING)
-        layout.addWidget(self.committed_view, 1)
+
+        committed_section = QtWidgets.QVBoxLayout()
+        committed_section.setObjectName("added_time_series_section_layout")
+        committed_section.setContentsMargins(0, 0, 0, 0)
+        committed_section.setSpacing(1)
+        committed_section.addWidget(self.added_time_series_section_label)
+        committed_section.addWidget(self.committed_view, 1)
+        layout.addLayout(committed_section, 1)
 
         removal_actions = QtWidgets.QHBoxLayout()
         removal_actions.setObjectName("committed_time_series_actions_layout")
@@ -714,6 +738,8 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         for label, emphasis in (
             (self.target_label, self.SUBGROUP_TEXT_EMPHASIS),
             (self.reference_label, self.SUBGROUP_TEXT_EMPHASIS),
+            (self.pending_section_label, self.SUBGROUP_TEXT_EMPHASIS),
+            (self.added_time_series_section_label, self.SUBGROUP_TEXT_EMPHASIS),
         ):
             palette = QtGui.QPalette(source_palette)
             for group in (active, inactive):
