@@ -138,6 +138,7 @@ STYLE_STATE_HAS_FOCUS = _enum_value(QStyle, "StateFlag", "State_HasFocus", "Stat
 STYLE_STATE_MOUSE_OVER = _enum_value(QStyle, "StateFlag", "State_MouseOver", "State_MouseOver")
 
 # QFrame enums
+FRAME_SHAPE_NO_FRAME = _enum_value(QFrame, "Shape", "NoFrame")
 FRAME_SHAPE_STYLED_PANEL = _enum_value(QFrame, "Shape", "StyledPanel")
 
 # QComboBox / QCompleter enums

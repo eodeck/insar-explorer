@@ -8,6 +8,7 @@ from qgis.PyQt.QtCore import QRect, QSize
 from ...qt_compat import (
     ALIGN_VCENTER,
     CASE_INSENSITIVE,
+    FRAME_SHAPE_NO_FRAME,
     COMBO_NO_INSERT,
     COMPLETER_POPUP_COMPLETION,
     ITEM_IS_ENABLED,
@@ -314,6 +315,7 @@ QPushButton {
         scroll_area = QtWidgets.QScrollArea(self)
         scroll_area.setObjectName("map_settings_scroll_area")
         scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(FRAME_SHAPE_NO_FRAME)
         scroll_area.setHorizontalScrollBarPolicy(SCROLL_BAR_ALWAYS_OFF)
         scroll_area.setMaximumWidth(self.MAXIMUM_WIDTH)
         scroll_area.setSizePolicy(SIZE_POLICY_EXPANDING, SIZE_POLICY_EXPANDING)
