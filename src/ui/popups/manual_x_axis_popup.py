@@ -10,6 +10,7 @@ from qgis.PyQt.QtWidgets import (
 
 from ...qt_compat import FRAME_SHAPE_STYLED_PANEL, POPUP_WINDOW_FLAG
 from ...time_series.settings.model import XAxisSettings
+from ..spacing import SPACE_MD, SPACE_LG, SPACE_XL
 
 
 class ManualXAxisPopup(QFrame):
@@ -31,8 +32,8 @@ class ManualXAxisPopup(QFrame):
         self._manual_range = (None, None)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 8, 10, 8)
-        layout.setSpacing(6)
+        layout.setContentsMargins(SPACE_XL, SPACE_LG, SPACE_XL, SPACE_LG)
+        layout.setSpacing(SPACE_MD)
         title = QLabel("Time range", self)
         title.setObjectName("label_manual_x_axis_title")
         layout.addWidget(title)

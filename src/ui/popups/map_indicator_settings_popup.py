@@ -19,6 +19,7 @@ from ...time_series.map_indicator_settings import (
     POINT_SIZE_MIN,
 )
 from .defaults_menu import createDefaultsMenu
+from ..spacing import SPACE_MD
 from .time_series_style_popup import CompactColorButton
 
 
@@ -74,7 +75,7 @@ class MapIndicatorSettingsPopup(QWidget):
         outer_ring_row = QWidget(self.map_markers_group)
         outer_ring_layout = QHBoxLayout(outer_ring_row)
         outer_ring_layout.setContentsMargins(0, 0, 0, 0)
-        outer_ring_layout.setSpacing(6)
+        outer_ring_layout.setSpacing(SPACE_MD)
         outer_ring_layout.addWidget(self.show_point_outer_ring)
         outer_ring_layout.addWidget(self.point_outer_color)
         outer_ring_layout.addStretch(1)

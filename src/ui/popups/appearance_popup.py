@@ -7,6 +7,7 @@ from qgis.PyQt.QtWidgets import (
 )
 
 from ...qt_compat import POPUP_WINDOW_FLAG, SIZE_POLICY_FIXED
+from ..spacing import SPACE_MD
 from .time_series_style_popup import CompactColorButton
 from .defaults_menu import createDefaultsMenu
 
@@ -46,7 +47,7 @@ class AppearancePopup(QWidget):
         layout = QVBoxLayout(self)
         text_group = QGroupBox("Text", self)
         text_layout = QGridLayout(text_group)
-        text_layout.setHorizontalSpacing(6)
+        text_layout.setHorizontalSpacing(SPACE_MD)
         text_layout.addWidget(QLabel("", text_group), 0, 0)
         text_layout.addWidget(QLabel("Time series", text_group), 0, 1)
         text_layout.addWidget(QLabel("Residual", text_group), 0, 2)

@@ -15,6 +15,7 @@ from ...time_series.replica_schema import (
 from ...time_series.style_schema import MARKER_OPTIONS
 from .time_series_style_popup import CompactColorButton
 from .defaults_menu import createDefaultsMenu
+from ..spacing import SPACE_MD, SPACE_LG
 
 
 class ReplicaPopup(QWidget):
@@ -33,8 +34,8 @@ class ReplicaPopup(QWidget):
         self.setWindowTitle("Replica")
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(6)
+        layout.setContentsMargins(SPACE_LG, SPACE_LG, SPACE_LG, SPACE_LG)
+        layout.setSpacing(SPACE_MD)
         self.tabs = QTabWidget(self)
         self.tabs.setObjectName("replicaTabs")
         layout.addWidget(self.tabs)
@@ -56,8 +57,8 @@ class ReplicaPopup(QWidget):
     def _buildSettingsTab(self):
         """Create Replica generation controls in the Settings domain."""
         tab_layout = QVBoxLayout(self.settings_tab)
-        tab_layout.setContentsMargins(6, 6, 6, 6)
-        tab_layout.setSpacing(6)
+        tab_layout.setContentsMargins(SPACE_MD, SPACE_MD, SPACE_MD, SPACE_MD)
+        tab_layout.setSpacing(SPACE_MD)
 
         settings_group = QGroupBox("Settings", self.settings_tab)
         settings_form = QFormLayout(settings_group)
@@ -88,14 +89,14 @@ class ReplicaPopup(QWidget):
     def _buildStyleTab(self):
         """Create Replica appearance controls and defaults in the Style domain."""
         tab_layout = QVBoxLayout(self.style_tab)
-        tab_layout.setContentsMargins(6, 6, 6, 6)
-        tab_layout.setSpacing(6)
+        tab_layout.setContentsMargins(SPACE_MD, SPACE_MD, SPACE_MD, SPACE_MD)
+        tab_layout.setSpacing(SPACE_MD)
 
         self.style_content = QWidget(self.style_tab)
         self.style_content.setObjectName("replicaStyleContent")
         content_layout = QVBoxLayout(self.style_content)
         content_layout.setContentsMargins(0, 0, 0, 0)
-        content_layout.setSpacing(6)
+        content_layout.setSpacing(SPACE_MD)
         tab_layout.addWidget(self.style_content)
 
         appearance_group = QGroupBox("Appearance", self.style_content)
@@ -128,7 +129,7 @@ class ReplicaPopup(QWidget):
         colors_widget = QWidget(appearance_group)
         colors_layout = QGridLayout(colors_widget)
         colors_layout.setContentsMargins(0, 0, 0, 0)
-        colors_layout.setHorizontalSpacing(6)
+        colors_layout.setHorizontalSpacing(SPACE_MD)
         colors_layout.setVerticalSpacing(0)
         colors_layout.addWidget(QLabel("Color 1", colors_widget), 0, 0)
         colors_layout.addWidget(self.color_1_button, 0, 1)
