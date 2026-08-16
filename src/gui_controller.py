@@ -1395,6 +1395,15 @@ class GuiController(QObject):
 
     def setCurrentMapRangeAsDefault(self):
         """Persist current reusable Range policy values as the user default."""
+        if self._range_source is RangeSource.CUSTOM:
+            self.msg_signal.emit(
+                "Custom numeric ranges cannot be saved as a default. "
+                "Choose a calculated range source first.",
+                "i",
+                5000,
+            )
+            return
+
         self.map_range_defaults.save_defaults(self._currentMapRangePolicyDefaults())
         self.msg_signal.emit("Map range policy default saved.", "done", 5000)
 
