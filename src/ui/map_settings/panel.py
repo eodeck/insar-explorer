@@ -25,6 +25,7 @@ from ...qt_compat import (
 )
 
 from ..widgets import AdaptiveDoubleSpinBox
+from ..workspace_header import create_workspace_panel_header
 from .popup import RangeSettingsPopup, SymbologySettingsPopup
 
 
@@ -305,12 +306,17 @@ QPushButton {
         outer_layout.setContentsMargins(0, 0, 0, 0)
         outer_layout.setSpacing(0)
 
+        self.panel_header = create_workspace_panel_header(
+            self, "Map settings", "label_map_settings_panel"
+        )
+        outer_layout.addWidget(self.panel_header)
+
         scroll_area = QtWidgets.QScrollArea(self)
         scroll_area.setObjectName("map_settings_scroll_area")
         scroll_area.setWidgetResizable(True)
         scroll_area.setHorizontalScrollBarPolicy(SCROLL_BAR_ALWAYS_OFF)
         scroll_area.setMaximumWidth(self.MAXIMUM_WIDTH)
-        scroll_area.setSizePolicy(SIZE_POLICY_EXPANDING, SIZE_POLICY_PREFERRED)
+        scroll_area.setSizePolicy(SIZE_POLICY_EXPANDING, SIZE_POLICY_EXPANDING)
         outer_layout.addWidget(scroll_area)
         self.scroll_area = scroll_area
 

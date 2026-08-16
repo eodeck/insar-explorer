@@ -55,6 +55,7 @@ from .presentation import (
     TIME_SERIES_TYPE_ICON_SIZE,
 )
 
+from ..workspace_header import create_workspace_panel_header
 from .pending_label_delegate import PendingLabelDelegate
 from .pending_model import PendingTimeSeriesModel
 from .type_indicator_delegate import TimeSeriesTypeIndicatorDelegate
@@ -187,6 +188,11 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout(self)
         layout.setContentsMargins(8, 5, 8, 8)
         layout.setSpacing(5)
+
+        self.panel_header = create_workspace_panel_header(
+            self, "Selection", "label_selection_panel"
+        )
+        layout.addWidget(self.panel_header)
 
         header_grid = QtWidgets.QGridLayout()
         header_grid.setObjectName("time_series_selection_header_layout")
