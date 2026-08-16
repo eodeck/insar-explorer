@@ -26,6 +26,10 @@ from .ui.popups.appearance_popup import AppearancePopup
 from .ui.popups.replica_popup import ReplicaPopup
 from .ui.popups.map_indicator_settings_popup import MapIndicatorSettingsPopup
 from .ui.map_settings.range_state import RangeSource, STD_RANGE_SOURCES, StdCalculationMode
+from .ui.map_settings.range_defaults import (
+    RangePolicyDefaults, RangePolicyDefaultsService,
+    normalize_range_policy_defaults,
+)
 from .ui.map_settings.symbology_defaults import (
     MapSymbologySettings, MapSymbologySettingsService,
     normalize_map_symbology_settings,
@@ -174,6 +178,7 @@ class GuiController(QObject):
         services = ensure_time_series_services(plugin)
         self.map_indicator_settings = services.map_indicator_settings
         self.map_symbology_defaults = MapSymbologySettingsService()
+        self.map_range_defaults = RangePolicyDefaultsService()
         self.choose_point_click_handler = cph.ClickHandler(
             plugin,
             msg_signal=self.msg_signal,
@@ -590,23 +595,29 @@ class GuiController(QObject):
             checkbox.blockSignals(was_blocked)
 
     def _initializeDefaultRangeState(self):
-        """Initialize a fresh active-field range from its unsymmetrized data extent."""
+        """Initialize a fresh active-field range from saved/factory policy defaults."""
         displayed_range = (
             self.ui.sb_symbol_lower_range.value(),
             self.ui.sb_symbol_upper_range.value(),
         )
-        self._setRangeSymmetryChecked(False)
-        raw_values, error = self._computeRangeSourceValues(RangeSource.DATA_EXTENT)
-        if error:
-            self._setCustomRangeSource()
-            self._setDisplayedRange(*displayed_range)
-            self._setSymbologyDirty(False)
-            self.msg_signal.emit(error, 'i', 0)
-            return False
+        settings = self.map_range_defaults.load_defaults()
+        if self._projectMapRangePolicy(settings, publish_edit=False):
+            self._setSymbologyDirty(True)
+            return True
 
-        self._projectComputedRangeSource(RangeSource.DATA_EXTENT, raw_values)
-        self._setSymbologyDirty(True)
-        return True
+        factory = self.map_range_defaults.factory_defaults()
+        if settings != factory and self._projectMapRangePolicy(
+            factory, publish_edit=False
+        ):
+            self._setSymbologyDirty(True)
+            return True
+
+        self._setCustomRangeSource()
+        self._setRangeSymmetryChecked(False)
+        self._setStdCalculationMode(StdCalculationMode.FAST)
+        self._setDisplayedRange(*displayed_range)
+        self._setSymbologyDirty(False)
+        return False
 
     def selectVectorFieldChanged(self, index=None):
         """Update the active field while preserving the selected range strategy."""
@@ -1060,6 +1071,16 @@ class GuiController(QObject):
         self.ui.cb_symbol_range_symmetric.toggled.connect(
             self.symbologyRangeSymmetryChanged
         )
+        range_popup = self.ui.map_settings_panel.range_settings_popup
+        range_popup.applySavedDefaultRequested.connect(
+            self.restoreMapRangeDefaults
+        )
+        range_popup.applyFactoryDefaultRequested.connect(
+            self.applyFactoryMapRangeDefaults
+        )
+        range_popup.saveCurrentAsDefaultRequested.connect(
+            self.setCurrentMapRangeAsDefault
+        )
         self.ui.sb_symbol_value_offset.valueChanged.connect(self.setSymbologyOffset)
         self.ui.sb_symbol_classes.valueChanged.connect(self.applyLiveSymbology)
         self.ui.cb_symbol_continuous_colormap.toggled.connect(
@@ -1334,6 +1355,48 @@ class GuiController(QObject):
         }
         self.msg_signal.emit(messages[source], 'i', 0)
         self.applyLiveSymbology()
+
+    def _currentMapRangePolicyDefaults(self):
+        """Capture the dataset-independent policy owned by the Range popup."""
+        return normalize_range_policy_defaults(RangePolicyDefaults(
+            range_source=self._range_source,
+            calculation=self._std_calculation_mode,
+            symmetric_around_zero=bool(
+                self.ui.cb_symbol_range_symmetric.isChecked()
+            ),
+        ))
+
+    def _projectMapRangePolicy(self, settings, publish_edit=True):
+        """Recalculate one normalized range policy against the active dataset."""
+        settings = normalize_range_policy_defaults(settings)
+        previous_mode = self._std_calculation_mode
+        previous_symmetric = self.ui.cb_symbol_range_symmetric.isChecked()
+        self._setStdCalculationMode(settings.calculation)
+        raw_values, error = self._computeRangeSourceValues(settings.range_source)
+        if error:
+            self._setStdCalculationMode(previous_mode)
+            self._setRangeSymmetryChecked(previous_symmetric)
+            self.msg_signal.emit(error, 'i', 0)
+            return False
+
+        self._setRangeSymmetryChecked(settings.symmetric_around_zero)
+        self._projectComputedRangeSource(settings.range_source, raw_values)
+        if publish_edit:
+            self.applyLiveSymbology()
+        return True
+
+    def restoreMapRangeDefaults(self):
+        """Apply the user's saved reusable Range policy as one normal edit."""
+        self._projectMapRangePolicy(self.map_range_defaults.load_defaults())
+
+    def applyFactoryMapRangeDefaults(self):
+        """Apply factory Range policy values without changing saved defaults."""
+        self._projectMapRangePolicy(self.map_range_defaults.factory_defaults())
+
+    def setCurrentMapRangeAsDefault(self):
+        """Persist current reusable Range policy values as the user default."""
+        self.map_range_defaults.save_defaults(self._currentMapRangePolicyDefaults())
+        self.msg_signal.emit("Map range policy default saved.", "done", 5000)
 
     def _currentMapSymbologySettings(self):
         """Capture the settings owned by the Symbology settings popup."""

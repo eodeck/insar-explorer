@@ -17,6 +17,10 @@ from .range_state import RangeSource, StdCalculationMode
 class RangeSettingsPopup(QtWidgets.QWidget):
     """Present range derivation and symmetry as independent UI state."""
 
+    applySavedDefaultRequested = pyqtSignal()
+    saveCurrentAsDefaultRequested = pyqtSignal()
+    applyFactoryDefaultRequested = pyqtSignal()
+
     def __init__(self, parent=None):
         """Create the compact range settings popup."""
         super(RangeSettingsPopup, self).__init__(parent, POPUP_WINDOW_FLAG)
@@ -66,6 +70,18 @@ class RangeSettingsPopup(QtWidgets.QWidget):
         self.cb_symbol_range_symmetric.setAccessibleName("Symmetric around zero")
         self.cb_symbol_range_symmetric.setChecked(False)
         layout.addWidget(self.cb_symbol_range_symmetric)
+
+        actions = QtWidgets.QHBoxLayout()
+        actions.addStretch(1)
+        self.defaults_button = createDefaultsMenu(
+            self,
+            self.applySavedDefaultRequested.emit,
+            self.saveCurrentAsDefaultRequested.emit,
+            self.applyFactoryDefaultRequested.emit,
+            "button_map_range_defaults",
+        )
+        actions.addWidget(self.defaults_button)
+        layout.addLayout(actions)
 
         self.setMaximumWidth(280)
 
