@@ -3798,7 +3798,6 @@ class GuiController(QObject):
         for layer in selected_layers:
             layer_name = layer.name()
             if layer_name not in existing_layers:
-                print(layer_name)
                 self.ui.lw_layers.addItem(layer_name)
 
     def removeSelectedLayers(self):
