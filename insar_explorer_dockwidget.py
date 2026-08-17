@@ -29,6 +29,8 @@ from qgis.PyQt.QtCore import pyqtSignal
 
 from .src.ui.map_settings import MapSettingsPanel
 from .src.ui.time_series import TimeSeriesPointPanel
+from .src.ui.workspace_header import create_workspace_panel_header
+from .src.ui.spacing import SPACE_XS, SPACE_SM, SPACE_LG
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'insar_explorer_dockwidget_base.ui'))
@@ -65,6 +67,14 @@ class InsarExplorerDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
 
         self.time_series_workspace_region = self.widget_temporal_uw_bperp_plot_2
         self.time_series_workspace_region.setObjectName("time_series_workspace_region")
+        self.time_series_panel_header = create_workspace_panel_header(
+            self.time_series_workspace_region,
+            "Time series",
+            "label_time_series_panel",
+        )
+        self.verticalLayout_7.setContentsMargins(SPACE_LG, SPACE_SM, SPACE_LG, SPACE_LG)
+        self.verticalLayout_7.setSpacing(SPACE_XS)
+        self.verticalLayout_7.insertWidget(0, self.time_series_panel_header)
 
         self.splitter.setCollapsible(0, False)
         self.splitter.setCollapsible(1, False)

@@ -6,7 +6,8 @@ from typing import Iterable
 
 from ..models.time_series import TimeSeriesSnapshot, TimeSeriesStyle, presentation_from_legacy_params
 from .style_schema import (
-    RESIDUAL_DEFAULT_COLOR, RESIDUAL_LINE_WIDTH_RANGE, RESIDUAL_MARKER_SIZE_RANGE, normalize_alpha, normalize_color,
+    RESIDUAL_DEFAULT_COLOR, RESIDUAL_LINE_WIDTH_RANGE, RESIDUAL_MARKER_SIZE_DEFAULT,
+    RESIDUAL_MARKER_SIZE_RANGE, normalize_alpha, normalize_color,
     normalize_number, normalize_residual_line_style, normalize_residual_marker,
 )
 
@@ -22,7 +23,7 @@ class ResidualStyle:
     marker: str = "o"
     marker_color: str = RESIDUAL_DEFAULT_COLOR
     marker_edge_color: str = "black"
-    marker_size: float = 5.0
+    marker_size: float = RESIDUAL_MARKER_SIZE_DEFAULT
     marker_alpha: float = 0.8
     line_style: str = ""
     line_color: str = RESIDUAL_DEFAULT_COLOR
@@ -36,7 +37,11 @@ class ResidualStyle:
             marker=normalize_residual_marker(values.get("marker"), "o"),
             marker_color=normalize_color(values.get("marker color"), RESIDUAL_DEFAULT_COLOR),
             marker_edge_color=normalize_color(values.get("marker edge color"), "black"),
-            marker_size=normalize_number(values.get("marker size"), RESIDUAL_MARKER_SIZE_RANGE, 5.0),
+            marker_size=normalize_number(
+                values.get("marker size"),
+                RESIDUAL_MARKER_SIZE_RANGE,
+                RESIDUAL_MARKER_SIZE_DEFAULT,
+            ),
             marker_alpha=normalize_alpha(values.get("marker alpha"), 0.8),
             line_style=normalize_residual_line_style(values.get("line style"), ""),
             line_color=normalize_color(values.get("line color"), RESIDUAL_DEFAULT_COLOR),
@@ -102,7 +107,9 @@ class ResidualStyleController:
         if key == "marker":
             return normalize_residual_marker(value, "o")
         if key == "marker size":
-            return normalize_number(value, RESIDUAL_MARKER_SIZE_RANGE, 5.0)
+            return normalize_number(
+                value, RESIDUAL_MARKER_SIZE_RANGE, RESIDUAL_MARKER_SIZE_DEFAULT
+            )
         if key == "line style":
             return normalize_residual_line_style(value, "")
         if key == "line width":

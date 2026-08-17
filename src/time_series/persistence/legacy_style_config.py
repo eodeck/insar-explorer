@@ -36,6 +36,7 @@ from ..style_schema import (
     normalize_residual_marker,
     RESIDUAL_DEFAULT_COLOR,
     RESIDUAL_LINE_WIDTH_RANGE,
+    RESIDUAL_MARKER_SIZE_DEFAULT,
     RESIDUAL_MARKER_SIZE_RANGE,
 )
 
@@ -144,7 +145,9 @@ class TimeSeriesStyleConfig:
         if key == "marker":
             return normalize_residual_marker(value, "o")
         if key == "marker size":
-            return normalize_number(value, RESIDUAL_MARKER_SIZE_RANGE, 5.0)
+            return normalize_number(
+                value, RESIDUAL_MARKER_SIZE_RANGE, RESIDUAL_MARKER_SIZE_DEFAULT
+            )
         if key == "line style":
             return normalize_residual_line_style(value, "")
         if key == "line width":

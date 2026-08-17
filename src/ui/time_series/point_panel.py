@@ -55,6 +55,8 @@ from .presentation import (
     TIME_SERIES_TYPE_ICON_SIZE,
 )
 
+from ..workspace_header import create_workspace_panel_header
+from ..spacing import SPACE_XS, SPACE_SM, SPACE_LG
 from .pending_label_delegate import PendingLabelDelegate
 from .pending_model import PendingTimeSeriesModel
 from .type_indicator_delegate import TimeSeriesTypeIndicatorDelegate
@@ -185,14 +187,19 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
 
     def _build_layout(self):
         layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(8, 5, 8, 8)
-        layout.setSpacing(5)
+        layout.setContentsMargins(SPACE_LG, SPACE_SM, SPACE_LG, SPACE_LG)
+        layout.setSpacing(SPACE_SM)
+
+        self.panel_header = create_workspace_panel_header(
+            self, "Selection", "label_selection_panel"
+        )
+        layout.addWidget(self.panel_header)
 
         header_grid = QtWidgets.QGridLayout()
         header_grid.setObjectName("time_series_selection_header_layout")
         header_grid.setContentsMargins(0, 0, 0, 0)
-        header_grid.setHorizontalSpacing(3)
-        header_grid.setVerticalSpacing(2)
+        header_grid.setHorizontalSpacing(SPACE_XS)
+        header_grid.setVerticalSpacing(SPACE_XS)
 
         self.target_label = self._secondary_label("Target", "label_target")
         self.reference_label = self._secondary_label("Reference", "label_reference")
@@ -216,6 +223,11 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
             vertical=False, object_name="selection_pending_separator"
         )
         layout.addWidget(self.selection_pending_separator)
+
+        self.pending_section_label = self._secondary_label(
+            "Pending", "label_pending_time_series_section"
+        )
+        self.pending_section_label.setAccessibleName("Pending time series")
 
         self.pending_model = PendingTimeSeriesModel(self)
         self.pending_model.labelEdited.connect(self.pendingLabelEdited.emit)
@@ -247,7 +259,6 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         self.pending_view.setStyleSheet(
             "QTableView#pending_time_series_view {"
             " border: none;"
-            " border-bottom: 1px solid palette(mid);"
             " background: transparent;"
             "}"
             "QTableView#pending_time_series_view::item {"
@@ -286,7 +297,7 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         pending_actions = QtWidgets.QHBoxLayout()
         pending_actions.setObjectName("pending_time_series_actions_layout")
         pending_actions.setContentsMargins(0, 0, 0, 0)
-        pending_actions.setSpacing(3)
+        pending_actions.setSpacing(SPACE_XS)
         pending_actions.addWidget(self.pending_view, 1)
 
         self.pending_add_button = self._pending_action_button(
@@ -306,8 +317,20 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         )
         self.pending_discard_button.clicked.connect(self.discardPendingRequested)
         pending_actions.addWidget(self.pending_discard_button, 0, ALIGN_VCENTER)
-        layout.addLayout(pending_actions)
+
+        pending_section = QtWidgets.QVBoxLayout()
+        pending_section.setObjectName("pending_time_series_section_layout")
+        pending_section.setContentsMargins(0, 0, 0, 0)
+        pending_section.setSpacing(SPACE_XS)
+        pending_section.addWidget(self.pending_section_label)
+        pending_section.addLayout(pending_actions)
+        layout.addLayout(pending_section)
         self.clear_pending()
+
+        self.added_time_series_section_label = self._secondary_label(
+            "Selections", "label_added_time_series_section"
+        )
+        self.added_time_series_section_label.setAccessibleName("Selections")
 
         self.committed_model = None
         self.committed_view = CommittedTimeSeriesView(self)
@@ -340,12 +363,19 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
             self.committed_view
         )
         self.committed_view.setSizePolicy(SIZE_POLICY_EXPANDING, SIZE_POLICY_EXPANDING)
-        layout.addWidget(self.committed_view, 1)
+
+        committed_section = QtWidgets.QVBoxLayout()
+        committed_section.setObjectName("added_time_series_section_layout")
+        committed_section.setContentsMargins(0, 0, 0, 0)
+        committed_section.setSpacing(SPACE_XS)
+        committed_section.addWidget(self.added_time_series_section_label)
+        committed_section.addWidget(self.committed_view, 1)
+        layout.addLayout(committed_section, 1)
 
         removal_actions = QtWidgets.QHBoxLayout()
         removal_actions.setObjectName("committed_time_series_actions_layout")
         removal_actions.setContentsMargins(0, 0, 0, 0)
-        removal_actions.setSpacing(3)
+        removal_actions.setSpacing(SPACE_XS)
         self.copy_paste_button = QtWidgets.QToolButton(self)
         self.copy_paste_button.setObjectName("tb_copy_paste_time_series")
         configure_time_series_action_button(
@@ -714,6 +744,8 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         for label, emphasis in (
             (self.target_label, self.SUBGROUP_TEXT_EMPHASIS),
             (self.reference_label, self.SUBGROUP_TEXT_EMPHASIS),
+            (self.pending_section_label, self.SUBGROUP_TEXT_EMPHASIS),
+            (self.added_time_series_section_label, self.SUBGROUP_TEXT_EMPHASIS),
         ):
             palette = QtGui.QPalette(source_palette)
             for group in (active, inactive):

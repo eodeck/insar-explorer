@@ -32,7 +32,6 @@ from qgis.PyQt.QtWidgets import (
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
-    QLabel,
     QSpinBox,
     QPushButton,
     QTabWidget,
@@ -128,16 +127,6 @@ class TimeSeriesStylePopup(QWidget):
         """Build the existing Series controls without redesigning them."""
         tab = QWidget(self.tabs)
         layout = QVBoxLayout(tab)
-        self.target_label = QLabel("No active series.", tab)
-        self.target_label.setObjectName("label_ts_style_target")
-        self.target_label.setWordWrap(False)
-        layout.addWidget(self.target_label)
-        self.series_status_label = QLabel("No active series.", tab)
-        self.series_status_label.setToolTip("No active series.")
-        self.series_status_label.hide()
-        self.series_status_label.setWordWrap(False)
-        layout.addWidget(self.series_status_label)
-
         self.marker_group = QGroupBox("Marker", tab)
         marker_layout = QFormLayout(self.marker_group)
         self.marker_type = QComboBox(self.marker_group)
@@ -219,16 +208,6 @@ class TimeSeriesStylePopup(QWidget):
         """Build compact member-line and spread controls for ensemble snapshots."""
         tab = QWidget(self.tabs)
         layout = QVBoxLayout(tab)
-        self.ensemble_target_label = QLabel("No ensemble data.", tab)
-        self.ensemble_target_label.setObjectName("label_ensemble_style_target")
-        layout.addWidget(self.ensemble_target_label)
-        self.ensemble_status_label = QLabel("No ensemble data.", tab)
-        self.ensemble_status_label.setToolTip("No ensemble data.")
-        self.ensemble_status_label.hide()
-        self.ensemble_status_label.setWordWrap(False)
-        self.ensemble_target_label.setWordWrap(False)
-        layout.addWidget(self.ensemble_status_label)
-
         groups = QHBoxLayout()
         groups.setContentsMargins(0, 0, 0, 0)
         self.ensemble_member_group = QGroupBox("Member series", tab)
@@ -293,68 +272,20 @@ class TimeSeriesStylePopup(QWidget):
     def setEnsembleAvailability(self, available, applicable_count=0):
         """Keep the Ensemble tab stable while disabling unavailable controls."""
         available = bool(available)
-        if not available:
-            text = "No ensemble data."
-        elif int(applicable_count) > 1:
-            text = f"Editing: {int(applicable_count)} selected series"
-        else:
-            text = "Editing: Ensemble"
-        self.ensemble_target_label.setText(text)
         for widget in (self.ensemble_member_group, self.ensemble_spread_group, self.ensemble_default_button):
             widget.setEnabled(available)
 
-    def _targetText(count, selected_count):
-        """Return concise scope text for one style layer."""
-        count = int(count)
-        selected_count = int(selected_count)
-        if count <= 0:
-            return "No active series."
-        if count == 1 and selected_count == 1:
-            return "Editing: Current series"
-        if count == selected_count:
-            return f"Editing: {count} selected series"
-        return f"Editing: {count} applicable series"
-
     def setLayerAvailability(self, availability):
         """Apply centralized layer availability without emitting edit signals."""
-        configurations = (
-            (
-                self.target_label,
-                self.series_status_label,
-                availability.series_available,
-                availability.series_target_count,
-                (self.marker_group, self.line_group, self.randomize_button, self.default_button),
-            ),
-            (
-                self.ensemble_target_label,
-                self.ensemble_status_label,
-                availability.ensemble_available,
-                availability.ensemble_target_count,
-                (self.ensemble_member_group, self.ensemble_spread_group,
-                 self.ensemble_default_button),
-            ),
-        )
-        for label, status, available, count, widgets in configurations:
-            if available:
-                # label.setText(self._targetText(count, selected_count))
-                label.show()
-                status.hide()
-            else:
-                label.hide()
-                status.show()
-            for widget in widgets:
-                widget.setEnabled(bool(available))
+        for widget in (self.marker_group, self.line_group, self.randomize_button, self.default_button):
+            widget.setEnabled(bool(availability.series_available))
+        for widget in (self.ensemble_member_group, self.ensemble_spread_group,
+                       self.ensemble_default_button):
+            widget.setEnabled(bool(availability.ensemble_available))
 
     def setSelectionState(self, selected, count=0):
         """Compatibility entry point for Series selection state only."""
         selected = bool(selected)
-        if selected:
-            self.target_label.setText(self._targetText(int(count), int(count)))
-            self.target_label.show()
-            self.series_status_label.hide()
-        else:
-            self.target_label.hide()
-            self.series_status_label.show()
         for widget in (self.marker_group, self.line_group, self.randomize_button, self.default_button):
             widget.setEnabled(selected)
 

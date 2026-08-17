@@ -6,6 +6,7 @@ from qgis.PyQt.QtCore import pyqtSignal
 from ...qt_compat import POPUP_WINDOW_FLAG, TOOLTIP_ROLE
 from ..popups.defaults_menu import createDefaultsMenu
 from ..popups.time_series_style_popup import CompactColorButton
+from ..spacing import SPACE_MD, SPACE_LG
 from .marker_state import (
     DEFAULT_MARKER_SHAPE, DEFAULT_OUTLINE_COLOR, DEFAULT_OUTLINE_WIDTH_MM,
     MARKER_SHAPES,
@@ -16,6 +17,10 @@ from .range_state import RangeSource, StdCalculationMode
 class RangeSettingsPopup(QtWidgets.QWidget):
     """Present range derivation and symmetry as independent UI state."""
 
+    applySavedDefaultRequested = pyqtSignal()
+    saveCurrentAsDefaultRequested = pyqtSignal()
+    applyFactoryDefaultRequested = pyqtSignal()
+
     def __init__(self, parent=None):
         """Create the compact range settings popup."""
         super(RangeSettingsPopup, self).__init__(parent, POPUP_WINDOW_FLAG)
@@ -23,13 +28,13 @@ class RangeSettingsPopup(QtWidgets.QWidget):
         self.setWindowTitle("Range settings")
 
         layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(9, 9, 9, 9)
-        layout.setSpacing(6)
+        layout.setContentsMargins(SPACE_LG, SPACE_LG, SPACE_LG, SPACE_LG)
+        layout.setSpacing(SPACE_MD)
 
         form = QtWidgets.QFormLayout()
         form.setContentsMargins(0, 0, 0, 0)
-        form.setHorizontalSpacing(8)
-        form.setVerticalSpacing(6)
+        form.setHorizontalSpacing(SPACE_LG)
+        form.setVerticalSpacing(SPACE_MD)
 
         self.cmb_symbol_range_source = QtWidgets.QComboBox(self)
         self.cmb_symbol_range_source.setObjectName("cmb_symbol_range_source")
@@ -65,6 +70,18 @@ class RangeSettingsPopup(QtWidgets.QWidget):
         self.cb_symbol_range_symmetric.setAccessibleName("Symmetric around zero")
         self.cb_symbol_range_symmetric.setChecked(False)
         layout.addWidget(self.cb_symbol_range_symmetric)
+
+        actions = QtWidgets.QHBoxLayout()
+        actions.addStretch(1)
+        self.defaults_button = createDefaultsMenu(
+            self,
+            self.applySavedDefaultRequested.emit,
+            self.saveCurrentAsDefaultRequested.emit,
+            self.applyFactoryDefaultRequested.emit,
+            "button_map_range_defaults",
+        )
+        actions.addWidget(self.defaults_button)
+        layout.addLayout(actions)
 
         self.setMaximumWidth(280)
 
@@ -160,23 +177,23 @@ class SymbologySettingsPopup(QtWidgets.QWidget):
         )
 
         layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(9, 9, 9, 9)
-        layout.setSpacing(6)
+        layout.setContentsMargins(SPACE_LG, SPACE_LG, SPACE_LG, SPACE_LG)
+        layout.setSpacing(SPACE_MD)
 
         groups = QtWidgets.QHBoxLayout()
         groups.setContentsMargins(0, 0, 0, 0)
-        groups.setSpacing(8)
+        groups.setSpacing(SPACE_LG)
 
         self.color_group = QtWidgets.QGroupBox("Color", self)
         self.color_group.setObjectName("map_symbology_color_group")
         color_layout = QtWidgets.QVBoxLayout(self.color_group)
-        color_layout.setContentsMargins(8, 8, 8, 8)
-        color_layout.setSpacing(6)
+        color_layout.setContentsMargins(SPACE_LG, SPACE_LG, SPACE_LG, SPACE_LG)
+        color_layout.setSpacing(SPACE_MD)
         color_layout.addWidget(self.cb_symbol_continuous_colormap)
         color_form = QtWidgets.QFormLayout()
         color_form.setContentsMargins(0, 0, 0, 0)
-        color_form.setHorizontalSpacing(8)
-        color_form.setVerticalSpacing(6)
+        color_form.setHorizontalSpacing(SPACE_LG)
+        color_form.setVerticalSpacing(SPACE_MD)
         color_form.addRow("Classes", self.sb_symbol_classes)
         color_form.addRow("Opacity", self.sb_symbol_opacity)
         color_layout.addLayout(color_form)
@@ -185,9 +202,9 @@ class SymbologySettingsPopup(QtWidgets.QWidget):
         self.marker_group = QtWidgets.QGroupBox("Marker", self)
         self.marker_group.setObjectName("map_symbology_marker_group")
         marker_form = QtWidgets.QFormLayout(self.marker_group)
-        marker_form.setContentsMargins(8, 8, 8, 8)
-        marker_form.setHorizontalSpacing(8)
-        marker_form.setVerticalSpacing(6)
+        marker_form.setContentsMargins(SPACE_LG, SPACE_LG, SPACE_LG, SPACE_LG)
+        marker_form.setHorizontalSpacing(SPACE_LG)
+        marker_form.setVerticalSpacing(SPACE_MD)
         marker_form.addRow("Type", self.cmb_symbol_marker_shape)
         marker_form.addRow("Size", self.sb_symbol_size)
         marker_form.addRow("Outline", self.pb_symbol_outline_color)

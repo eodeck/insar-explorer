@@ -5,6 +5,7 @@ from qgis.PyQt.QtGui import QColor
 from qgis.PyQt.QtWidgets import (
     QCheckBox,
     QFormLayout,
+    QGroupBox,
     QHBoxLayout,
     QSpinBox,
     QVBoxLayout,
@@ -18,6 +19,7 @@ from ...time_series.map_indicator_settings import (
     POINT_SIZE_MIN,
 )
 from .defaults_menu import createDefaultsMenu
+from ..spacing import SPACE_MD
 from .time_series_style_popup import CompactColorButton
 
 
@@ -37,16 +39,18 @@ class MapIndicatorSettingsPopup(QWidget):
         self._loading = False
 
         layout = QVBoxLayout(self)
-        form = QFormLayout()
+        self.map_markers_group = QGroupBox("Map markers", self)
+        self.map_markers_group.setObjectName("group_map_indicators_markers")
+        form = QFormLayout(self.map_markers_group)
         self.target_color = CompactColorButton(
-            "■", "Target indicator color", self,
+            "■", "Target indicator color", self.map_markers_group,
             accessible_name="Target indicator color",
         )
         self.reference_color = CompactColorButton(
-            "●", "Reference indicator color", self,
+            "●", "Reference indicator color", self.map_markers_group,
             accessible_name="Reference indicator color",
         )
-        self.point_size = QSpinBox(self)
+        self.point_size = QSpinBox(self.map_markers_group)
         self.point_size.setObjectName("spin_map_indicator_point_size")
         self.point_size.setAccessibleName("Point indicator size")
         self.point_size.setToolTip(
@@ -58,25 +62,25 @@ class MapIndicatorSettingsPopup(QWidget):
         self.point_size.setSuffix(" px")
         self.point_size.setMaximumWidth(110)
 
-        self.show_point_outer_ring = QCheckBox(self)
+        self.show_point_outer_ring = QCheckBox(self.map_markers_group)
         self.show_point_outer_ring.setObjectName("check_map_indicator_outer_ring")
         self.show_point_outer_ring.setAccessibleName("Show point outer ring")
         self.show_point_outer_ring.setToolTip(
             "Show a contrasting outer ring around point indicators"
         )
         self.point_outer_color = CompactColorButton(
-            "○", "Color of the optional point outer ring", self,
+            "○", "Color of the optional point outer ring", self.map_markers_group,
             accessible_name="Point outer-ring color",
         )
-        outer_ring_row = QWidget(self)
+        outer_ring_row = QWidget(self.map_markers_group)
         outer_ring_layout = QHBoxLayout(outer_ring_row)
         outer_ring_layout.setContentsMargins(0, 0, 0, 0)
-        outer_ring_layout.setSpacing(6)
+        outer_ring_layout.setSpacing(SPACE_MD)
         outer_ring_layout.addWidget(self.show_point_outer_ring)
         outer_ring_layout.addWidget(self.point_outer_color)
         outer_ring_layout.addStretch(1)
 
-        self.opacity = QSpinBox(self)
+        self.opacity = QSpinBox(self.map_markers_group)
         self.opacity.setObjectName("spin_map_indicator_opacity")
         self.opacity.setAccessibleName("Indicator opacity")
         self.opacity.setRange(0, 100)
@@ -88,7 +92,7 @@ class MapIndicatorSettingsPopup(QWidget):
         form.addRow("Point size", self.point_size)
         form.addRow("Outer ring", outer_ring_row)
         form.addRow("Opacity", self.opacity)
-        layout.addLayout(form)
+        layout.addWidget(self.map_markers_group)
 
         actions = QHBoxLayout()
         actions.addStretch(1)

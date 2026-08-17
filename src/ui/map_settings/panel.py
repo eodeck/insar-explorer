@@ -8,6 +8,7 @@ from qgis.PyQt.QtCore import QRect, QSize
 from ...qt_compat import (
     ALIGN_VCENTER,
     CASE_INSENSITIVE,
+    FRAME_SHAPE_NO_FRAME,
     COMBO_NO_INSERT,
     COMPLETER_POPUP_COMPLETION,
     ITEM_IS_ENABLED,
@@ -25,6 +26,8 @@ from ...qt_compat import (
 )
 
 from ..widgets import AdaptiveDoubleSpinBox
+from ..workspace_header import create_workspace_panel_header
+from ..spacing import SPACE_XS, SPACE_SM, SPACE_MD, SPACE_LG
 from .popup import RangeSettingsPopup, SymbologySettingsPopup
 
 
@@ -305,12 +308,18 @@ QPushButton {
         outer_layout.setContentsMargins(0, 0, 0, 0)
         outer_layout.setSpacing(0)
 
+        self.panel_header = create_workspace_panel_header(
+            self, "Map settings", "label_map_settings_panel"
+        )
+        outer_layout.addWidget(self.panel_header)
+
         scroll_area = QtWidgets.QScrollArea(self)
         scroll_area.setObjectName("map_settings_scroll_area")
         scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(FRAME_SHAPE_NO_FRAME)
         scroll_area.setHorizontalScrollBarPolicy(SCROLL_BAR_ALWAYS_OFF)
         scroll_area.setMaximumWidth(self.MAXIMUM_WIDTH)
-        scroll_area.setSizePolicy(SIZE_POLICY_EXPANDING, SIZE_POLICY_PREFERRED)
+        scroll_area.setSizePolicy(SIZE_POLICY_EXPANDING, SIZE_POLICY_EXPANDING)
         outer_layout.addWidget(scroll_area)
         self.scroll_area = scroll_area
 
@@ -323,8 +332,8 @@ QPushButton {
         self.content = content
 
         content_layout = QtWidgets.QVBoxLayout(content)
-        content_layout.setContentsMargins(9, 9, 9, 9)
-        content_layout.setSpacing(8)
+        content_layout.setContentsMargins(SPACE_LG, SPACE_LG, SPACE_LG, SPACE_LG)
+        content_layout.setSpacing(SPACE_LG)
         content_layout.addLayout(self._build_value_layout())
         content_layout.addLayout(self._build_symbology_layout())
         content_layout.addStretch(1)
@@ -333,8 +342,8 @@ QPushButton {
     def _build_value_layout(self):
         layout = QtWidgets.QGridLayout()
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setHorizontalSpacing(5)
-        layout.setVerticalSpacing(4)
+        layout.setHorizontalSpacing(SPACE_MD)
+        layout.setVerticalSpacing(SPACE_SM)
         layout.setColumnStretch(0, 1)
         layout.setColumnStretch(2, 1)
         self._value_layout = layout
@@ -349,7 +358,7 @@ QPushButton {
         layout.addWidget(self._range_label, 2, 0, 1, 3)
         range_layout = QtWidgets.QHBoxLayout()
         range_layout.setContentsMargins(0, 0, 0, 0)
-        range_layout.setSpacing(3)
+        range_layout.setSpacing(SPACE_XS)
         range_layout.addWidget(self.sb_symbol_lower_range, 1)
         self._range_separator_label = QtWidgets.QLabel("–", self.content)
         self._range_separator_label.setObjectName("map_range_separator_label")
@@ -362,7 +371,7 @@ QPushButton {
 
         reference_layout = QtWidgets.QGridLayout()
         reference_layout.setContentsMargins(0, 0, 0, 0)
-        reference_layout.setHorizontalSpacing(5)
+        reference_layout.setHorizontalSpacing(SPACE_MD)
         reference_layout.setColumnStretch(0, 1)
         self._reference_offset_layout = reference_layout
 
@@ -382,8 +391,8 @@ QPushButton {
     def _build_symbology_layout(self):
         layout = QtWidgets.QGridLayout()
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setHorizontalSpacing(5)
-        layout.setVerticalSpacing(4)
+        layout.setHorizontalSpacing(SPACE_MD)
+        layout.setVerticalSpacing(SPACE_SM)
         layout.setColumnStretch(1, 1)
         self._symbology_layout = layout
 
@@ -403,7 +412,7 @@ QPushButton {
 
         layout = QtWidgets.QHBoxLayout(row)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(4)
+        layout.setSpacing(SPACE_SM)
         layout.addWidget(self.cb_symbology_live)
         layout.addStretch(1)
         layout.addWidget(self.pb_symbology)

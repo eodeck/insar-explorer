@@ -11,7 +11,8 @@ import warnings
 from ....external.setting_manager_ui.json_settings import JsonSettings
 from .legacy_style_config import TimeSeriesStyleConfig
 from ..style_schema import (
-    MARKER_SIZE_RANGE, normalize_alpha, normalize_color, normalize_marker,
+    MARKER_SIZE_RANGE, REPLICA_DEFAULT_COLOR_1, REPLICA_DEFAULT_COLOR_2,
+    REPLICA_MARKER_SIZE_DEFAULT, normalize_alpha, normalize_color, normalize_marker,
     normalize_number,
 )
 from ..settings.model import (
@@ -156,12 +157,22 @@ class LegacyJsonUserPreferencesRepository:
                 enabled=False,
                 interval_mm=27.8,
                 pair_count=self._normalize_pair_count(self._value(plot, "replica pair count", 1)),
-                color_1=normalize_color(self._value(plot, "replica color 1", "#ff7f0e"), "#ff7f0e"),
-                color_2=normalize_color(self._value(plot, "replica color 2", "#2ca02c"), "#2ca02c"),
+                color_1=normalize_color(
+                    self._value(plot, "replica color 1", REPLICA_DEFAULT_COLOR_1),
+                    REPLICA_DEFAULT_COLOR_1,
+                ),
+                color_2=normalize_color(
+                    self._value(plot, "replica color 2", REPLICA_DEFAULT_COLOR_2),
+                    REPLICA_DEFAULT_COLOR_2,
+                ),
                 opacity=normalize_alpha(self._value(plot, "replica alpha", 0.8), 0.8),
                 marker=normalize_marker(self._value(plot, "replica marker", "o"), "o"),
                 marker_size=normalize_number(
-                    self._value(plot, "replica marker size", 5.0), MARKER_SIZE_RANGE, 5.0
+                    self._value(
+                        plot, "replica marker size", REPLICA_MARKER_SIZE_DEFAULT
+                    ),
+                    MARKER_SIZE_RANGE,
+                    REPLICA_MARKER_SIZE_DEFAULT,
                 ),
             ),
             appearance=AppearanceSettings(

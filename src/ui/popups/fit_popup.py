@@ -22,6 +22,7 @@ from ...time_series.style_schema import (
 )
 from .time_series_style_popup import CompactColorButton
 from .defaults_menu import createDefaultsMenu
+from ..spacing import SPACE_XS, SPACE_SM, SPACE_MD, SPACE_LG, SPACE_XL
 
 
 FIT_MODELS = (
@@ -66,8 +67,8 @@ class FitPopup(QWidget):
         self._loading = False
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(6)
+        layout.setContentsMargins(SPACE_LG, SPACE_LG, SPACE_LG, SPACE_LG)
+        layout.setSpacing(SPACE_MD)
         self.tabs = QTabWidget(self)
         self.tabs.setObjectName("tabs_ts_fit")
         layout.addWidget(self.tabs)
@@ -84,14 +85,14 @@ class FitPopup(QWidget):
         tab = QWidget(self.tabs)
         tab.setObjectName("tab_ts_fit_settings")
         layout = QVBoxLayout(tab)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(8)
+        layout.setContentsMargins(SPACE_LG, SPACE_LG, SPACE_LG, SPACE_LG)
+        layout.setSpacing(SPACE_LG)
 
         models = QGroupBox("Model", tab)
         models_layout = QGridLayout(models)
-        models_layout.setContentsMargins(8, 6, 8, 6)
-        models_layout.setHorizontalSpacing(12)
-        models_layout.setVerticalSpacing(2)
+        models_layout.setContentsMargins(SPACE_LG, SPACE_MD, SPACE_LG, SPACE_MD)
+        models_layout.setHorizontalSpacing(SPACE_XL)
+        models_layout.setVerticalSpacing(SPACE_XS)
         self.model_grid = models_layout
         self.model_group = QButtonGroup(models)
         self.model_group.setExclusive(True)
@@ -126,8 +127,8 @@ class FitPopup(QWidget):
 
         options = QGroupBox("Options", tab)
         options_layout = QVBoxLayout(options)
-        options_layout.setContentsMargins(8, 6, 8, 6)
-        options_layout.setSpacing(4)
+        options_layout.setContentsMargins(SPACE_LG, SPACE_MD, SPACE_LG, SPACE_MD)
+        options_layout.setSpacing(SPACE_SM)
         self.residual_checkbox = QCheckBox("Show residual plot", options)
         self.residual_checkbox.setObjectName("check_ts_fit_residual")
         self.residual_checkbox.setIcon(
@@ -159,19 +160,19 @@ class FitPopup(QWidget):
         tab.setObjectName("tab_ts_fit_fit_style")
         self.fit_style_tab = tab
         layout = QVBoxLayout(tab)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(6)
+        layout.setContentsMargins(SPACE_LG, SPACE_LG, SPACE_LG, SPACE_LG)
+        layout.setSpacing(SPACE_MD)
         self.fit_style_content = QWidget(tab)
         content_layout = QVBoxLayout(self.fit_style_content)
         content_layout.setContentsMargins(0, 0, 0, 0)
-        content_layout.setSpacing(6)
+        content_layout.setSpacing(SPACE_MD)
         layout.addWidget(self.fit_style_content)
 
         self.fit_group = QGroupBox("Fit line", self.fit_style_content)
         self.fit_group.setSizePolicy(SIZE_POLICY_MAXIMUM, SIZE_POLICY_PREFERRED)
         form = QFormLayout(self.fit_group)
-        form.setContentsMargins(8, 6, 8, 6)
-        form.setSpacing(4)
+        form.setContentsMargins(SPACE_LG, SPACE_MD, SPACE_LG, SPACE_MD)
+        form.setSpacing(SPACE_SM)
         self.fit_line_type = QComboBox(self.fit_group)
         self.fit_line_type.addItems(list(FIT_LINE_STYLE_OPTIONS))
         self.fit_line_width = QDoubleSpinBox(self.fit_group)
@@ -225,25 +226,25 @@ class FitPopup(QWidget):
         tab.setObjectName("tab_ts_fit_residual_style")
         self.residual_style_tab = tab
         layout = QVBoxLayout(tab)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(6)
+        layout.setContentsMargins(SPACE_LG, SPACE_LG, SPACE_LG, SPACE_LG)
+        layout.setSpacing(SPACE_MD)
         self.residual_style_content = QWidget(tab)
         content_layout = QVBoxLayout(self.residual_style_content)
         content_layout.setContentsMargins(0, 0, 0, 0)
-        content_layout.setSpacing(6)
+        content_layout.setSpacing(SPACE_MD)
         layout.addWidget(self.residual_style_content)
 
         groups = QHBoxLayout()
         groups.setContentsMargins(0, 0, 0, 0)
-        groups.setSpacing(8)
+        groups.setSpacing(SPACE_LG)
 
         self.residual_marker_group = QGroupBox("Marker", self.residual_style_content)
         self.residual_marker_group.setSizePolicy(
             SIZE_POLICY_MAXIMUM, SIZE_POLICY_PREFERRED
         )
         marker_form = QFormLayout(self.residual_marker_group)
-        marker_form.setContentsMargins(8, 6, 8, 6)
-        marker_form.setSpacing(4)
+        marker_form.setContentsMargins(SPACE_LG, SPACE_MD, SPACE_LG, SPACE_MD)
+        marker_form.setSpacing(SPACE_SM)
         self.residual_marker_type = QComboBox(self.residual_marker_group)
         self.residual_marker_type.addItems(list(RESIDUAL_MARKER_OPTIONS))
         self.residual_marker_size = QDoubleSpinBox(self.residual_marker_group)
@@ -264,8 +265,8 @@ class FitPopup(QWidget):
             SIZE_POLICY_MAXIMUM, SIZE_POLICY_PREFERRED
         )
         line_form = QFormLayout(self.residual_line_group)
-        line_form.setContentsMargins(8, 6, 8, 6)
-        line_form.setSpacing(4)
+        line_form.setContentsMargins(SPACE_LG, SPACE_MD, SPACE_LG, SPACE_MD)
+        line_form.setSpacing(SPACE_SM)
         self.residual_line_type = QComboBox(self.residual_line_group)
         self.residual_line_type.addItems(list(RESIDUAL_LINE_STYLE_OPTIONS))
         self.residual_line_width = QDoubleSpinBox(self.residual_line_group)

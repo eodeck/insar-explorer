@@ -20,6 +20,7 @@ from ...qt_compat import (
     POPUP_WINDOW_FLAG,
     SIZE_POLICY_FIXED,
 )
+from ..spacing import SPACE_SM, SPACE_MD, SPACE_LG, SPACE_XL
 
 
 class ManualYAxisPopup(QFrame):
@@ -44,8 +45,8 @@ class ManualYAxisPopup(QFrame):
         self._data_bounds = {"series": None, "residual": None}
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 8, 10, 8)
-        layout.setSpacing(6)
+        layout.setContentsMargins(SPACE_XL, SPACE_LG, SPACE_XL, SPACE_LG)
+        layout.setSpacing(SPACE_MD)
         title = QLabel("Manual Y-axis", self)
         title.setObjectName("label_manual_y_axis_title")
         layout.addWidget(title)
@@ -77,12 +78,12 @@ class ManualYAxisPopup(QFrame):
         """Create one compact axis tab and register its controls."""
         tab = QWidget(self)
         outer = QVBoxLayout(tab)
-        outer.setContentsMargins(4, 6, 4, 4)
-        outer.setSpacing(4)
+        outer.setContentsMargins(SPACE_SM, SPACE_MD, SPACE_SM, SPACE_SM)
+        outer.setSpacing(SPACE_SM)
         grid = QGridLayout()
         grid.setContentsMargins(0, 0, 0, 0)
-        grid.setHorizontalSpacing(8)
-        grid.setVerticalSpacing(4)
+        grid.setHorizontalSpacing(SPACE_LG)
+        grid.setVerticalSpacing(SPACE_SM)
         grid.addWidget(QLabel("Auto", tab), 0, 1)
         grid.addWidget(QLabel("Value", tab), 0, 2)
         controls = {}
