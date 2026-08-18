@@ -25,7 +25,9 @@ from .ui.popups.export_settings_popup import ExportSettingsPopup
 from .ui.popups.appearance_popup import AppearancePopup
 from .ui.popups.replica_popup import ReplicaPopup
 from .ui.popups.map_indicator_settings_popup import MapIndicatorSettingsPopup
-from .ui.map_settings.range_state import RangeSource, STD_RANGE_SOURCES, StdCalculationMode
+from .ui.map_settings.range_state import (
+    LayerRangeWorkingState, RangeSource, STD_RANGE_SOURCES, StdCalculationMode,
+)
 from .ui.map_settings.range_defaults import (
     RangePolicyDefaults, RangePolicyDefaultsService,
     normalize_range_policy_defaults,
@@ -280,6 +282,9 @@ class GuiController(QObject):
         self._range_programmatic_update = False
         self._std_calculation_mode = StdCalculationMode.FAST
         self._pending_default_range_layer_id = None
+        self._layer_range_working_states = {}
+        self._active_range_state_layer_id = None
+        self._active_range_state_is_vector = False
         self._map_tool_signal_connected = False
         self.initializeUiParams()
         self.connectUiSignals()
@@ -383,9 +388,20 @@ class GuiController(QObject):
         if layer is None:
             layer = self.iface.activeLayer()
 
+        layer_id = self._layerIdentity(layer)
+        previous_layer_id = self._active_range_state_layer_id
+        same_range_context = (
+            layer_id is not None and layer_id == previous_layer_id
+        )
+        if (
+            previous_layer_id is not None
+            and not same_range_context
+            and self._pending_default_range_layer_id != previous_layer_id
+        ):
+            self._captureCurrentLayerRangeWorkingState(previous_layer_id)
+
         self._setLiveSymbologyEnabled(False)
         self._syncPointMarkerControls(layer)
-        layer_id = self._layerIdentity(layer)
         pending_layer_id = self._pending_default_range_layer_id
         if pending_layer_id is not None and pending_layer_id != layer_id:
             # Invalidate queued work for a previous layer/context.  Keep a same-
@@ -393,9 +409,10 @@ class GuiController(QObject):
             self._pending_default_range_layer_id = None
             self._setDefaultRangeInitializationPending(False)
 
-        self._setCustomRangeSource()
-        self._setRangeSymmetryChecked(False)
-        self._setSymbologyDirty(False)
+        if not same_range_context:
+            self._setCustomRangeSource()
+            self._setRangeSymmetryChecked(False)
+            self._setSymbologyDirty(False)
         self.resetTimeSeriesTransientStateForLayer()
         self.committedTimeSeriesSelectionChanged(
             self.ui.time_series_point_panel.selected_committed_ids()
@@ -404,15 +421,40 @@ class GuiController(QObject):
             self._restoreTimeSeriesFitState()
             self._restoreTimeSeriesYAxisMode()
             self._restoreTimeSeriesReplicaState()
-            self.insar_map.reset()
+            if not same_range_context:
+                self.insar_map.reset()
 
             layer_type = layer.type()
             is_local_raster = (hasattr(layer, "dataProvider") and getattr(layer.dataProvider(), "name", lambda: "")()
                                in ["gdal"])  # "ogr"
 
-            self.setVectorFields(initialize_default_range=True)
-            if layer_type == RASTER_LAYER and is_local_raster:
-                self._scheduleDefaultRangeInitialization(layer)
+            cached_range_state = self._layer_range_working_states.get(layer_id)
+            restored_range_state = False
+            if same_range_context:
+                restored_range_state = True
+            elif layer_type == VECTOR_LAYER:
+                fields_available = self.setVectorFields(
+                    initialize_default_range=False,
+                    preferred_field_name=(
+                        cached_range_state.field_name
+                        if cached_range_state is not None else None
+                    ),
+                )
+                if fields_available and cached_range_state is not None:
+                    restored_range_state = self._restoreLayerRangeWorkingState(
+                        layer, cached_range_state
+                    )
+                if fields_available and not restored_range_state:
+                    self._scheduleDefaultRangeInitialization(layer)
+            else:
+                self.setVectorFields(initialize_default_range=False)
+                if layer_type == RASTER_LAYER and is_local_raster:
+                    if cached_range_state is not None:
+                        restored_range_state = self._restoreLayerRangeWorkingState(
+                            layer, cached_range_state
+                        )
+                    if not restored_range_state:
+                        self._scheduleDefaultRangeInitialization(layer)
 
             if layer_type == VECTOR_LAYER:
                 self.ui.pb_choose_polygon.setEnabled(True)
@@ -426,11 +468,23 @@ class GuiController(QObject):
             if layer_type == RASTER_LAYER and not is_local_raster:
                 self.ui.settings_panel.setEnabled(False)
                 self.ui.pb_choose_point.setChecked(False)
+                self._active_range_state_layer_id = None
+                self._active_range_state_is_vector = False
                 message = "Unsupported layer selected. Please choose a layer compatible with InSAR Explorer."
+            elif layer_type == VECTOR_LAYER and not fields_available:
+                self.ui.settings_panel.setEnabled(True)
+                self._active_range_state_layer_id = None
+                self._active_range_state_is_vector = False
+                message = ""
             else:
                 self.ui.settings_panel.setEnabled(True)
+                self._active_range_state_layer_id = layer_id
+                self._active_range_state_is_vector = layer_type == VECTOR_LAYER
                 message = ""
             self.msg_signal.emit(message, "i", 0)
+        else:
+            self._active_range_state_layer_id = None
+            self._active_range_state_is_vector = False
 
     def _deactivatePolygonSelectionToolsForRaster(self):
         """Deactivate polygon selection tools that cannot operate on raster layers."""
@@ -471,7 +525,7 @@ class GuiController(QObject):
             return -1
         return -1
 
-    def setVectorFields(self, initialize_default_range=False):
+    def setVectorFields(self, initialize_default_range=False, preferred_field_name=None):
         """Populate vector fields and optionally initialize a fresh range state."""
         layer = self.iface.activeLayer()
         if not layer:
@@ -486,7 +540,7 @@ class GuiController(QObject):
                 field_combo.setEnabled(False)
                 self.ui.sb_symbol_size.setEnabled(False)
                 self._setSymbologyDirty(False)
-                return
+                return False
 
             field_combo.setEnabled(True)
             self.ui.sb_symbol_size.setEnabled(True)
@@ -500,11 +554,17 @@ class GuiController(QObject):
                     index = field_combo.count() - 1
                     field_combo.model().item(index).setEnabled(False)
 
-            velocity_index = self._findSelectableFieldIndex(
-                field_combo, velocity_field
+            preferred_index = self._findSelectableFieldIndex(
+                field_combo, preferred_field_name
             )
-            if velocity_index >= 0:
-                field_combo.setCurrentIndex(velocity_index)
+            if preferred_index >= 0:
+                field_combo.setCurrentIndex(preferred_index)
+            else:
+                velocity_index = self._findSelectableFieldIndex(
+                    field_combo, velocity_field
+                )
+                if velocity_index >= 0:
+                    field_combo.setCurrentIndex(velocity_index)
         finally:
             field_combo.blockSignals(was_blocked)
 
@@ -518,6 +578,7 @@ class GuiController(QObject):
             self._scheduleDefaultRangeInitialization(layer)
         else:
             self._setSymbologyDirty(False)
+        return True
 
     @staticmethod
     def _layerIdentity(layer):
@@ -541,10 +602,79 @@ class GuiController(QObject):
             if control is not None:
                 control.setEnabled(enabled)
 
+    def _captureCurrentLayerRangeWorkingState(self, layer_id):
+        """Store the current layer's range UI/controller state in memory."""
+        if layer_id is None:
+            return None
+        field_name = None
+        if self._active_range_state_is_vector:
+            field_name = self.ui.cb_select_field.currentText() or None
+        raw_values = self._range_source_raw_values
+        if raw_values is not None:
+            raw_values = (float(raw_values[0]), float(raw_values[1]))
+        state = LayerRangeWorkingState(
+            range_source=self._range_source,
+            calculation=self._std_calculation_mode,
+            symmetric_around_zero=bool(
+                self.ui.cb_symbol_range_symmetric.isChecked()
+            ),
+            displayed_minimum=float(self.ui.sb_symbol_lower_range.value()),
+            displayed_maximum=float(self.ui.sb_symbol_upper_range.value()),
+            raw_source_values=raw_values,
+            dirty=bool(self._symbology_dirty),
+            field_name=field_name,
+        )
+        self._layer_range_working_states[layer_id] = state
+        return state
+
+    def _restoreLayerRangeWorkingState(self, layer, state):
+        """Restore one compatible cached range state without applying symbology."""
+        if not isinstance(state, LayerRangeWorkingState):
+            return False
+        try:
+            layer_type = layer.type()
+        except (AttributeError, RuntimeError):
+            return False
+
+        if layer_type == VECTOR_LAYER:
+            field_combo = self.ui.cb_select_field
+            field_index = self._findSelectableFieldIndex(
+                field_combo, state.field_name
+            )
+            if field_index < 0:
+                self._layer_range_working_states.pop(
+                    self._layerIdentity(layer), None
+                )
+                return False
+            blocked = field_combo.blockSignals(True)
+            try:
+                field_combo.setCurrentIndex(field_index)
+            finally:
+                field_combo.blockSignals(blocked)
+            self.insar_map.selected_field_name = state.field_name
+            self.choose_point_click_handler.selected_field_name = state.field_name
+
+        layer_id = self._layerIdentity(layer)
+        if self._pending_default_range_layer_id == layer_id:
+            self._pending_default_range_layer_id = None
+            self._setDefaultRangeInitializationPending(False)
+
+        self._setStdCalculationMode(state.calculation)
+        self._setRangeSymmetryChecked(state.symmetric_around_zero)
+        self._range_source_raw_values = state.raw_source_values
+        self._setDisplayedRange(
+            state.displayed_minimum, state.displayed_maximum
+        )
+        self._setRangeSource(state.range_source)
+        self._setSymbologyDirty(state.dirty)
+        return True
+
     def _scheduleDefaultRangeInitialization(self, layer):
         """Queue fresh default range/symbology work for one active layer."""
         layer_id = self._layerIdentity(layer)
         if layer_id is None:
+            return False
+        if layer_id in self._layer_range_working_states:
             return False
         if self._pending_default_range_layer_id == layer_id:
             return False
