@@ -4533,4 +4533,3 @@ class GuiController(QObject):
         self.last_export_ts_name = os.path.basename(file_path)
 
         self.msg_signal.emit(f'Time series exported: {file_path}', 'done', 3000)
-
