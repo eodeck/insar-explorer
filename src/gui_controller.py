@@ -11,6 +11,7 @@ from qgis.PyQt.QtCore import (
 from qgis.PyQt.QtGui import QColor, QIcon, QTransform
 
 from . import map_click_handler as cph
+from . import color_maps
 from . import setup_frames
 from .bootstrap import ensure_time_series_services
 from .map_setting import InsarMap
@@ -28,6 +29,7 @@ from .ui.popups.map_indicator_settings_popup import MapIndicatorSettingsPopup
 from .ui.map_settings.range_state import (
     LayerRangeWorkingState, RangeSource, STD_RANGE_SOURCES, StdCalculationMode,
 )
+from .ui.map_settings.working_state import LayerMapSettingsWorkingState
 from .ui.map_settings.range_defaults import (
     RangePolicyDefaults, RangePolicyDefaultsService,
     normalize_range_policy_defaults,
@@ -282,9 +284,9 @@ class GuiController(QObject):
         self._range_programmatic_update = False
         self._std_calculation_mode = StdCalculationMode.FAST
         self._pending_default_range_layer_id = None
-        self._layer_range_working_states = {}
-        self._active_range_state_layer_id = None
-        self._active_range_state_is_vector = False
+        self._layer_map_settings_working_states = {}
+        self._active_map_settings_state_layer_id = None
+        self._active_map_settings_state_is_vector = False
         self._map_tool_signal_connected = False
         self.initializeUiParams()
         self.connectUiSignals()
@@ -389,16 +391,16 @@ class GuiController(QObject):
             layer = self.iface.activeLayer()
 
         layer_id = self._layerIdentity(layer)
-        previous_layer_id = self._active_range_state_layer_id
-        same_range_context = (
+        previous_layer_id = self._active_map_settings_state_layer_id
+        same_map_settings_context = (
             layer_id is not None and layer_id == previous_layer_id
         )
         if (
             previous_layer_id is not None
-            and not same_range_context
+            and not same_map_settings_context
             and self._pending_default_range_layer_id != previous_layer_id
         ):
-            self._captureCurrentLayerRangeWorkingState(previous_layer_id)
+            self._captureCurrentLayerMapSettingsWorkingState(previous_layer_id)
 
         self._setLiveSymbologyEnabled(False)
         self._syncPointMarkerControls(layer)
@@ -409,7 +411,7 @@ class GuiController(QObject):
             self._pending_default_range_layer_id = None
             self._setDefaultRangeInitializationPending(False)
 
-        if not same_range_context:
+        if not same_map_settings_context:
             self._setCustomRangeSource()
             self._setRangeSymmetryChecked(False)
             self._setSymbologyDirty(False)
@@ -421,39 +423,41 @@ class GuiController(QObject):
             self._restoreTimeSeriesFitState()
             self._restoreTimeSeriesYAxisMode()
             self._restoreTimeSeriesReplicaState()
-            if not same_range_context:
+            if not same_map_settings_context:
                 self.insar_map.reset()
 
             layer_type = layer.type()
             is_local_raster = (hasattr(layer, "dataProvider") and getattr(layer.dataProvider(), "name", lambda: "")()
                                in ["gdal"])  # "ogr"
 
-            cached_range_state = self._layer_range_working_states.get(layer_id)
-            restored_range_state = False
-            if same_range_context:
-                restored_range_state = True
+            cached_map_state = self._layer_map_settings_working_states.get(layer_id)
+            restored_map_state = False
+            if same_map_settings_context:
+                restored_map_state = True
             elif layer_type == VECTOR_LAYER:
                 fields_available = self.setVectorFields(
                     initialize_default_range=False,
                     preferred_field_name=(
-                        cached_range_state.field_name
-                        if cached_range_state is not None else None
+                        cached_map_state.range_state.field_name
+                        if cached_map_state is not None else None
                     ),
                 )
-                if fields_available and cached_range_state is not None:
-                    restored_range_state = self._restoreLayerRangeWorkingState(
-                        layer, cached_range_state
+                if fields_available and cached_map_state is not None:
+                    restored_map_state = self._restoreLayerMapSettingsWorkingState(
+                        layer, cached_map_state
                     )
-                if fields_available and not restored_range_state:
+                if fields_available and not restored_map_state:
+                    self._initializeFreshLayerMapSettingsEditorState()
                     self._scheduleDefaultRangeInitialization(layer)
             else:
                 self.setVectorFields(initialize_default_range=False)
                 if layer_type == RASTER_LAYER and is_local_raster:
-                    if cached_range_state is not None:
-                        restored_range_state = self._restoreLayerRangeWorkingState(
-                            layer, cached_range_state
+                    if cached_map_state is not None:
+                        restored_map_state = self._restoreLayerMapSettingsWorkingState(
+                            layer, cached_map_state
                         )
-                    if not restored_range_state:
+                    if not restored_map_state:
+                        self._initializeFreshLayerMapSettingsEditorState()
                         self._scheduleDefaultRangeInitialization(layer)
 
             if layer_type == VECTOR_LAYER:
@@ -468,23 +472,23 @@ class GuiController(QObject):
             if layer_type == RASTER_LAYER and not is_local_raster:
                 self.ui.settings_panel.setEnabled(False)
                 self.ui.pb_choose_point.setChecked(False)
-                self._active_range_state_layer_id = None
-                self._active_range_state_is_vector = False
+                self._active_map_settings_state_layer_id = None
+                self._active_map_settings_state_is_vector = False
                 message = "Unsupported layer selected. Please choose a layer compatible with InSAR Explorer."
             elif layer_type == VECTOR_LAYER and not fields_available:
                 self.ui.settings_panel.setEnabled(True)
-                self._active_range_state_layer_id = None
-                self._active_range_state_is_vector = False
+                self._active_map_settings_state_layer_id = None
+                self._active_map_settings_state_is_vector = False
                 message = ""
             else:
                 self.ui.settings_panel.setEnabled(True)
-                self._active_range_state_layer_id = layer_id
-                self._active_range_state_is_vector = layer_type == VECTOR_LAYER
+                self._active_map_settings_state_layer_id = layer_id
+                self._active_map_settings_state_is_vector = layer_type == VECTOR_LAYER
                 message = ""
             self.msg_signal.emit(message, "i", 0)
         else:
-            self._active_range_state_layer_id = None
-            self._active_range_state_is_vector = False
+            self._active_map_settings_state_layer_id = None
+            self._active_map_settings_state_is_vector = False
 
     def _deactivatePolygonSelectionToolsForRaster(self):
         """Deactivate polygon selection tools that cannot operate on raster layers."""
@@ -602,17 +606,15 @@ class GuiController(QObject):
             if control is not None:
                 control.setEnabled(enabled)
 
-    def _captureCurrentLayerRangeWorkingState(self, layer_id):
-        """Store the current layer's range UI/controller state in memory."""
-        if layer_id is None:
-            return None
+    def _currentLayerRangeWorkingState(self):
+        """Capture the current range portion of Map Settings working state."""
         field_name = None
-        if self._active_range_state_is_vector:
+        if self._active_map_settings_state_is_vector:
             field_name = self.ui.cb_select_field.currentText() or None
         raw_values = self._range_source_raw_values
         if raw_values is not None:
             raw_values = (float(raw_values[0]), float(raw_values[1]))
-        state = LayerRangeWorkingState(
+        return LayerRangeWorkingState(
             range_source=self._range_source,
             calculation=self._std_calculation_mode,
             symmetric_around_zero=bool(
@@ -624,8 +626,74 @@ class GuiController(QObject):
             dirty=bool(self._symbology_dirty),
             field_name=field_name,
         )
-        self._layer_range_working_states[layer_id] = state
+
+    def _captureCurrentLayerMapSettingsWorkingState(self, layer_id):
+        """Store the active layer's Map Settings editor state in memory."""
+        if layer_id is None:
+            return None
+        layer_type = (
+            VECTOR_LAYER if self._active_map_settings_state_is_vector
+            else RASTER_LAYER
+        )
+
+        state = LayerMapSettingsWorkingState(
+            layer_id=str(layer_id),
+            layer_type=layer_type,
+            range_state=self._currentLayerRangeWorkingState(),
+            reference_offset=float(self.ui.sb_symbol_value_offset.value()),
+            colormap_id=str(self.ui.cmb_colormap.currentData()),
+            colormap_reversed=bool(self.ui.pb_colormap_reverse.isChecked()),
+            symbology=self._currentMapSymbologySettings(),
+            dirty=bool(self._symbology_dirty),
+        )
+        self._layer_map_settings_working_states[layer_id] = state
         return state
+
+    def _isLayerMapSettingsWorkingStateCompatible(self, layer, state):
+        """Return whether one cached editor snapshot matches the layer context."""
+        if not isinstance(state, LayerMapSettingsWorkingState):
+            return False
+        layer_id = self._layerIdentity(layer)
+        if layer_id is None or str(layer_id) != str(state.layer_id):
+            return False
+        try:
+            return layer.type() == state.layer_type
+        except (AttributeError, RuntimeError):
+            return False
+
+    def _setMapColormapState(self, colormap_id, reversed_flag):
+        """Project colormap editor state without publishing a symbology edit."""
+        combo = self.ui.cmb_colormap
+        button = self.ui.pb_colormap_reverse
+        index = combo.findData(colormap_id)
+        if index < 0:
+            index = combo.findData(color_maps.DEFAULT_COLORMAP_ID)
+        if index < 0 and combo.count():
+            index = 0
+
+        old_reversed = bool(button.isChecked())
+        target_reversed = bool(reversed_flag)
+        blockers = [QSignalBlocker(combo), QSignalBlocker(button)]
+        try:
+            if index >= 0:
+                combo.setCurrentIndex(index)
+            button.setChecked(target_reversed)
+        finally:
+            del blockers
+        if old_reversed != target_reversed:
+            self.flipComboBoxIcons(combo)
+
+        self.insar_map.color_ramp_name = str(combo.currentData())
+        self.insar_map.color_ramp_reverse_flag = target_reversed
+
+    def _initializeFreshLayerMapSettingsEditorState(self):
+        """Project non-range defaults for one newly encountered supported layer."""
+        self._setReferenceValue(0.0)
+        self._setMapColormapState(color_maps.DEFAULT_COLORMAP_ID, False)
+        self._projectMapSymbologySettingsBundle(
+            self.map_symbology_defaults.load_defaults(), publish_edit=False
+        )
+        self._setSymbologyDirty(False)
 
     def _restoreLayerRangeWorkingState(self, layer, state):
         """Restore one compatible cached range state without applying symbology."""
@@ -642,9 +710,6 @@ class GuiController(QObject):
                 field_combo, state.field_name
             )
             if field_index < 0:
-                self._layer_range_working_states.pop(
-                    self._layerIdentity(layer), None
-                )
                 return False
             blocked = field_combo.blockSignals(True)
             try:
@@ -666,6 +731,28 @@ class GuiController(QObject):
             state.displayed_minimum, state.displayed_maximum
         )
         self._setRangeSource(state.range_source)
+        return True
+
+    def _restoreLayerMapSettingsWorkingState(self, layer, state):
+        """Restore one compatible cached Map Settings state without applying it."""
+        if not self._isLayerMapSettingsWorkingStateCompatible(layer, state):
+            self._layer_map_settings_working_states.pop(
+                self._layerIdentity(layer), None
+            )
+            return False
+        if not self._restoreLayerRangeWorkingState(layer, state.range_state):
+            self._layer_map_settings_working_states.pop(
+                self._layerIdentity(layer), None
+            )
+            return False
+
+        self._setReferenceValue(state.reference_offset)
+        self._setMapColormapState(
+            state.colormap_id, state.colormap_reversed
+        )
+        self._projectMapSymbologySettingsBundle(
+            state.symbology, publish_edit=False
+        )
         self._setSymbologyDirty(state.dirty)
         return True
 
@@ -674,7 +761,7 @@ class GuiController(QObject):
         layer_id = self._layerIdentity(layer)
         if layer_id is None:
             return False
-        if layer_id in self._layer_range_working_states:
+        if layer_id in self._layer_map_settings_working_states:
             return False
         if self._pending_default_range_layer_id == layer_id:
             return False
@@ -1551,8 +1638,8 @@ class GuiController(QObject):
             opacity_percent=int(self.ui.sb_symbol_opacity.value()),
         ))
 
-    def _applyMapSymbologySettingsBundle(self, settings):
-        """Project one normalized popup settings bundle and publish one edit."""
+    def _projectMapSymbologySettingsBundle(self, settings, publish_edit=True):
+        """Project one normalized popup settings bundle, optionally as an edit."""
         settings = normalize_map_symbology_settings(settings)
         controls = (
             self.ui.cb_symbol_continuous_colormap,
@@ -1583,7 +1670,12 @@ class GuiController(QObject):
         self.ui.map_settings_panel.symbology_settings_popup.set_continuous_colormap(
             settings.continuous_colormap
         )
-        self.applyLiveSymbology()
+        if publish_edit:
+            self.applyLiveSymbology()
+
+    def _applyMapSymbologySettingsBundle(self, settings):
+        """Project one normalized popup settings bundle and publish one edit."""
+        self._projectMapSymbologySettingsBundle(settings, publish_edit=True)
 
     def restoreMapSymbologyDefaults(self):
         """Apply the user's saved Map Symbology default as one normal edit."""
