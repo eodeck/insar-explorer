@@ -34,6 +34,7 @@ from ..workspace_header import (
     set_collapsible_workspace_panel_header_collapsed,
 )
 from ..spacing import SPACE_XS, SPACE_SM, SPACE_MD, SPACE_LG
+from ..styles import apply_active_mode_push_button_style
 from .popup import RangeSettingsPopup, SymbologySettingsPopup
 
 
@@ -46,36 +47,6 @@ class MapSettingsPanel(QtWidgets.QWidget):
     CONTENT_MAXIMUM_WIDTH = 280
     BUTTON_SIZE = 24
     ICON_SIZE = 20
-    TOGGLE_STYLE = """
-QPushButton {
-    border: 1px solid transparent;
-    background: transparent;
-}
-QPushButton:hover:enabled:!checked {
-    border-color: palette(mid);
-    background-color: palette(alternate-base);
-}
-QPushButton:checked {
-    border-color: palette(highlight);
-    background-color: palette(highlight);
-    color: palette(highlighted-text);
-}
-QPushButton:checked:hover:enabled {
-    border-color: palette(highlight);
-    background-color: palette(highlight);
-    color: palette(highlighted-text);
-}
-QPushButton:disabled {
-    border-color: transparent;
-    background: transparent;
-    color: palette(mid);
-}
-QPushButton:checked:disabled {
-    border-color: palette(midlight);
-    background-color: palette(midlight);
-    color: palette(mid);
-}
-"""
     ACTION_BUTTON_STYLE = """
 QPushButton {
     padding: 1px 3px;
@@ -593,7 +564,7 @@ QPushButton {
         button.setFixedSize(self.BUTTON_SIZE, self.BUTTON_SIZE)
         button.setIconSize(QSize(self.ICON_SIZE, self.ICON_SIZE))
         button.setSizePolicy(SIZE_POLICY_FIXED, SIZE_POLICY_FIXED)
-        button.setStyleSheet(self.TOGGLE_STYLE)
+        apply_active_mode_push_button_style(button)
 
     def _configure_command_button(self, button, *, icon, tooltip):
         self._configure_button_base(button, icon=icon, tooltip=tooltip)

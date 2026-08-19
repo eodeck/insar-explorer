@@ -63,6 +63,7 @@ from ..workspace_header import (
     set_collapsible_workspace_panel_header_collapsed,
 )
 from ..spacing import SPACE_XS, SPACE_SM, SPACE_LG
+from ..styles import apply_active_mode_push_button_style
 from .pending_label_delegate import PendingLabelDelegate
 from .pending_model import PendingTimeSeriesModel
 from .type_indicator_delegate import TimeSeriesTypeIndicatorDelegate
@@ -127,7 +128,6 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
     MINIMUM_WIDTH = 190
     PREFERRED_WIDTH = 215
     MAXIMUM_WIDTH = 240
-    HOVER_STYLE = "QPushButton:hover {\n    border: 1px solid #bbb;\n}\n"
     SUBGROUP_TEXT_EMPHASIS = 0.76
     PLACEHOLDER_TEXT_EMPHASIS = 0.62
     _BUTTON_METADATA = (
@@ -187,8 +187,8 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
             button.setFixedSize(self.BUTTON_SIZE, self.BUTTON_SIZE)
             button.setIconSize(QSize(self.ICON_SIZE, self.ICON_SIZE))
             button.setSizePolicy(SIZE_POLICY_FIXED, SIZE_POLICY_FIXED)
-            if flat:
-                button.setStyleSheet(self.HOVER_STYLE)
+            if flat and button.isCheckable():
+                apply_active_mode_push_button_style(button)
 
     def _build_layout(self):
         outer_layout = QtWidgets.QVBoxLayout(self)

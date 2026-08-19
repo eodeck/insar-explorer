@@ -1,6 +1,7 @@
 ### History
 
 v2.8.0
+- Make Maps settings and Selection panels collapsible.
 - Preserve per-layer Target/Reference working state.
 - Add revert for unapplied Map Setting changes.
 - Preserve per-layer Map Settings working state.
