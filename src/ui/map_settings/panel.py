@@ -331,7 +331,6 @@ QPushButton {
         self._collapsed = False
         self.set_collapsed(False)
 
-
     def _toggle_collapsed(self):
         """Toggle shell presentation without changing Map Settings state."""
         self.set_collapsed(not self._collapsed)
