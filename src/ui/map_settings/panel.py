@@ -6,7 +6,10 @@ from ... import color_maps
 from qgis.PyQt.QtCore import QRect, QSize
 
 from ...qt_compat import (
+    ALIGN_TOP,
     ALIGN_VCENTER,
+    LEFT_ARROW,
+    RIGHT_ARROW,
     CASE_INSENSITIVE,
     FRAME_SHAPE_NO_FRAME,
     COMBO_NO_INSERT,
@@ -26,7 +29,10 @@ from ...qt_compat import (
 )
 
 from ..widgets import AdaptiveDoubleSpinBox
-from ..workspace_header import create_workspace_panel_header
+from ..workspace_header import (
+    create_collapsible_workspace_panel_header,
+    set_collapsible_workspace_panel_header_collapsed,
+)
 from ..spacing import SPACE_XS, SPACE_SM, SPACE_MD, SPACE_LG
 from .popup import RangeSettingsPopup, SymbologySettingsPopup
 
@@ -82,7 +88,6 @@ QPushButton {
         """Create the panel with the same defaults as the Designer UI."""
         super(MapSettingsPanel, self).__init__(parent)
         self.setObjectName("map_settings_panel")
-        self.setMinimumWidth(self.MINIMUM_WIDTH)
         self.setMaximumWidth(self.MAXIMUM_WIDTH)
         self.setSizePolicy(SIZE_POLICY_PREFERRED, SIZE_POLICY_EXPANDING)
 
@@ -312,16 +317,26 @@ QPushButton {
         outer_layout.setContentsMargins(0, 0, 0, 0)
         outer_layout.setSpacing(0)
 
-        self.panel_header = create_workspace_panel_header(
-            self, "Map settings", "label_map_settings_panel"
+        (
+            self.panel_header_container,
+            self.panel_header,
+            self.collapse_button,
+        ) = create_collapsible_workspace_panel_header(
+            self,
+            "Map settings",
+            "label_map_settings_panel",
+            button_on_left=True,
         )
-        outer_layout.addWidget(self.panel_header)
+        self.collapse_button.clicked.connect(self._toggle_collapsed)
+        outer_layout.addWidget(self.panel_header_container)
+        outer_layout.setAlignment(self.panel_header_container, ALIGN_TOP)
 
         scroll_area = QtWidgets.QScrollArea(self)
         scroll_area.setObjectName("map_settings_scroll_area")
         scroll_area.setWidgetResizable(True)
         scroll_area.setFrameShape(FRAME_SHAPE_NO_FRAME)
         scroll_area.setHorizontalScrollBarPolicy(SCROLL_BAR_ALWAYS_OFF)
+        scroll_area.setMinimumWidth(self.MINIMUM_WIDTH)
         scroll_area.setMaximumWidth(self.MAXIMUM_WIDTH)
         scroll_area.setSizePolicy(SIZE_POLICY_EXPANDING, SIZE_POLICY_EXPANDING)
         outer_layout.addWidget(scroll_area)
@@ -342,6 +357,31 @@ QPushButton {
         content_layout.addLayout(self._build_symbology_layout())
         content_layout.addStretch(1)
         content_layout.addWidget(self._build_action_row())
+        self._collapsed = False
+        self.set_collapsed(False)
+
+
+    def _toggle_collapsed(self):
+        """Toggle shell presentation without changing Map Settings state."""
+        self.set_collapsed(not self._collapsed)
+
+    def set_collapsed(self, collapsed):
+        """Project expanded/collapsed shell presentation only."""
+        self._collapsed = bool(collapsed)
+        self.panel_header.setVisible(not self._collapsed)
+        self.scroll_area.setVisible(not self._collapsed)
+        set_collapsible_workspace_panel_header_collapsed(
+            self.panel_header_container, self._collapsed
+        )
+        if self._collapsed:
+            self.collapse_button.setArrowType(RIGHT_ARROW)
+            action = "Expand Map Settings"
+        else:
+            self.collapse_button.setArrowType(LEFT_ARROW)
+            action = "Collapse Map Settings"
+        self.collapse_button.setToolTip(action)
+        self.collapse_button.setAccessibleName(action)
+        self.collapse_button.setAccessibleDescription(action)
 
     def _build_value_layout(self):
         layout = QtWidgets.QGridLayout()

@@ -31,6 +31,10 @@ from .src.ui.map_settings import MapSettingsPanel
 from .src.ui.time_series import TimeSeriesPointPanel
 from .src.ui.workspace_header import create_workspace_panel_header
 from .src.ui.spacing import SPACE_XS, SPACE_SM, SPACE_LG
+from .src.ui.splitter_state import (
+    collapse_side_panel_sizes,
+    expand_side_panel_sizes,
+)
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'insar_explorer_dockwidget_base.ui'))
@@ -82,11 +86,64 @@ class InsarExplorerDockWidget(QtWidgets.QDockWidget, FORM_CLASS):
         self.splitter.setStretchFactor(0, 0)
         self.splitter.setStretchFactor(1, 1)
         self.splitter.setStretchFactor(2, 0)
-        self.splitter.setSizes([
+        initial_sizes = [
             MapSettingsPanel.PREFERRED_WIDTH,
             700,
             TimeSeriesPointPanel.PREFERRED_WIDTH,
-        ])
+        ]
+        self.splitter.setSizes(initial_sizes)
+        self._expanded_side_panel_widths = {
+            0: initial_sizes[0],
+            2: initial_sizes[2],
+        }
+        self.map_settings_panel.collapse_button.clicked.connect(
+            lambda: self._sync_side_panel_splitter(
+                0, self.map_settings_panel, self.map_settings_panel._collapsed
+            )
+        )
+        self.time_series_point_panel.collapse_button.clicked.connect(
+            lambda: self._sync_side_panel_splitter(
+                2,
+                self.time_series_point_panel,
+                self.time_series_point_panel._collapsed,
+            )
+        )
+
+    def _collapsed_panel_width(self, panel):
+        """Return the compact chevron-rail width for a collapsed side panel."""
+        return panel.collapse_button.sizeHint().width() + (1 * SPACE_XS)
+
+    def _set_side_panel_collapsed_width(self, panel, collapsed_width):
+        """Constrain an outer splitter child to its compact collapsed rail."""
+        panel.setMinimumWidth(collapsed_width)
+        panel.setMaximumWidth(collapsed_width)
+
+    def _restore_side_panel_width_constraints(self, panel):
+        """Restore normal outer-shell width constraints after expansion."""
+        panel.setMinimumWidth(0)
+        panel.setMaximumWidth(panel.MAXIMUM_WIDTH)
+
+    def _sync_side_panel_splitter(self, index, panel, collapsed):
+        """Transfer side-panel width to/from Time Series without touching state."""
+        sizes = self.splitter.sizes()
+        if len(sizes) != 3:
+            return
+
+        current_width = sizes[index]
+        if collapsed:
+            collapsed_width = self._collapsed_panel_width(panel)
+            if current_width > collapsed_width:
+                self._expanded_side_panel_widths[index] = current_width
+            self._set_side_panel_collapsed_width(panel, collapsed_width)
+            sizes = collapse_side_panel_sizes(sizes, index, collapsed_width)
+        else:
+            self._restore_side_panel_width_constraints(panel)
+            target_width = self._expanded_side_panel_widths.get(
+                index, panel.PREFERRED_WIDTH
+            )
+            sizes = expand_side_panel_sizes(sizes, index, target_width)
+
+        self.splitter.setSizes(sizes)
 
     def closeEvent(self, event):
         self.closingPlugin.emit()
