@@ -615,24 +615,29 @@ QPushButton {
 
     def _configure_live_update_checkbox(self):
         checkbox = self.cb_symbology_live
-        checkbox.setText("Live update")
-        checkbox.setToolTip("Apply changes automatically")
-        checkbox.setAccessibleName("Live update")
+        checkbox.setText("Live")
+        checkbox.setToolTip("Apply changes immediately")
+        checkbox.setAccessibleName("Live")
+        checkbox.setAccessibleDescription("Apply changes immediately")
         checkbox.setChecked(False)
         checkbox.setSizePolicy(SIZE_POLICY_FIXED, SIZE_POLICY_FIXED)
 
     def _configure_revert_button(self):
         """Configure the secondary action that discards unapplied editor state."""
         button = self.pb_symbology_revert
-        button.setText("Revert")
+        button.setText("")
+        button.setIcon(QtGui.QIcon(":/icons/icons/revert.svg"))
         button.setToolTip("Revert unapplied map settings")
-        button.setAccessibleName("Revert unapplied map settings")
+        button.setAccessibleName("Revert")
+        button.setAccessibleDescription("Revert unapplied map settings")
         button.setCheckable(False)
         button.setEnabled(False)
         button.setFlat(False)
-        button.setFixedHeight(self.BUTTON_SIZE)
-        button.setSizePolicy(SIZE_POLICY_FIXED, SIZE_POLICY_FIXED)
-        button.setStyleSheet(self.ACTION_BUTTON_STYLE)
+        configure_compact_command_button(
+            button,
+            size=self.BUTTON_SIZE,
+            icon_size=self.ACTION_ICON_SIZE,
+        )
 
     def _configure_apply_button(self):
         button = self.pb_symbology
