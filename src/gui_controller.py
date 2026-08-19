@@ -285,6 +285,8 @@ class GuiController(QObject):
         self._std_calculation_mode = StdCalculationMode.FAST
         self._pending_default_range_layer_id = None
         self._layer_map_settings_working_states = {}
+        self._layer_map_settings_editing_baselines = {}
+        self._layer_map_settings_applied_states = {}
         self._active_map_settings_state_layer_id = None
         self._active_map_settings_state_is_vector = False
         self._map_tool_signal_connected = False
@@ -484,11 +486,19 @@ class GuiController(QObject):
                 self.ui.settings_panel.setEnabled(True)
                 self._active_map_settings_state_layer_id = layer_id
                 self._active_map_settings_state_is_vector = layer_type == VECTOR_LAYER
+                if (
+                    restored_map_state
+                    and layer_id not in self._layer_map_settings_editing_baselines
+                    and cached_map_state is not None
+                ):
+                    self._layer_map_settings_editing_baselines[layer_id] = cached_map_state
                 message = ""
+            self._syncMapSettingsActionState()
             self.msg_signal.emit(message, "i", 0)
         else:
             self._active_map_settings_state_layer_id = None
             self._active_map_settings_state_is_vector = False
+            self._syncMapSettingsActionState()
 
     def _deactivatePolygonSelectionToolsForRaster(self):
         """Deactivate polygon selection tools that cannot operate on raster layers."""
@@ -627,16 +637,15 @@ class GuiController(QObject):
             field_name=field_name,
         )
 
-    def _captureCurrentLayerMapSettingsWorkingState(self, layer_id):
-        """Store the active layer's Map Settings editor state in memory."""
+    def _currentLayerMapSettingsWorkingState(self, layer_id):
+        """Build the active layer's plain-data Map Settings editor snapshot."""
         if layer_id is None:
             return None
         layer_type = (
             VECTOR_LAYER if self._active_map_settings_state_is_vector
             else RASTER_LAYER
         )
-
-        state = LayerMapSettingsWorkingState(
+        return LayerMapSettingsWorkingState(
             layer_id=str(layer_id),
             layer_type=layer_type,
             range_state=self._currentLayerRangeWorkingState(),
@@ -646,7 +655,75 @@ class GuiController(QObject):
             symbology=self._currentMapSymbologySettings(),
             dirty=bool(self._symbology_dirty),
         )
+
+    def _captureCurrentLayerMapSettingsWorkingState(self, layer_id):
+        """Store the active layer's Map Settings editor state in memory."""
+        state = self._currentLayerMapSettingsWorkingState(layer_id)
+        if state is None:
+            return None
         self._layer_map_settings_working_states[layer_id] = state
+        return state
+
+    def _captureCurrentLayerMapSettingsEditingBaseline(self, layer_id, state=None):
+        """Store the active layer's current editing-cycle Revert target."""
+        if state is None:
+            state = self._currentLayerMapSettingsWorkingState(layer_id)
+        if state is None:
+            return None
+        self._layer_map_settings_editing_baselines[layer_id] = state
+        self._syncMapSettingsActionState()
+        return state
+
+    @staticmethod
+    def _mapSettingsStateWithoutDirty(state):
+        """Return an editor snapshot normalized only for dirty-bit comparison."""
+        if state is None:
+            return None
+        return replace(
+            state,
+            range_state=replace(state.range_state, dirty=False),
+            dirty=False,
+        )
+
+    def _currentLayerChangedSinceEditingBaseline(self):
+        """Return whether the active editor differs from its editing baseline."""
+        layer_id = self._active_map_settings_state_layer_id
+        if layer_id is None:
+            return False
+        baseline = self._layer_map_settings_editing_baselines.get(layer_id)
+        if baseline is None:
+            return False
+        current = self._currentLayerMapSettingsWorkingState(layer_id)
+        if current is None:
+            return False
+        return (
+            self._mapSettingsStateWithoutDirty(current)
+            != self._mapSettingsStateWithoutDirty(baseline)
+        )
+
+    @staticmethod
+    def _cleanMapSettingsState(state):
+        """Return one editor snapshot marked clean at both aggregate and range scope."""
+        if state is None:
+            return None
+        return replace(
+            state,
+            range_state=replace(state.range_state, dirty=False),
+            dirty=False,
+        )
+
+    def _rememberCurrentLayerAppliedMapSettingsState(self):
+        """Checkpoint the active editor as the latest successfully applied state."""
+        layer_id = self._active_map_settings_state_layer_id
+        state = self._cleanMapSettingsState(
+            self._currentLayerMapSettingsWorkingState(layer_id)
+        )
+        if state is None:
+            return None
+        self._layer_map_settings_applied_states[layer_id] = state
+        self._layer_map_settings_working_states[layer_id] = state
+        self._layer_map_settings_editing_baselines[layer_id] = state
+        self._syncMapSettingsActionState()
         return state
 
     def _isLayerMapSettingsWorkingStateCompatible(self, layer, state):
@@ -789,7 +866,9 @@ class GuiController(QObject):
 
         self._pending_default_range_layer_id = None
         try:
-            return self._initializeDefaultRangeState()
+            initialized = self._initializeDefaultRangeState()
+            self._captureCurrentLayerMapSettingsEditingBaseline(layer_id)
+            return initialized
         finally:
             self._setDefaultRangeInitializationPending(False)
 
@@ -1276,6 +1355,7 @@ class GuiController(QObject):
             self._std_calculation_mode = StdCalculationMode.FAST
         self._setStdCalculationMode(self._std_calculation_mode)
         self.ui.cb_select_field.currentIndexChanged.connect(self.selectVectorFieldChanged)
+        self.ui.pb_symbology_revert.clicked.connect(self.revertMapSettings)
         self.ui.pb_symbology.clicked.connect(self.applySymbologyClicked)
         self.ui.sb_symbol_lower_range.valueChanged.connect(self.setSymbologyLowerRange)
         self.ui.sb_symbol_upper_range.valueChanged.connect(self.setSymbologyUpperRange)
@@ -1696,15 +1776,24 @@ class GuiController(QObject):
         )
         self.msg_signal.emit("Map symbology default saved.", "done", 5000)
 
+    def _syncMapSettingsActionState(self):
+        """Project dirty/editing-baseline state onto Map Settings footer actions."""
+        dirty = bool(self._symbology_dirty)
+        changed_since_baseline = self._currentLayerChangedSinceEditingBaseline()
+        self.ui.pb_symbology.setEnabled(dirty)
+        self.ui.pb_symbology_revert.setEnabled(changed_since_baseline)
+
     def _setSymbologyDirty(self, dirty):
-        """Project unapplied Map Settings state onto the manual Apply action."""
+        """Set canonical unapplied Map Settings state and refresh footer actions."""
         self._symbology_dirty = bool(dirty)
-        self.ui.pb_symbology.setEnabled(self._symbology_dirty)
+        self._syncMapSettingsActionState()
 
     def _applySymbologyAndClearPending(self):
         """Apply current Map Settings and update pending state from the result."""
         applied = self.applySymbology()
         self._setSymbologyDirty(not applied)
+        if applied:
+            self._rememberCurrentLayerAppliedMapSettingsState()
         return applied
 
     def applyLiveSymbology(self):
@@ -1720,6 +1809,27 @@ class GuiController(QObject):
         else:
             self._setSymbologyDirty(False)
             self.msg_signal.emit("Live symbology disabled.", 'i', 0)
+
+    def revertMapSettings(self):
+        """Discard active-layer edits back to the current editing baseline."""
+        layer = self.iface.activeLayer()
+        layer_id = self._layerIdentity(layer)
+        if (
+            layer_id is None
+            or layer_id != self._active_map_settings_state_layer_id
+        ):
+            return False
+
+        state = self._layer_map_settings_editing_baselines.get(layer_id)
+        if state is None or not self._currentLayerChangedSinceEditingBaseline():
+            return False
+        if not self._restoreLayerMapSettingsWorkingState(layer, state):
+            return False
+
+        self._layer_map_settings_working_states[layer_id] = state
+        self._setSymbologyDirty(state.dirty)
+        self.msg_signal.emit("Unapplied map settings reverted.", "i", 3000)
+        return True
 
     def applySymbologyNow(self):
         QTimer.singleShot(0, self._applySymbologyAndClearPending)

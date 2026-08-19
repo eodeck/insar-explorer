@@ -120,6 +120,7 @@ QPushButton {
             self.sb_symbol_outline_width,
             self.sb_symbol_opacity,
             self.cb_symbology_live,
+            self.pb_symbology_revert,
             self.pb_symbology,
         )
 
@@ -185,6 +186,8 @@ QPushButton {
 
         self.cb_symbology_live = QtWidgets.QCheckBox(self)
         self.cb_symbology_live.setObjectName("cb_symbology_live")
+        self.pb_symbology_revert = QtWidgets.QPushButton(self)
+        self.pb_symbology_revert.setObjectName("pb_symbology_revert")
         self.pb_symbology = QtWidgets.QPushButton(self)
         self.pb_symbology.setObjectName("pb_symbology")
 
@@ -301,6 +304,7 @@ QPushButton {
         )
         self.sb_symbol_opacity.setSuffix(" %")
         self._configure_live_update_checkbox()
+        self._configure_revert_button()
         self._configure_apply_button()
 
     def _build_layout(self):
@@ -415,6 +419,7 @@ QPushButton {
         layout.setSpacing(SPACE_SM)
         layout.addWidget(self.cb_symbology_live)
         layout.addStretch(1)
+        layout.addWidget(self.pb_symbology_revert)
         layout.addWidget(self.pb_symbology)
 
         self._action_row = row
@@ -615,6 +620,19 @@ QPushButton {
         checkbox.setAccessibleName("Live update")
         checkbox.setChecked(False)
         checkbox.setSizePolicy(SIZE_POLICY_FIXED, SIZE_POLICY_FIXED)
+
+    def _configure_revert_button(self):
+        """Configure the secondary action that discards unapplied editor state."""
+        button = self.pb_symbology_revert
+        button.setText("Revert")
+        button.setToolTip("Revert unapplied map settings")
+        button.setAccessibleName("Revert unapplied map settings")
+        button.setCheckable(False)
+        button.setEnabled(False)
+        button.setFlat(False)
+        button.setFixedHeight(self.BUTTON_SIZE)
+        button.setSizePolicy(SIZE_POLICY_FIXED, SIZE_POLICY_FIXED)
+        button.setStyleSheet(self.ACTION_BUTTON_STYLE)
 
     def _configure_apply_button(self):
         button = self.pb_symbology
