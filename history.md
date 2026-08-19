@@ -1,6 +1,7 @@
 ### History
 
 v2.8.0
+- Preserve per-layer Target/Reference working state.
 - Add revert for unapplied Map Setting changes.
 - Preserve per-layer Map Settings working state.
 - Remove adaptive y-axis mode.
