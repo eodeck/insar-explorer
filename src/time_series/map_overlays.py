@@ -190,6 +190,7 @@ class PendingTimeSeriesMapOverlayController:
         self._settings_provider = settings_provider or factory_map_indicator_settings
         self._diagnostic = diagnostic
         self._record: Optional[TimeSeriesRecord] = None
+        self._standalone_target: Optional[SpatialSelection] = None
         self._standalone_reference: Optional[SpatialSelection] = None
         self._items = RecordOverlayItems()
         destroyed = getattr(canvas, "destroyed", None)
@@ -217,26 +218,44 @@ class PendingTimeSeriesMapOverlayController:
     def project_reference(self, selection: SpatialSelection) -> None:
         """Render a committed Reference selection before a Target exists."""
         self.clear()
+        self._standalone_target = None
         self._standalone_reference = selection
         reference_items = self._create_selection_items(
             selection, self._ROLE_REFERENCE
         )
         self._items = RecordOverlayItems(reference_items=reference_items)
 
+    def project_selections(
+        self,
+        target: Optional[SpatialSelection],
+        reference: Optional[SpatialSelection],
+    ) -> None:
+        """Render completed active-layer selections without a pending record."""
+        self.clear()
+        self._standalone_target = target
+        self._standalone_reference = reference
+        target_items = self._create_selection_items(target, self._ROLE_TARGET)
+        reference_items = self._create_selection_items(
+            reference, self._ROLE_REFERENCE
+        )
+        self._items = RecordOverlayItems(target_items, reference_items)
+
     def refresh_style(self) -> None:
         """Rebuild pending items so settings may change marker ownership."""
         record = self._record
+        standalone_target = self._standalone_target
         standalone_reference = self._standalone_reference
         if record is not None:
             self.project_record(record)
-        elif standalone_reference is not None:
-            self.project_reference(standalone_reference)
+        elif standalone_target is not None or standalone_reference is not None:
+            self.project_selections(standalone_target, standalone_reference)
 
     def clear(self) -> None:
         """Remove every stable pending target/reference indicator."""
         self._remove_owned_items(self._items)
         self._items = RecordOverlayItems()
         self._record = None
+        self._standalone_target = None
         self._standalone_reference = None
 
     def _create_selection_items(
@@ -326,16 +345,18 @@ class PendingTimeSeriesMapOverlayController:
 
     def _refresh_for_destination_crs(self, *_):
         record = self._record
+        standalone_target = self._standalone_target
         standalone_reference = self._standalone_reference
         if record is not None:
             self.project_record(record)
-        elif standalone_reference is not None:
-            self.project_reference(standalone_reference)
+        elif standalone_target is not None or standalone_reference is not None:
+            self.project_selections(standalone_target, standalone_reference)
 
     def _canvas_destroyed(self, *_):
         self._canvas = None
         self._items = RecordOverlayItems()
         self._record = None
+        self._standalone_target = None
         self._standalone_reference = None
 
     def _report(self, scope: str, error: Exception) -> None:
