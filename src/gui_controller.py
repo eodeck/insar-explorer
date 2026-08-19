@@ -29,7 +29,10 @@ from .ui.popups.map_indicator_settings_popup import MapIndicatorSettingsPopup
 from .ui.map_settings.range_state import (
     LayerRangeWorkingState, RangeSource, STD_RANGE_SOURCES, StdCalculationMode,
 )
-from .ui.map_settings.working_state import LayerMapSettingsWorkingState
+from .ui.map_settings.working_state import (
+    LayerMapSettingsWorkingState, MapSettingsDefaultFingerprint,
+    MapSettingsProvenance,
+)
 from .ui.map_settings.range_defaults import (
     RangePolicyDefaults, RangePolicyDefaultsService,
     normalize_range_policy_defaults,
@@ -59,15 +62,12 @@ from .time_series.list_state import TimeSeriesListState
 from .time_series.map_overlays import (
     CommittedSelectionOverlayController, PendingTimeSeriesMapOverlayController,
 )
-from .time_series.selection_working_state import LayerSelectionWorkingState
 from .time_series.map_navigation import (
     ensure_canvas_navigation_crs, recenter_canvas_preserving_scale,
     resolve_selection_navigation_location, transform_navigation_point,
 )
 from .time_series.analysis_defaults import StickyAnalysisDefaultsCoordinator
-from .models.time_series import (
-    FitConfiguration, ReplicaConfiguration, SpatialSelectionKind,
-)
+from .models.time_series import FitConfiguration, ReplicaConfiguration
 from .time_series.fit_style_controller import FitStyleController
 from .time_series.ensemble_style import EnsembleStyleController
 from .time_series.residual_style_controller import ResidualStyleController
@@ -290,10 +290,10 @@ class GuiController(QObject):
         self._layer_map_settings_working_states = {}
         self._layer_map_settings_editing_baselines = {}
         self._layer_map_settings_applied_states = {}
-        self._layer_selection_working_states = {}
-        self._active_selection_state_layer_id = None
         self._active_map_settings_state_layer_id = None
         self._active_map_settings_state_is_vector = False
+        self._active_map_settings_provenance = None
+        self._active_map_settings_default_fingerprint = None
         self._map_tool_signal_connected = False
         self.initializeUiParams()
         self.connectUiSignals()
@@ -384,60 +384,6 @@ class GuiController(QObject):
         """Compatibility alias for active-layer transient cleanup."""
         self.resetTimeSeriesTransientStateForLayer()
 
-    def _captureCurrentLayerSelectionWorkingState(self, layer_id):
-        """Cache completed Target/Reference state for one supported layer."""
-        if layer_id is None:
-            return None
-        handler = self.choose_point_click_handler
-        state = LayerSelectionWorkingState(
-            target=handler.target_session.current(),
-            reference=handler.reference_session.current(),
-        )
-        self._layer_selection_working_states[layer_id] = state
-        return state
-
-    @staticmethod
-    def _selectionStateForLayerType(state, layer_type):
-        """Return a layer-compatible completed Selection state."""
-        if state is None or layer_type != RASTER_LAYER:
-            return state
-        target = state.target
-        reference = state.reference
-        if (
-            target is not None
-            and target.selection.kind is SpatialSelectionKind.POLYGON
-        ):
-            target = None
-        if (
-            reference is not None
-            and reference.selection.kind is SpatialSelectionKind.POLYGON
-        ):
-            reference = None
-        return LayerSelectionWorkingState(target=target, reference=reference)
-
-    def _restoreLayerSelectionWorkingState(self, layer, state):
-        """Restore completed selections without rebuilding pending data or map tools."""
-        if layer is None or state is None:
-            return False
-        state = self._selectionStateForLayerType(state, layer.type())
-        handler = self.choose_point_click_handler
-        handler.target_session.clear()
-        handler.reference_session.clear()
-        if state.target is not None:
-            handler.target_session.set(state.target)
-        if state.reference is not None:
-            handler.reference_session.set(state.reference)
-        return True
-
-    def _deactivateSelectionToolsForLayerChange(self):
-        """Cancel transient Target/Reference tools without touching completed state."""
-        self.removeClickTool(reference=False)
-        self.removeClickTool(reference=True)
-        self.deactivatePolygonDrawingTool(reference=False)
-        self.deactivatePolygonDrawingTool(reference=True)
-        self.clear_all_pending_drawing_feedback()
-        self._syncSelectionControlsToActiveMapTool()
-
     def clearTimeSeriesWorkspace(self):
         """Explicitly clear transient state and every committed time series."""
         self.time_series_map_overlays.clear_all()
@@ -452,16 +398,6 @@ class GuiController(QObject):
             layer = self.iface.activeLayer()
 
         layer_id = self._layerIdentity(layer)
-        previous_selection_layer_id = self._active_selection_state_layer_id
-        same_selection_context = (
-            layer_id is not None and layer_id == previous_selection_layer_id
-        )
-        if previous_selection_layer_id is not None and not same_selection_context:
-            self._captureCurrentLayerSelectionWorkingState(
-                previous_selection_layer_id
-            )
-            self._deactivateSelectionToolsForLayerChange()
-
         previous_layer_id = self._active_map_settings_state_layer_id
         same_map_settings_context = (
             layer_id is not None and layer_id == previous_layer_id
@@ -486,8 +422,7 @@ class GuiController(QObject):
             self._setCustomRangeSource()
             self._setRangeSymmetryChecked(False)
             self._setSymbologyDirty(False)
-        if not same_selection_context:
-            self.resetTimeSeriesTransientStateForLayer()
+        self.resetTimeSeriesTransientStateForLayer()
         self.committedTimeSeriesSelectionChanged(
             self.ui.time_series_point_panel.selected_committed_ids()
         )
@@ -503,7 +438,16 @@ class GuiController(QObject):
                                in ["gdal"])  # "ogr"
 
             cached_map_state = self._layer_map_settings_working_states.get(layer_id)
-            cached_selection_state = self._layer_selection_working_states.get(layer_id)
+            if (
+                not same_map_settings_context
+                and cached_map_state is not None
+                and not self._cachedMapSettingsStateFollowsCurrentDefaults(
+                    cached_map_state
+                )
+            ):
+                self._discardUntouchedMapSettingsState(layer_id)
+                cached_map_state = None
+
             restored_map_state = False
             if same_map_settings_context:
                 restored_map_state = True
@@ -547,23 +491,20 @@ class GuiController(QObject):
                 self.ui.pb_choose_point.setChecked(False)
                 self._active_map_settings_state_layer_id = None
                 self._active_map_settings_state_is_vector = False
-                self._active_selection_state_layer_id = None
+                self._active_map_settings_provenance = None
+                self._active_map_settings_default_fingerprint = None
                 message = "Unsupported layer selected. Please choose a layer compatible with InSAR Explorer."
             elif layer_type == VECTOR_LAYER and not fields_available:
                 self.ui.settings_panel.setEnabled(True)
                 self._active_map_settings_state_layer_id = None
                 self._active_map_settings_state_is_vector = False
-                self._active_selection_state_layer_id = None
+                self._active_map_settings_provenance = None
+                self._active_map_settings_default_fingerprint = None
                 message = ""
             else:
                 self.ui.settings_panel.setEnabled(True)
                 self._active_map_settings_state_layer_id = layer_id
                 self._active_map_settings_state_is_vector = layer_type == VECTOR_LAYER
-                self._active_selection_state_layer_id = layer_id
-                if not same_selection_context and cached_selection_state is not None:
-                    self._restoreLayerSelectionWorkingState(
-                        layer, cached_selection_state
-                    )
                 if (
                     restored_map_state
                     and layer_id not in self._layer_map_settings_editing_baselines
@@ -576,7 +517,8 @@ class GuiController(QObject):
         else:
             self._active_map_settings_state_layer_id = None
             self._active_map_settings_state_is_vector = False
-            self._active_selection_state_layer_id = None
+            self._active_map_settings_provenance = None
+            self._active_map_settings_default_fingerprint = None
             self._syncMapSettingsActionState()
 
     def _deactivatePolygonSelectionToolsForRaster(self):
@@ -733,7 +675,52 @@ class GuiController(QObject):
             colormap_reversed=bool(self.ui.pb_colormap_reverse.isChecked()),
             symbology=self._currentMapSymbologySettings(),
             dirty=bool(self._symbology_dirty),
+            provenance=(
+                self._active_map_settings_provenance
+                or MapSettingsProvenance.DEFAULT_INITIALIZED
+            ),
+            default_fingerprint=(
+                self._active_map_settings_default_fingerprint
+                or self._currentMapSettingsDefaultFingerprint()
+            ),
         )
+
+    def _currentMapSettingsDefaultFingerprint(self):
+        """Return the reusable defaults that currently initialize fresh layers."""
+        return MapSettingsDefaultFingerprint(
+            range_policy=self.map_range_defaults.load_defaults(),
+            symbology=self.map_symbology_defaults.load_defaults(),
+        )
+
+    def _setActiveMapSettingsOwnership(self, provenance, default_fingerprint=None):
+        """Project active-layer provenance metadata without changing editor values."""
+        self._active_map_settings_provenance = provenance
+        self._active_map_settings_default_fingerprint = (
+            default_fingerprint or self._currentMapSettingsDefaultFingerprint()
+        )
+
+    def _promoteActiveMapSettingsUserEdit(self):
+        """Give an untouched layer ownership after one explicit editor change."""
+        if (
+            self._active_map_settings_state_layer_id is not None
+            and self._active_map_settings_provenance
+            is MapSettingsProvenance.DEFAULT_INITIALIZED
+        ):
+            self._active_map_settings_provenance = MapSettingsProvenance.USER_EDITED
+
+    def _cachedMapSettingsStateFollowsCurrentDefaults(self, state):
+        """Return whether one untouched cached state still matches global defaults."""
+        if state.provenance is not MapSettingsProvenance.DEFAULT_INITIALIZED:
+            return True
+        return (
+            state.default_fingerprint
+            == self._currentMapSettingsDefaultFingerprint()
+        )
+
+    def _discardUntouchedMapSettingsState(self, layer_id):
+        """Discard stale default-derived state before reinitializing one layer."""
+        self._layer_map_settings_working_states.pop(layer_id, None)
+        self._layer_map_settings_editing_baselines.pop(layer_id, None)
 
     def _captureCurrentLayerMapSettingsWorkingState(self, layer_id):
         """Store the active layer's Map Settings editor state in memory."""
@@ -762,6 +749,8 @@ class GuiController(QObject):
             state,
             range_state=replace(state.range_state, dirty=False),
             dirty=False,
+            provenance=MapSettingsProvenance.DEFAULT_INITIALIZED,
+            default_fingerprint=None,
         )
 
     def _currentLayerChangedSinceEditingBaseline(self):
@@ -794,11 +783,15 @@ class GuiController(QObject):
     def _rememberCurrentLayerAppliedMapSettingsState(self):
         """Checkpoint the active editor as the latest successfully applied state."""
         layer_id = self._active_map_settings_state_layer_id
-        state = self._cleanMapSettingsState(
-            self._currentLayerMapSettingsWorkingState(layer_id)
-        )
-        if state is None:
+        current = self._currentLayerMapSettingsWorkingState(layer_id)
+        if current is None:
             return None
+        state = self._cleanMapSettingsState(
+            replace(current, provenance=MapSettingsProvenance.APPLIED)
+        )
+        self._setActiveMapSettingsOwnership(
+            MapSettingsProvenance.APPLIED, state.default_fingerprint
+        )
         self._layer_map_settings_applied_states[layer_id] = state
         self._layer_map_settings_working_states[layer_id] = state
         self._layer_map_settings_editing_baselines[layer_id] = state
@@ -844,6 +837,10 @@ class GuiController(QObject):
 
     def _initializeFreshLayerMapSettingsEditorState(self):
         """Project non-range defaults for one newly encountered supported layer."""
+        self._setActiveMapSettingsOwnership(
+            MapSettingsProvenance.DEFAULT_INITIALIZED,
+            self._currentMapSettingsDefaultFingerprint(),
+        )
         self._setReferenceValue(0.0)
         self._setMapColormapState(color_maps.DEFAULT_COLORMAP_ID, False)
         self._projectMapSymbologySettingsBundle(
@@ -908,6 +905,9 @@ class GuiController(QObject):
         )
         self._projectMapSymbologySettingsBundle(
             state.symbology, publish_edit=False
+        )
+        self._setActiveMapSettingsOwnership(
+            state.provenance, state.default_fingerprint
         )
         self._setSymbologyDirty(state.dirty)
         return True
@@ -1134,18 +1134,6 @@ class GuiController(QObject):
             self.pending_time_series_map_overlays.clear()
             return
         self.pending_time_series_map_overlays.project_reference(reference.selection)
-
-    def _syncStandaloneTargetOverlay(self) -> None:
-        """Project an accepted Target while no Reference/pending record exists."""
-        if self.choose_point_click_handler.plot_ts.pending_record() is not None:
-            return
-        target = self.choose_point_click_handler.target_session.current()
-        if target is None:
-            self.pending_time_series_map_overlays.clear()
-            return
-        self.pending_time_series_map_overlays.project_selections(
-            target.selection, None
-        )
 
     def _setReferenceValue(self, value):
         """Project one Reference value without relying on valueChanged feedback."""
@@ -1720,6 +1708,7 @@ class GuiController(QObject):
         """Compute and project one explicit range source using existing map statistics."""
         if not isinstance(source, RangeSource):
             raise ValueError("Unsupported Map Settings range source: {!r}".format(source))
+        self._promoteActiveMapSettingsUserEdit()
         if source is RangeSource.CUSTOM:
             self._setCustomRangeSource()
             return
@@ -1888,6 +1877,7 @@ class GuiController(QObject):
         return applied
 
     def applyLiveSymbology(self):
+        self._promoteActiveMapSettingsUserEdit()
         if self.ui.cb_symbology_live.isChecked():
             self._applySymbologyAndClearPending()
         else:
@@ -4164,7 +4154,6 @@ class GuiController(QObject):
         if status:
             tool = self.initializeClickTool(reference=True)
             self.iface.mapCanvas().setMapTool(tool)
-            self._syncStandaloneTargetOverlay()
             self.msg_signal.emit("Click any point on the map to set it as reference.", "t", 0)
         else:
             self.ui.pb_set_reference.setChecked(False)
@@ -4188,7 +4177,6 @@ class GuiController(QObject):
         self.ui.pb_choose_polygon.setChecked(False)
         if status:
             self.initializePolygonDrawingTool(reference=True)
-            self._syncStandaloneTargetOverlay()
             self.msg_signal.emit("Click to add polygon vertices; double-click or right-click to finish.", "t", 0)
         else:
             self.deactivatePolygonDrawingTool(reference=True)
