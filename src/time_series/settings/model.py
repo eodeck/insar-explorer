@@ -114,7 +114,10 @@ class ResidualStyleSettings:
             marker=normalize_residual_marker(values.get("marker"), "o"),
             marker_color=normalize_color(values.get("marker color"), RESIDUAL_DEFAULT_COLOR),
             marker_edge_color=normalize_color(values.get("marker edge color"), "black"),
-            marker_size=normalize_number(values.get("marker size"), RESIDUAL_MARKER_SIZE_RANGE, RESIDUAL_MARKER_SIZE_DEFAULT),
+            marker_size=normalize_number(
+                values.get("marker size"),
+                RESIDUAL_MARKER_SIZE_RANGE,
+                RESIDUAL_MARKER_SIZE_DEFAULT),
             marker_alpha=normalize_alpha(values.get("marker alpha"), 0.8),
             line_style=normalize_residual_line_style(values.get("line style"), ""),
             line_color=normalize_color(values.get("line color"), RESIDUAL_DEFAULT_COLOR),

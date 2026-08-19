@@ -97,7 +97,6 @@ class RangeSettingsPopup(QtWidgets.QWidget):
         self.cmb_std_calculation_mode.setToolTip(mode.tooltip)
 
 
-
 class SymbologySettingsPopup(QtWidgets.QWidget):
     """Present secondary symbology controls in a compact popup."""
 

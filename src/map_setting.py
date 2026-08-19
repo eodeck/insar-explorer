@@ -407,7 +407,6 @@ class InsarMap:
             message = '<span style="color:red;">Could not set the symbology. Check layer validity.</span>'
             return message
 
-
     @staticmethod
     def _markerShape(shape_name):
         """Resolve one stable marker-shape value across QGIS enum layouts."""
