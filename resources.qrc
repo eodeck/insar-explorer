@@ -44,6 +44,7 @@
     <file>icons/plot_remove_last.svg</file>
     <file>icons/plot_settings.svg</file>
     <file>icons/reverse.svg</file>
+    <file>icons/revert.svg</file>
     <file>icons/rename.svg</file>
     <file>icons/fit_curve.svg</file>
     <file>icons/fit_poly3.svg</file>

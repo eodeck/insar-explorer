@@ -1,6 +1,8 @@
 """Semantic range-source state for Map Settings."""
 
+from dataclasses import dataclass
 from enum import Enum
+from typing import Optional, Tuple
 
 
 class StdCalculationMode(Enum):
@@ -76,3 +78,17 @@ STD_RANGE_SOURCES = (
     RangeSource.STD_2,
     RangeSource.STD_3,
 )
+
+
+@dataclass(frozen=True)
+class LayerRangeWorkingState:
+    """Capture one layer's in-memory Map Settings range working state."""
+
+    range_source: RangeSource
+    calculation: StdCalculationMode
+    symmetric_around_zero: bool
+    displayed_minimum: float
+    displayed_maximum: float
+    raw_source_values: Optional[Tuple[float, float]]
+    dirty: bool
+    field_name: Optional[str]

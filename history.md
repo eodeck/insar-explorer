@@ -1,6 +1,8 @@
 ### History
 
 v2.8.0
+- Add revert for unapplied Map Setting changes.
+- Preserve per-layer Map Settings working state.
 - Remove adaptive y-axis mode.
 - Add source layer selection and zoom to target/reference to the context menu of commited items.
 - Retain time series across active layer changes.
