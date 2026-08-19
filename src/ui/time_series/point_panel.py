@@ -9,7 +9,10 @@ from qgis.PyQt.QtCore import QEvent, QSize, pyqtSignal
 
 from ...qt_compat import (
     ALIGN_LEFT,
+    ALIGN_TOP,
     ALIGN_VCENTER,
+    LEFT_ARROW,
+    RIGHT_ARROW,
     SIZE_POLICY_EXPANDING,
     SIZE_POLICY_FIXED,
     SIZE_POLICY_PREFERRED,
@@ -55,7 +58,10 @@ from .presentation import (
     TIME_SERIES_TYPE_ICON_SIZE,
 )
 
-from ..workspace_header import create_workspace_panel_header
+from ..workspace_header import (
+    create_collapsible_workspace_panel_header,
+    set_collapsible_workspace_panel_header_collapsed,
+)
 from ..spacing import SPACE_XS, SPACE_SM, SPACE_LG
 from .pending_label_delegate import PendingLabelDelegate
 from .pending_model import PendingTimeSeriesModel
@@ -141,7 +147,6 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         """Create the panel and baseline-compatible selection controls."""
         super(TimeSeriesPointPanel, self).__init__(parent)
         self.setObjectName("time_series_point_panel")
-        self.setMinimumWidth(self.MINIMUM_WIDTH)
         self.setMaximumWidth(self.MAXIMUM_WIDTH)
         self.setSizePolicy(SIZE_POLICY_PREFERRED, SIZE_POLICY_EXPANDING)
 
@@ -186,14 +191,34 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
                 button.setStyleSheet(self.HOVER_STYLE)
 
     def _build_layout(self):
-        layout = QtWidgets.QVBoxLayout(self)
+        outer_layout = QtWidgets.QVBoxLayout(self)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+        outer_layout.setSpacing(0)
+
+        (
+            self.panel_header_container,
+            self.panel_header,
+            self.collapse_button,
+        ) = create_collapsible_workspace_panel_header(
+            self,
+            "Selection",
+            "label_selection_panel",
+            button_on_left=False,
+        )
+        self.collapse_button.clicked.connect(self._toggle_collapsed)
+        outer_layout.addWidget(self.panel_header_container)
+        outer_layout.setAlignment(self.panel_header_container, ALIGN_TOP)
+
+        self.content = QtWidgets.QWidget(self)
+        self.content.setObjectName("selection_panel_content")
+        self.content.setMinimumWidth(self.MINIMUM_WIDTH)
+        self.content.setMaximumWidth(self.MAXIMUM_WIDTH)
+        self.content.setSizePolicy(SIZE_POLICY_PREFERRED, SIZE_POLICY_EXPANDING)
+        outer_layout.addWidget(self.content)
+
+        layout = QtWidgets.QVBoxLayout(self.content)
         layout.setContentsMargins(SPACE_LG, SPACE_SM, SPACE_LG, SPACE_LG)
         layout.setSpacing(SPACE_SM)
-
-        self.panel_header = create_workspace_panel_header(
-            self, "Selection", "label_selection_panel"
-        )
-        layout.addWidget(self.panel_header)
 
         header_grid = QtWidgets.QGridLayout()
         header_grid.setObjectName("time_series_selection_header_layout")
@@ -691,6 +716,31 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         buttons = self.selection_buttons
         for current, following in zip(buttons, buttons[1:]):
             QtWidgets.QWidget.setTabOrder(current, following)
+
+        self._collapsed = False
+        self.set_collapsed(False)
+
+    def _toggle_collapsed(self):
+        """Toggle shell presentation without changing Selection state."""
+        self.set_collapsed(not self._collapsed)
+
+    def set_collapsed(self, collapsed):
+        """Project expanded/collapsed shell presentation only."""
+        self._collapsed = bool(collapsed)
+        self.panel_header.setVisible(not self._collapsed)
+        self.content.setVisible(not self._collapsed)
+        set_collapsible_workspace_panel_header_collapsed(
+            self.panel_header_container, self._collapsed
+        )
+        if self._collapsed:
+            self.collapse_button.setArrowType(LEFT_ARROW)
+            action = "Expand Selection"
+        else:
+            self.collapse_button.setArrowType(RIGHT_ARROW)
+            action = "Collapse Selection"
+        self.collapse_button.setToolTip(action)
+        self.collapse_button.setAccessibleName(action)
+        self.collapse_button.setAccessibleDescription(action)
 
     def _secondary_label(self, text, object_name):
         label = QtWidgets.QLabel(text, self)
