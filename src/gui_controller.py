@@ -300,6 +300,7 @@ class GuiController(QObject):
         self._layer_selection_working_states = {}
         self._active_selection_state_layer_id = None
         self._map_tool_signal_connected = False
+        self._session_teardown_complete = False
         self.initializeUiParams()
         self.connectUiSignals()
         self._syncSelectionControlsToActiveMapTool()
@@ -396,6 +397,45 @@ class GuiController(QObject):
         self.clear_all_pending_drawing_feedback()
         self.choose_point_click_handler.clearTimeSeriesWorkspace()
         self.clearTimeSeriesClipboard()
+
+    def teardownSessionState(self):
+        """End this dock generation and clear controller-owned transient state."""
+        if self._session_teardown_complete:
+            return
+        self._session_teardown_complete = True
+
+        # deactivate QGIS interaction objects while the old dock/controller is
+        # still valid.
+        self.removeClickTool(reference=False)
+        self.removeClickTool(reference=True)
+        self.removePolygonDrawingTool(reference=False)
+        self.removePolygonDrawingTool(reference=True)
+        self.clear_all_pending_drawing_feedback()
+
+        # disconnect long-lived QGIS signals before clearing model state
+        self.disconnectMapToolSync()
+        try:
+            self.iface.currentLayerChanged.disconnect(self.onLayerChanged)
+        except (TypeError, RuntimeError):
+            pass
+
+        # clear time-series services
+        self.clearTimeSeriesWorkspace()
+
+        self._layer_selection_working_states.clear()
+        self._active_selection_state_layer_id = None
+
+        self._layer_map_settings_working_states.clear()
+        self._layer_map_settings_editing_baselines.clear()
+        self._layer_map_settings_applied_states.clear()
+        self._active_map_settings_state_layer_id = None
+        self._active_map_settings_state_is_vector = False
+        self._active_map_settings_provenance = None
+        self._active_map_settings_default_fingerprint = None
+        self._pending_default_range_layer_id = None
+        self._range_source_raw_values = None
+
+        self.choose_point_click_handler.dispose()
 
     def onLayerChanged(self, layer=None):
         """Reset active-layer state while retaining the committed workspace."""

@@ -206,51 +206,31 @@ class InsarExplorer:
 
     # --------------------------------------------------------------------------
 
+    def _teardownGuiControllerSession(self):
+        """Tear down one dock/controller generation through the shared lifecycle."""
+        controller = self.gui_controller
+        if controller is not None:
+            controller.teardownSessionState()
+        self.gui_controller = None
+
     def onClosePlugin(self):
         """Cleanup necessary items here when plugin dockwidget is closed"""
 
-        # print "** CLOSING InsarExplorer"
+        dockwidget = self.dockwidget
+        if dockwidget is not None:
+            try:
+                dockwidget.closingPlugin.disconnect(self.onClosePlugin)
+            except (TypeError, RuntimeError):
+                pass
 
-        # disconnects
-        self.dockwidget.closingPlugin.disconnect(self.onClosePlugin)
-
-        # remove this statement if dockwidget is to remain
-        # for reuse if plugin is reopened
-        # Commented next statement since it causes QGIS crashe
-        # when closing the docked window:
+        self._teardownGuiControllerSession()
         self.dockwidget = None
-
-        # Released memory when widget is closed
-        if self.gui_controller is not None:
-            self.gui_controller.disconnectMapToolSync()
-            click_handler = getattr(
-                self.gui_controller, "choose_point_click_handler", None
-            )
-            if click_handler is not None:
-                click_handler.dispose()
-        self.gui_controller = None
-
         self.pluginIsActive = False
 
     def unload(self):
         """Removes the plugin menu item and icon from QGIS GUI."""
 
-        # session workflow state must not survive plugin unload/reload.
-        services = getattr(self, "time_series_services", None)
-        reference_session = getattr(services, "reference_session", None)
-        if reference_session is not None:
-            reference_session.clear()
-
-        controller = getattr(self, "gui_controller", None)
-        click_handler = getattr(controller, "choose_point_click_handler", None)
-        if click_handler is not None:
-            click_handler.clearReferenceFeatureHighlight()
-            click_handler.dispose()
-        if controller is not None:
-            controller.disconnectMapToolSync()
-            controller.clearTimeSeriesMapOverlays()
-            controller.clearTimeSeriesClipboard()
-            controller.removePolygonDrawingTool(reference=True)
+        self._teardownGuiControllerSession()
 
         # print "** UNLOAD InsarExplorer"
 
@@ -290,7 +270,7 @@ class InsarExplorer:
                 ensure_time_series_services(self)
                 self.gui_controller = GuiController(self)
         else:  # this will reload the widget when button clicked again
+            self._teardownGuiControllerSession()
             self.iface.removeDockWidget(self.dockwidget)
             self.dockwidget = None
             self.pluginIsActive = False
-            self.gui_controller = None
