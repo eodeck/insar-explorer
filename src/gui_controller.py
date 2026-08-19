@@ -3838,8 +3838,8 @@ class GuiController(QObject):
         self.replica_popup.show()
         self.replica_popup.raise_()
 
-    def _applyReplicaSettingsSnapshot(self, settings, *, rerender):
-        """Apply active-record Replica state without changing creation defaults."""
+    def _projectReplicaSettingsSnapshot(self, settings):
+        """Project Replica runtime settings and controls without touching plot records."""
         applied = settings
         defaults = self.time_series_settings.replica
         presentation = replace(
@@ -3851,6 +3851,16 @@ class GuiController(QObject):
         self.time_series_replica_enabled = applied.enabled
         self.time_series_replica_interval_mm = applied.interval_mm
         self.time_series_replica_pair_count = applied.pair_count
+        self._syncTimeSeriesReplicaControls()
+        return applied
+
+    def _applyReplicaSettingsSnapshot(
+        self, settings, *, apply_to_active_record=True, refresh_graphics=True
+    ):
+        """Apply Replica settings to runtime state and, when requested, the active record."""
+        applied = self._projectReplicaSettingsSnapshot(settings)
+        if not apply_to_active_record:
+            return applied
 
         plot = self.choose_point_click_handler.plot_ts
         replica_config = ReplicaConfiguration(
@@ -3865,9 +3875,8 @@ class GuiController(QObject):
         if plot.updateActiveReplicaState(
             configuration=replica_config, presentation=replica_style
         ):
-            rerender = False
-        self._syncTimeSeriesReplicaControls()
-        if rerender and self._applicableReplicaTargets():
+            refresh_graphics = False
+        if refresh_graphics and self._applicableReplicaTargets():
             self._refreshReplicaGraphicsAndYAxis()
         return applied
 
@@ -3881,14 +3890,14 @@ class GuiController(QObject):
             color_1=color_1, color_2=color_2, opacity=opacity,
             marker=marker, marker_size=marker_size,
         )
-        self._applyReplicaSettingsSnapshot(replica, rerender=True)
+        self._applyReplicaSettingsSnapshot(replica, refresh_graphics=True)
         self._persistCurrentReplicaAnalysisDefaults()
 
     def _applyReplicaDefaults(self, settings):
         """Intentionally replace future-record defaults and apply them to the active record."""
         applied = replace(settings, enabled=self.time_series_replica_enabled)
         self.time_series_settings.replace_domain("replica", settings)
-        self._applyReplicaSettingsSnapshot(applied, rerender=True)
+        self._applyReplicaSettingsSnapshot(applied, refresh_graphics=True)
         self._persistCurrentReplicaAnalysisDefaults()
 
     def restoreReplicaDefaults(self):
@@ -3936,12 +3945,15 @@ class GuiController(QObject):
         self._syncTimeSeriesReplicaControls()
 
     def _restoreTimeSeriesReplicaState(self):
-        """Restore controls from typed analysis defaults without persistence writes."""
+        """Restore controls from typed analysis defaults without persistence or plot writes."""
         defaults = self.time_series_settings.replica_analysis_defaults
-        self._replica_enabled_view = defaults.enabled
-        self._replica_interval_view = defaults.interval_mm
-        self._replica_pair_count_view = defaults.pair_count
-        self._applyTimeSeriesReplicaState(refresh=False)
+        replica = replace(
+            self.time_series_settings.replica,
+            enabled=defaults.enabled,
+            interval_mm=defaults.interval_mm,
+            pair_count=defaults.pair_count,
+        )
+        self._projectReplicaSettingsSnapshot(replica)
 
     def _syncTimeSeriesReplicaControls(self):
         """Synchronize toolbar and temporary Settings controls without recursion."""
@@ -3986,7 +3998,9 @@ class GuiController(QObject):
             interval_mm=self.time_series_replica_interval_mm,
             pair_count=self.time_series_replica_pair_count,
         )
-        self._applyReplicaSettingsSnapshot(replica, rerender=refresh)
+        self._applyReplicaSettingsSnapshot(
+            replica, apply_to_active_record=True, refresh_graphics=refresh
+        )
 
     def setTimeSeriesReplicaEnabled(self, enabled):
         """Enable or disable replicas while preserving the selected interval."""
@@ -4030,7 +4044,9 @@ class GuiController(QObject):
             pair_count=self.time_series_replica_pair_count,
         )
         self._applyReplicaSettingsSnapshot(
-            applied, rerender=self.time_series_replica_enabled,
+            applied,
+            apply_to_active_record=True,
+            refresh_graphics=self.time_series_replica_enabled,
         )
         self._persistCurrentReplicaAnalysisDefaults()
 
