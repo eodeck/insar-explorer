@@ -1,5 +1,6 @@
 import os
 import math
+import re
 from dataclasses import replace
 
 from qgis.gui import QgsMapToolEmitPoint
@@ -277,7 +278,6 @@ class GuiController(QObject):
         self.residual_style_controller = ResidualStyleController()
         self.last_save_path = self._initialExportDirectory()
         self.last_save_ts_name = "ts_plot.png"
-        self.last_export_ts_name = "ts_data.csv"
         self.last_plot_export_format = self.settings.value(
             'insar_explorer/plot_export_format', 'png', type=str
         )
@@ -4505,11 +4505,15 @@ class GuiController(QObject):
     def _sanitizeTimeSeriesExportLabel(label):
         """Return a conservative cross-platform filename component."""
         invalid = set('<>:"/\\|?*')
+        sanitized = re.sub(r"\s+", "_", str(label or "").strip())
+        sanitized = sanitized.replace("·", "_")
         sanitized = "".join(
             "_" if character in invalid or ord(character) < 32 else character
-            for character in str(label or "")
-        ).strip()
+            for character in sanitized
+        )
+        sanitized = re.sub(r"_+", "_", sanitized).strip("_")
         sanitized = sanitized.rstrip(". ")
+        sanitized = sanitized.rstrip("_")
         if not sanitized:
             return "time_series"
         reserved = {"CON", "PRN", "AUX", "NUL"}
@@ -4649,7 +4653,8 @@ class GuiController(QObject):
             return
 
         ts_extension = self.last_ts_export_format.lower().lstrip('.')
-        suggested_name = self._withExtension(self.last_export_ts_name, ts_extension)
+        label_component = self._sanitizeTimeSeriesExportLabel(record.presentation.label)
+        suggested_name = self._withExtension(label_component, ts_extension)
         suggested_path = self._suggestedExportPath(suggested_name)
         _, ext = os.path.splitext(suggested_path)
 
@@ -4689,6 +4694,5 @@ class GuiController(QObject):
         self._rememberExportPath(file_path)
         self._rememberExportFormat('insar_explorer/ts_export_format', file_path)
         self.last_ts_export_format = os.path.splitext(file_path)[1].lstrip('.').lower()
-        self.last_export_ts_name = os.path.basename(file_path)
 
         self.msg_signal.emit(f'Time series exported: {file_path}', 'done', 3000)
