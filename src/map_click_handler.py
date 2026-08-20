@@ -153,7 +153,7 @@ class MapClickHandler:
 
         status, message = vector_layer_utils.checkVectorLayer(layer)
         if status is False:
-            self.msg_signal.emit(message, STATUS_INFO, 0)
+            self.msg_signal.emit(message, STATUS_WARNING, 0)
             return
 
         closest_feature_id = self.findFeatureAtPoint(layer, point, self.iface.mapCanvas(),
@@ -433,7 +433,7 @@ class TSClickHandler(MapClickHandler):
 
         status, message = vector_layer_utils.checkVectorLayerTimeseries(layer)
         if status is False:
-            self.msg_signal.emit(message, STATUS_INFO, 0)
+            self.msg_signal.emit(message, STATUS_WARNING, 0)
             return
 
         if feature:
@@ -480,7 +480,7 @@ class TSClickHandler(MapClickHandler):
     def choosePointClickedRaster(self, *, point: QgsPointXY, layer: QgsMapLayer = None, ref=False):
         status, message = grd_layer_utils.checkGrdTimeseries(layer)
         if status is False:
-            self.msg_signal.emit(message, STATUS_INFO, 0)
+            self.msg_signal.emit(message, STATUS_WARNING, 0)
             return
 
         date_values = self.raster_layer.getRasterTimeseriesAttributes(layer, point=point)
@@ -568,7 +568,7 @@ class PolygonClickHandler(MapClickHandler):
         # Check whether layer is a vector layer
         status, message = vector_layer_utils.checkVectorLayer(layer)
         if status is False:
-            self.msg_signal.emit(message, STATUS_INFO, 0)
+            self.msg_signal.emit(message, STATUS_WARNING, 0)
             return []
 
         # Check whether polygon geometry is valid
@@ -616,7 +616,7 @@ class PolygonClickHandler(MapClickHandler):
 
         status, message = vector_layer_utils.checkVectorLayerTimeseries(layer)
         if status is False:
-            self.msg_signal.emit(message, STATUS_INFO, 0)
+            self.msg_signal.emit(message, STATUS_WARNING, 0)
             return
 
         features = self.identifyFeaturesInPolygon(layer=layer, polygon=polygon, ref=ref)

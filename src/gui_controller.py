@@ -1652,7 +1652,12 @@ class GuiController(QObject):
 
     def _onMapToolChanged(self, new_tool, old_tool=None):
         """Project the actual active QGIS map tool into selection-button state."""
-        del old_tool
+        selection_tools = (
+            self.click_tool,
+            self.drawing_tool,
+            self.reference_click_tool,
+            self.drawing_tool_reference,
+        )
         if new_tool is None:
             button_states = (
                 (self.ui.pb_choose_point, False),
@@ -1685,6 +1690,9 @@ class GuiController(QObject):
                 button.setChecked(checked)
         finally:
             del blockers
+
+        if old_tool is not None and old_tool in selection_tools and new_tool not in selection_tools:
+            self.msg_signal.emit("", STATUS_INFO, 0)
 
     def _setRangeSource(self, source):
         """Set semantic source and project it into the popup without feedback."""
@@ -1802,10 +1810,6 @@ class GuiController(QObject):
                 minimum, maximum = self._symmetricRange(minimum, maximum)
             self._setDisplayedRange(minimum, maximum)
 
-        if status:
-            self.msg_signal.emit("Range symmetry enabled.", STATUS_INFO, 0)
-        else:
-            self.msg_signal.emit("Range symmetry disabled.", STATUS_INFO, 0)
         self.applyLiveSymbology()
 
     def continuousColormapChanged(self, status):
@@ -1859,13 +1863,6 @@ class GuiController(QObject):
 
         self._projectComputedRangeSource(source, raw_values)
 
-        messages = {
-            RangeSource.DATA_EXTENT: "Symbology range set from data extent.",
-            RangeSource.STD_1: "Symbology range set to mean±1σ.",
-            RangeSource.STD_2: "Symbology range set to mean±2σ.",
-            RangeSource.STD_3: "Symbology range set to mean±3σ.",
-        }
-        self.msg_signal.emit(messages[source], STATUS_INFO, 0)
         self.applyLiveSymbology()
 
     def _currentMapRangePolicyDefaults(self):
@@ -2020,11 +2017,16 @@ class GuiController(QObject):
 
     def activateLiveSymbology(self, status):
         if status:
-            self._applySymbologyAndClearPending()
-            self.msg_signal.emit("Live symbology enabled: changes will apply immediately.", STATUS_SUCCESS, 0)
+            applied = self._applySymbologyAndClearPending()
+            if applied:
+                self.msg_signal.emit(
+                    "Live update enabled. Map changes apply immediately.", STATUS_INFO, 0
+                )
         else:
             self._setSymbologyDirty(False)
-            self.msg_signal.emit("Live symbology disabled.", STATUS_INFO, 0)
+            self.msg_signal.emit(
+                "Live update disabled. Use Apply to update the map.", STATUS_INFO, 0
+            )
 
     def revertMapSettings(self):
         """Discard active-layer edits back to the current editing baseline."""
@@ -2044,7 +2046,7 @@ class GuiController(QObject):
 
         self._layer_map_settings_working_states[layer_id] = state
         self._setSymbologyDirty(state.dirty)
-        self.msg_signal.emit("Unapplied map settings reverted.", STATUS_INFO, 3000)
+        self.msg_signal.emit("Unapplied map settings reverted.", STATUS_SUCCESS, 3000)
         return True
 
     def applySymbologyNow(self):
@@ -2072,7 +2074,7 @@ class GuiController(QObject):
         self.insar_map.color_ramp_name = str(self.ui.cmb_colormap.currentData())
         message = self.insar_map.setSymbology()
         if message != "":
-            self.msg_signal.emit(message, STATUS_INFO, 0)
+            self.msg_signal.emit(message, STATUS_ERROR, 0)
         else:
             self.msg_signal.emit("", STATUS_INFO, 0)
         return message == ""
@@ -2082,10 +2084,6 @@ class GuiController(QObject):
             self.msg_signal.emit("Symbology applied.", STATUS_SUCCESS, 5000)
 
     def colormapReverseClicked(self, status):
-        if status:
-            self.msg_signal.emit("Colormap reversed.", STATUS_INFO, 0)
-        else:
-            self.msg_signal.emit("Colormap normal.", STATUS_INFO, 0)
         self.flipComboBoxIcons(self.ui.cmb_colormap)
         self.insar_map.color_ramp_reverse_flag = status
         self.applyLiveSymbology()
@@ -2228,8 +2226,6 @@ class GuiController(QObject):
         if current is not None:
             self._syncActiveAnalysisControls(current)
         self._persistCurrentFitAnalysisDefaults()
-        if not enabled:
-            self.msg_signal.emit("No fit model selected.", STATUS_WARNING, 0)
 
     def setTimeSeriesFitModel(self, model):
         """Select a model and refresh only when fitting is active."""
@@ -2277,10 +2273,6 @@ class GuiController(QObject):
         if current is not None:
             self._syncActiveAnalysisControls(current)
         self._persistCurrentFitAnalysisDefaults()
-        self.msg_signal.emit(
-            "Residual plot enabled using the selected fit model."
-            if enabled else "Residual plot disabled.", STATUS_INFO, 0
-        )
 
     def _fitStyleAvailable(self):
         """Return Fit Style editability from Fit activation alone."""
@@ -3366,8 +3358,6 @@ class GuiController(QObject):
         plotter._set_current_series(None)
         toolbar.setSeriesControlsEnabled(False)
         self._refreshTimeSeriesPlotActionState()
-        if len(record_ids) > 1:
-            self.msg_signal.emit("Multiple time series selected.", STATUS_INFO, 0)
 
     def _refreshTimeSeriesPlotActionState(self):
         """Project renderer-owned plot availability into plot-level toolbar actions."""
@@ -3512,8 +3502,6 @@ class GuiController(QObject):
         """Apply a toolbar-selected X-axis policy immediately."""
         if not self._applyTimeSeriesXAxisMode(mode):
             return
-        message = "X range set to Data range." if mode == "from_data" else "Stored manual time range applied."
-        self.msg_signal.emit(message, STATUS_INFO, 0)
 
     def showManualXAxisPopup(self):
         """Open the transactional session-local time-range editor."""
@@ -3729,12 +3717,6 @@ class GuiController(QObject):
                 self.showManualYAxisPopup()
                 return
         self._applyTimeSeriesYAxisMode(mode)
-        messages = {
-            "from_data": "Y range set to Data range.",
-            "symmetric": "Y range set to Symmetric.",
-            "manual": "Stored manual Y-axis ranges applied.",
-        }
-        self.msg_signal.emit(messages[self.time_series_y_axis_mode], STATUS_INFO, 0)
 
     def showManualYAxisPopup(self):
         """Open the editor and capture both policies and viewports transactionally."""
@@ -3796,7 +3778,7 @@ class GuiController(QObject):
         self._manual_y_axis_session = None
         self.manual_y_axis_popup.closeAfterCommit()
         self._syncTimeSeriesYAxisControls(updated.policy)
-        self.msg_signal.emit("Current Y-axis view saved as Manual.", STATUS_INFO, 0)
+        self.msg_signal.emit("Current Y-axis view saved as Manual.", STATUS_SUCCESS, 0)
 
     def previewManualYAxisRange(self, axis_name, lower, upper):
         """Preview the complete draft through the same paths used by Apply."""
@@ -3862,11 +3844,6 @@ class GuiController(QObject):
         )
         self._manual_y_axis_session = None
         self._applyTimeSeriesYAxisMode(resulting_policy, refresh=True)
-        message = (
-            "Y range set to Data range." if resulting_policy == "from_data"
-            else "Stored manual Y-axis ranges applied."
-        )
-        self.msg_signal.emit(message, STATUS_INFO, 0)
 
     def cancelManualYAxisRange(self):
         """Restore both original policies and all captured X/Y view ranges."""
@@ -4142,14 +4119,6 @@ class GuiController(QObject):
         self.time_series_replica_enabled = bool(enabled)
         self._applyTimeSeriesReplicaState()
         self._persistCurrentReplicaAnalysisDefaults()
-        if enabled:
-            message = (
-                "Replica enabled: time series will be replicated every "
-                f"±{self.time_series_replica_interval_mm:.1f} mm."
-            )
-        else:
-            message = "Replica disabled."
-        self.msg_signal.emit(message, STATUS_INFO, 0)
 
     def setTimeSeriesReplicaInterval(self, interval_mm):
         """Store a positive replica interval and redraw only when Replica is active."""
@@ -4159,9 +4128,6 @@ class GuiController(QObject):
         self.time_series_replica_interval_mm = interval_mm
         self._applyTimeSeriesReplicaState(refresh=self.time_series_replica_enabled)
         self._persistCurrentReplicaAnalysisDefaults()
-        self.msg_signal.emit(
-            f"Replica interval set to ±{interval_mm:.1f} mm.", STATUS_INFO, 0
-        )
 
     def _applyReplicaPairCount(self, pair_count):
         """Apply a validated pair count to the active compatibility view only."""
@@ -4184,10 +4150,6 @@ class GuiController(QObject):
             refresh_graphics=self.time_series_replica_enabled,
         )
         self._persistCurrentReplicaAnalysisDefaults()
-
-        self.msg_signal.emit(
-            f"Replica pairs set to {self.time_series_replica_pair_count}.", STATUS_INFO, 0
-        )
 
     def syncMapIndicatorSettingsPopup(self):
         """Project active global settings into the popup without side effects."""
@@ -4297,6 +4259,7 @@ class GuiController(QObject):
             self.msg_signal.emit("Click any point on the map to view its time series.", STATUS_INSTRUCTION, 0)
         else:
             self.removeClickTool(reference=False)
+            self.msg_signal.emit("", STATUS_INFO, 0)
 
     def activateReferencePointSelection(self, status):
         self.ui.pb_choose_point.setChecked(False)
@@ -4310,6 +4273,7 @@ class GuiController(QObject):
         else:
             self.ui.pb_set_reference.setChecked(False)
             self.removeClickTool(reference=True)
+            self.msg_signal.emit("", STATUS_INFO, 0)
 
     def activatePolygonSelection(self, status):
         self.ui.pb_choose_point.setChecked(False)
@@ -4322,6 +4286,7 @@ class GuiController(QObject):
                                  "series.", STATUS_INSTRUCTION, 0)
         else:
             self.deactivatePolygonDrawingTool(reference=False)
+            self.msg_signal.emit("", STATUS_INFO, 0)
 
     def activateReferencePolygonSelection(self, status):
         self.ui.pb_choose_point.setChecked(False)
@@ -4333,6 +4298,7 @@ class GuiController(QObject):
             self.msg_signal.emit("Click to add polygon vertices; double-click or right-click to finish.", STATUS_INSTRUCTION, 0)
         else:
             self.deactivatePolygonDrawingTool(reference=True)
+            self.msg_signal.emit("", STATUS_INFO, 0)
 
     def resetReferencePoint(self):
         self.choose_point_click_handler.resetReferencePoint()
@@ -4345,14 +4311,18 @@ class GuiController(QObject):
 
         self.removePolygonDrawingTool(reference=True)  # remove reference polygon
         self.deactivatePolygonDrawingTool(reference=False)  # deactivate polygon
-        self.msg_signal.emit("Reference point has been reset.", STATUS_SUCCESS, 5000)
+        self.msg_signal.emit("Reference reset.", STATUS_SUCCESS, 5000)
 
     def syncOffsetWithReferenceClicked(self, status):
         if status:
             self.syncOffsetWithReference()
-            self.msg_signal.emit("Reference linked to the selected reference location.", STATUS_SUCCESS, 0)
+            self.msg_signal.emit(
+                "Reference offset linked to the selected reference.", STATUS_INFO, 0
+            )
         else:
-            self.msg_signal.emit("Reference unlinked; the current value is now editable.", STATUS_INFO, 0)
+            self.msg_signal.emit(
+                "Reference offset unlinked. The value is now editable.", STATUS_INFO, 0
+            )
 
     def addSelectedLayers(self):
         """

@@ -290,7 +290,7 @@ class InsarMap:
             self.data_type = "raster"
             return self.getDataRangeFromRasterLayer(layer, n_std)
         else:
-            message = '<span style="color:red;">Invalid Layer: Please select a valid layer.</span>'
+            message = 'Invalid Layer: Please select a valid layer.'
             return message
 
     def getDataRangeFromVectorLayer(self, layer, n_std=None, std_calculation_mode=None):
@@ -376,7 +376,7 @@ class InsarMap:
         status_vector, message = vector_layer_utils.checkVectorLayer(layer)
         status_raster, message = grd_layer_utils.checkGrdLayer(layer)
         if status_vector is False and status_raster is False:
-            message = '<span style="color:red;">Could not set the symbology. Check layer validity.</span>'
+            message = "Could not set the symbology. Check layer validity."
             return message
 
         if status_vector or status_raster:
@@ -404,7 +404,7 @@ class InsarMap:
                 self.setSymbologyRaster(layer, interval, max_length, color_ramp)
             return ""
         else:
-            message = '<span style="color:red;">Could not set the symbology. Check layer validity.</span>'
+            message = "Could not set the symbology. Check layer validity."
             return message
 
     @staticmethod
