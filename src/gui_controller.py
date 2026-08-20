@@ -1331,42 +1331,31 @@ class GuiController(QObject):
         self.msg_signal.connect(self.setMessageBar)
 
     def setMessageBar(self, message, v, t):
+        """Render one normalized plugin-local status message with optional timeout."""
+        severity = normalize_status_message_type(v)
+        if message == "":
+            severity = STATUS_INFO
 
-        v = normalize_status_message_type(v)
         width = self.ui.lb_msg_bar.width()
         font_metrics = self.ui.lb_msg_bar.fontMetrics()
-        avg_char_width = max(1, font_metrics.horizontalAdvance(str(message)) // max(1, len(str(message))))
+        text = str(message)
+        avg_char_width = max(
+            1, font_metrics.horizontalAdvance(text) // max(1, len(text))
+        )
         buffer = 50
         num_chars = max(50, (width - buffer) // avg_char_width)
 
-        info = ""
-        tip = "💡 "
-        warning, error, done = [f'<span style="font-size:10px">{s}</span>&nbsp;' for s in ["🟡️", "🟠", "🟢"]]
-
-        if message == "":
-            v = ''
-
-        if v == 'warning':
-            message = warning + str(message)
-        elif v == 'error':
-            message = error + str(message)
-        elif v == 'info':
-            message = info + str(message)
-        elif v == 'instruction':
-            message = tip + str(message)
-        elif v == 'success':
-            message = done + str(message)
-        else:
-            message = str(message)
-
-        self.ui.lb_msg_bar.setText(message[:num_chars])
+        _ = severity
+        self.ui.lb_msg_bar.setText(text[:num_chars])
 
         if t > 0:
             # reset timer
             if not hasattr(self, '_msg_timer'):
                 self._msg_timer = QTimer(self.ui)
                 self._msg_timer.setSingleShot(True)
-                self._msg_timer.timeout.connect(lambda: self.setMessageBar("", STATUS_INFO, 0))
+                self._msg_timer.timeout.connect(
+                    lambda: self.setMessageBar("", STATUS_INFO, 0)
+                )
             self._msg_timer.stop()
             self._msg_timer.start(t)
 
