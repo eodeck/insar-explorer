@@ -17,6 +17,9 @@ from .time_series.map_indicator_style import (
 )
 from .ui.status_messages import STATUS_INFO, STATUS_WARNING
 
+
+NO_VALID_TIME_SERIES_WARNING = "No valid time-series data are available at this location."
+
 import numpy as np
 
 
@@ -359,6 +362,21 @@ class TSClickHandler(MapClickHandler):
         else:
             return
 
+    def _warnNoValidTimeSeriesData(self):
+        """Report one recoverable warning for a completed no-data selection attempt."""
+        self.msg_signal.emit(NO_VALID_TIME_SERIES_WARNING, STATUS_WARNING, 5000)
+
+    @staticmethod
+    def _hasUsableTimeSeriesValues(values):
+        """Return True when an extracted value matrix contains at least one finite value."""
+        if values is None:
+            return False
+        try:
+            array = np.asarray(values, dtype=float)
+        except (TypeError, ValueError):
+            return False
+        return bool(array.size and np.isfinite(array).any())
+
     def _referenceInputsForNewTarget(self):
         """Return active reference values and the complete typed selection."""
         reference = self.reference_session.current()
@@ -420,6 +438,8 @@ class TSClickHandler(MapClickHandler):
 
     def _applySelectedReference(self, *, dates, values, selection):
         """Reconstruct pending from canonical target data for a new reference."""
+        if not self._hasUsableTimeSeriesValues(values):
+            return False
         reference = ActiveReference.create(dates=dates, values=values, selection=selection)
         success = self._reconstructPendingFromActiveSelections(reference)
         if self.target_session.current() is None:
@@ -458,9 +478,10 @@ class TSClickHandler(MapClickHandler):
             dates = date_values[:, 0]
             analysis = self._analysisForNewRecord() if not ref else None
             if ref:
-                self._applySelectedReference(
+                if not self._applySelectedReference(
                     dates=dates, values=ref_values, selection=ref_coords
-                )
+                ):
+                    self._warnNoValidTimeSeriesData()
             else:
                 previous = self.plot_ts.pending_record()
                 previous_id = None if previous is None else previous.id
@@ -476,6 +497,8 @@ class TSClickHandler(MapClickHandler):
                         dates=dates, values=ts_values, selection=pending.target,
                         source=pending.source, plot_multiple=False,
                     )
+                else:
+                    self._warnNoValidTimeSeriesData()
 
     def choosePointClickedRaster(self, *, point: QgsPointXY, layer: QgsMapLayer = None, ref=False):
         status, message = grd_layer_utils.checkGrdTimeseries(layer)
@@ -486,6 +509,7 @@ class TSClickHandler(MapClickHandler):
         date_values = self.raster_layer.getRasterTimeseriesAttributes(layer, point=point)
 
         if date_values.size == 0:
+            self._warnNoValidTimeSeriesData()
             return
 
         clicked_point = QgsGeometry.fromPointXY(point)
@@ -521,9 +545,10 @@ class TSClickHandler(MapClickHandler):
         dates = date_values[:, 0]
         analysis = self._analysisForNewRecord() if not ref else None
         if ref:
-            self._applySelectedReference(
+            if not self._applySelectedReference(
                 dates=dates, values=ref_values, selection=ref_coords
-            )
+            ):
+                self._warnNoValidTimeSeriesData()
         else:
             previous = self.plot_ts.pending_record()
             previous_id = None if previous is None else previous.id
@@ -539,6 +564,8 @@ class TSClickHandler(MapClickHandler):
                     dates=dates, values=ts_values, selection=pending.target,
                     source=pending.source, plot_multiple=False,
                 )
+            else:
+                self._warnNoValidTimeSeriesData()
 
     def resetReferencePoint(self):
         """Clear reference state and reconstruct canonical unreferenced pending data."""
@@ -588,7 +615,7 @@ class PolygonClickHandler(MapClickHandler):
         if features:
             self.msg_signal.emit(f"{len(features)} features identified.", STATUS_INFO, 0)
         else:
-            self.msg_signal.emit("No features found within the polygon.", STATUS_WARNING, 0)
+            self._warnNoValidTimeSeriesData()
 
         if len(features) == 0:
             return None
@@ -650,9 +677,10 @@ class PolygonClickHandler(MapClickHandler):
 
             analysis = self._analysisForNewRecord() if not ref else None
             if ref:
-                self._applySelectedReference(
+                if not self._applySelectedReference(
                     dates=dates, values=ref_values, selection=ref_coords
-                )
+                ):
+                    self._warnNoValidTimeSeriesData()
             else:
                 previous = self.plot_ts.pending_record()
                 previous_id = None if previous is None else previous.id
@@ -669,6 +697,8 @@ class PolygonClickHandler(MapClickHandler):
                         dates=dates, values=ts_values, selection=pending.target,
                         source=pending.source, plot_multiple=True,
                     )
+                else:
+                    self._warnNoValidTimeSeriesData()
 
 
 class ClickHandler(TSClickHandler, PolygonClickHandler):
