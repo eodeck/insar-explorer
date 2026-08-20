@@ -31,3 +31,9 @@ def normalize_status_message_type(value):
     if text in {item.value for item in StatusMessageType}:
         return text
     return _LEGACY_STATUS_ALIASES.get(text, StatusMessageType.INFO.value)
+
+STATUS_INFO = StatusMessageType.INFO.value
+STATUS_INSTRUCTION = StatusMessageType.INSTRUCTION.value
+STATUS_SUCCESS = StatusMessageType.SUCCESS.value
+STATUS_WARNING = StatusMessageType.WARNING.value
+STATUS_ERROR = StatusMessageType.ERROR.value

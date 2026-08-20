@@ -43,7 +43,10 @@ from .ui.map_settings.symbology_defaults import (
     normalize_map_symbology_settings,
 )
 from .ui.widgets.split_tool_button import SplitButtonPopupHoverReconciler
-from .ui.status_messages import normalize_status_message_type
+from .ui.status_messages import (
+    STATUS_ERROR, STATUS_INFO, STATUS_INSTRUCTION, STATUS_SUCCESS, STATUS_WARNING,
+    normalize_status_message_type,
+)
 from .qt_compat import (
     ITEM_IS_ENABLED,
     ITEM_IS_SELECTABLE,
@@ -332,9 +335,9 @@ class GuiController(QObject):
         try:
             save_operation()
         except PreferencesPersistenceError as exc:
-            self.msg_signal.emit(str(exc), "error", 5000)
+            self.msg_signal.emit(str(exc), STATUS_ERROR, 5000)
             return False
-        self.msg_signal.emit(success_message, "done", 3000)
+        self.msg_signal.emit(success_message, STATUS_SUCCESS, 3000)
         return True
 
     def _reportAnalysisDefaultsPersistenceFailure(self, scope, error):
@@ -347,7 +350,7 @@ class GuiController(QObject):
         )
         if is_fit_scope and self._last_fit_statistics_message:
             warning = f"{self._last_fit_statistics_message}. {warning}"
-        self.msg_signal.emit(warning, "error", 6000)
+        self.msg_signal.emit(warning, STATUS_WARNING, 6000)
         if self._plugin_diagnostic is not None:
             self._plugin_diagnostic(
                 f"Unable to persist {scope}.", error, notify=False
@@ -578,7 +581,7 @@ class GuiController(QObject):
                     self._layer_map_settings_editing_baselines[layer_id] = cached_map_state
                 message = ""
             self._syncMapSettingsActionState()
-            self.msg_signal.emit(message, "i", 0)
+            self.msg_signal.emit(message, STATUS_INFO, 0)
         else:
             self._active_selection_state_layer_id = None
             self._active_map_settings_state_layer_id = None
@@ -1158,7 +1161,7 @@ class GuiController(QObject):
         if error:
             self._setCustomRangeSource()
             self._setDisplayedRange(*displayed_range)
-            self.msg_signal.emit(error, 'i', 0)
+            self.msg_signal.emit(error, STATUS_WARNING, 0)
             self.applyLiveSymbology()
             return
 
@@ -1180,7 +1183,7 @@ class GuiController(QObject):
         return tool
 
     def onMapClicked(self, point, reference=False):
-        self.msg_signal.emit("", "i", 0)
+        self.msg_signal.emit("", STATUS_INFO, 0)
         self.choose_point_click_handler.choosePointClicked(
             point=point,
             layer=None,
@@ -1363,7 +1366,7 @@ class GuiController(QObject):
             if not hasattr(self, '_msg_timer'):
                 self._msg_timer = QTimer(self.ui)
                 self._msg_timer.setSingleShot(True)
-                self._msg_timer.timeout.connect(lambda: self.setMessageBar("", "", 0))
+                self._msg_timer.timeout.connect(lambda: self.setMessageBar("", STATUS_INFO, 0))
             self._msg_timer.stop()
             self._msg_timer.start(t)
 
@@ -1811,9 +1814,9 @@ class GuiController(QObject):
             self._setDisplayedRange(minimum, maximum)
 
         if status:
-            self.msg_signal.emit("Range symmetry enabled.", 't', 0)
+            self.msg_signal.emit("Range symmetry enabled.", STATUS_INFO, 0)
         else:
-            self.msg_signal.emit("Range symmetry disabled.", 'i', 0)
+            self.msg_signal.emit("Range symmetry disabled.", STATUS_INFO, 0)
         self.applyLiveSymbology()
 
     def continuousColormapChanged(self, status):
@@ -1862,7 +1865,7 @@ class GuiController(QObject):
         if error:
             self._range_source_raw_values = previous_raw_values
             self._setRangeSource(previous_source)
-            self.msg_signal.emit(error, 'i', 0)
+            self.msg_signal.emit(error, STATUS_WARNING, 0)
             return
 
         self._projectComputedRangeSource(source, raw_values)
@@ -1873,7 +1876,7 @@ class GuiController(QObject):
             RangeSource.STD_2: "Symbology range set to mean±2σ.",
             RangeSource.STD_3: "Symbology range set to mean±3σ.",
         }
-        self.msg_signal.emit(messages[source], 'i', 0)
+        self.msg_signal.emit(messages[source], STATUS_INFO, 0)
         self.applyLiveSymbology()
 
     def _currentMapRangePolicyDefaults(self):
@@ -1896,7 +1899,7 @@ class GuiController(QObject):
         if error:
             self._setStdCalculationMode(previous_mode)
             self._setRangeSymmetryChecked(previous_symmetric)
-            self.msg_signal.emit(error, 'i', 0)
+            self.msg_signal.emit(error, STATUS_WARNING, 0)
             return False
 
         self._setRangeSymmetryChecked(settings.symmetric_around_zero)
@@ -1919,13 +1922,13 @@ class GuiController(QObject):
             self.msg_signal.emit(
                 "Custom numeric ranges cannot be saved as a default. "
                 "Choose a calculated range source first.",
-                "i",
+                STATUS_WARNING,
                 5000,
             )
             return
 
         self.map_range_defaults.save_defaults(self._currentMapRangePolicyDefaults())
-        self.msg_signal.emit("Map range policy default saved.", "done", 5000)
+        self.msg_signal.emit("Map range policy default saved.", STATUS_SUCCESS, 5000)
 
     def _currentMapSymbologySettings(self):
         """Capture the settings owned by the Symbology settings popup."""
@@ -1997,7 +2000,7 @@ class GuiController(QObject):
         self.map_symbology_defaults.save_defaults(
             self._currentMapSymbologySettings()
         )
-        self.msg_signal.emit("Map symbology default saved.", "done", 5000)
+        self.msg_signal.emit("Map symbology default saved.", STATUS_SUCCESS, 5000)
 
     def _syncMapSettingsActionState(self):
         """Project dirty/editing-baseline state onto Map Settings footer actions."""
@@ -2029,10 +2032,10 @@ class GuiController(QObject):
     def activateLiveSymbology(self, status):
         if status:
             self._applySymbologyAndClearPending()
-            self.msg_signal.emit("Live symbology enabled: changes will apply immediately.", 'done', 0)
+            self.msg_signal.emit("Live symbology enabled: changes will apply immediately.", STATUS_SUCCESS, 0)
         else:
             self._setSymbologyDirty(False)
-            self.msg_signal.emit("Live symbology disabled.", 'i', 0)
+            self.msg_signal.emit("Live symbology disabled.", STATUS_INFO, 0)
 
     def revertMapSettings(self):
         """Discard active-layer edits back to the current editing baseline."""
@@ -2052,7 +2055,7 @@ class GuiController(QObject):
 
         self._layer_map_settings_working_states[layer_id] = state
         self._setSymbologyDirty(state.dirty)
-        self.msg_signal.emit("Unapplied map settings reverted.", "i", 3000)
+        self.msg_signal.emit("Unapplied map settings reverted.", STATUS_INFO, 3000)
         return True
 
     def applySymbologyNow(self):
@@ -2080,20 +2083,20 @@ class GuiController(QObject):
         self.insar_map.color_ramp_name = str(self.ui.cmb_colormap.currentData())
         message = self.insar_map.setSymbology()
         if message != "":
-            self.msg_signal.emit(message, "i", 0)
+            self.msg_signal.emit(message, STATUS_INFO, 0)
         else:
-            self.msg_signal.emit("", "", 0)
+            self.msg_signal.emit("", STATUS_INFO, 0)
         return message == ""
 
     def applySymbologyClicked(self, status):
         if self._applySymbologyAndClearPending():
-            self.msg_signal.emit("Symbology applied.", "done", 5000)
+            self.msg_signal.emit("Symbology applied.", STATUS_SUCCESS, 5000)
 
     def colormapReverseClicked(self, status):
         if status:
-            self.msg_signal.emit("Colormap reversed.", "i", 0)
+            self.msg_signal.emit("Colormap reversed.", STATUS_INFO, 0)
         else:
-            self.msg_signal.emit("Colormap normal.", "i", 0)
+            self.msg_signal.emit("Colormap normal.", STATUS_INFO, 0)
         self.flipComboBoxIcons(self.ui.cmb_colormap)
         self.insar_map.color_ramp_reverse_flag = status
         self.applyLiveSymbology()
@@ -2136,7 +2139,7 @@ class GuiController(QObject):
             f"{label}{seasonal_suffix} fit"
         )
         self._last_fit_statistics_message = message
-        self.msg_signal.emit(message, "i", 6000)
+        self.msg_signal.emit(message, STATUS_INFO, 6000)
 
     def _handleTimeSeriesFitFailure(self, error, *, seasonal=False):
         """Show a non-modal fitting failure message without retaining stale statistics."""
@@ -2146,7 +2149,7 @@ class GuiController(QObject):
             "log": "Logarithmic",
         }.get(error.model_id, "Model")
         self.msg_signal.emit(
-            f"{label} fit failed for the current series.", "e", 6000
+            f"{label} fit failed for the current series.", STATUS_ERROR, 6000
         )
 
     def _restoreTimeSeriesFitState(self):
@@ -2237,7 +2240,7 @@ class GuiController(QObject):
             self._syncActiveAnalysisControls(current)
         self._persistCurrentFitAnalysisDefaults()
         if not enabled:
-            self.msg_signal.emit("No fit model selected.", "i", 0)
+            self.msg_signal.emit("No fit model selected.", STATUS_WARNING, 0)
 
     def setTimeSeriesFitModel(self, model):
         """Select a model and refresh only when fitting is active."""
@@ -2287,7 +2290,7 @@ class GuiController(QObject):
         self._persistCurrentFitAnalysisDefaults()
         self.msg_signal.emit(
             "Residual plot enabled using the selected fit model."
-            if enabled else "Residual plot disabled.", "i", 0
+            if enabled else "Residual plot disabled.", STATUS_INFO, 0
         )
 
     def _fitStyleAvailable(self):
@@ -2804,7 +2807,7 @@ class GuiController(QObject):
             if self._plugin_diagnostic is not None:
                 self._plugin_diagnostic("pending_add", error)
             else:
-                self.msg_signal.emit(str(error), "c", 0)
+                self.msg_signal.emit(str(error), STATUS_ERROR, 0)
 
     def _syncCommittedTimeSeriesList(self, records):
         """Refresh list projection and clear session metadata on full store reset."""
@@ -3015,7 +3018,7 @@ class GuiController(QObject):
             return
         self.time_series_clipboard = clipboard
         self._refreshTimeSeriesClipboardProjection()
-        self.setMessageBar("Copied style, Fit and Replica", "done", 3000)
+        self.msg_signal.emit("Copied style, Fit and Replica", STATUS_SUCCESS, 3000)
 
     def pasteCommittedTimeSeriesSettings(self, category):
         """Atomically paste one typed category to selected committed destinations."""
@@ -3082,9 +3085,9 @@ class GuiController(QObject):
             CopyPasteCategory.ALL_PRESENTATION: "style, Fit and Replica",
         }
         count = len(record_ids)
-        self.setMessageBar(
+        self.msg_signal.emit(
             "Pasted {} to {} time series".format(labels[category], count),
-            "done", 3000,
+            STATUS_SUCCESS, 3000,
         )
 
     def assignDistinctColorsToCommitted(self):
@@ -3149,9 +3152,9 @@ class GuiController(QObject):
         )
         panel.committed_view.setFocus()
         self.committedTimeSeriesSelectionChanged(panel.selected_committed_ids())
-        self.setMessageBar(
+        self.msg_signal.emit(
             "Assigned distinct colors to {} time series".format(len(record_ids)),
-            "done", 3000,
+            STATUS_SUCCESS, 3000,
         )
         return record_ids
 
@@ -3162,7 +3165,7 @@ class GuiController(QObject):
         else:
             self.msg_signal.emit(
                 "Unable to assign distinct time-series colors: {}".format(error),
-                "c", 0,
+                STATUS_ERROR, 0,
             )
 
     def _reportCopyPasteFailure(self, operation, error):
@@ -3171,7 +3174,7 @@ class GuiController(QObject):
             self._plugin_diagnostic("committed_{}".format(operation), error)
         else:
             self.msg_signal.emit(
-                "Unable to {} time-series settings: {}".format(operation, error), "c", 0
+                "Unable to {} time-series settings: {}".format(operation, error), STATUS_ERROR, 0
             )
 
     def removeSelectedCommittedTimeSeries(self):
@@ -3200,7 +3203,7 @@ class GuiController(QObject):
             if self._plugin_diagnostic is not None:
                 self._plugin_diagnostic("committed_remove", error)
             else:
-                self.msg_signal.emit(str(error), "c", 0)
+                self.msg_signal.emit(str(error), STATUS_ERROR, 0)
             panel.refresh_committed_model()
             return ()
         if not removed_ids:
@@ -3236,10 +3239,10 @@ class GuiController(QObject):
             if self._plugin_diagnostic is not None:
                 self._plugin_diagnostic("committed_remove_graphics", error)
             else:
-                self.msg_signal.emit(str(error), "c", 0)
+                self.msg_signal.emit(str(error), STATUS_ERROR, 0)
         count = len(removed_ids)
         message = "Removed {} time series".format(count)
-        self.setMessageBar(message, "done", 3000)
+        self.msg_signal.emit(message, STATUS_SUCCESS, 3000)
         return removed_ids
 
     def setCommittedTimeSeriesVisibility(self, record_id, visible):
@@ -3269,7 +3272,7 @@ class GuiController(QObject):
             if self._plugin_diagnostic is not None:
                 self._plugin_diagnostic("committed_visibility_batch", error)
             else:
-                self.msg_signal.emit(str(error), "c", 0)
+                self.msg_signal.emit(str(error), STATUS_ERROR, 0)
             return False
         target = bool(visible)
         changed_ids = tuple(
@@ -3285,7 +3288,7 @@ class GuiController(QObject):
             if self._plugin_diagnostic is not None:
                 self._plugin_diagnostic("committed_visibility_batch", error)
             else:
-                self.msg_signal.emit(str(error), "c", 0)
+                self.msg_signal.emit(str(error), STATUS_ERROR, 0)
             return False
         for record_id in result.changed_record_ids:
             self.time_series_list_state.set_visible(record_id, target)
@@ -3295,13 +3298,13 @@ class GuiController(QObject):
             if self._plugin_diagnostic is not None:
                 self._plugin_diagnostic("committed_visibility_graphics", error)
             else:
-                self.msg_signal.emit(str(error), "c", 0)
+                self.msg_signal.emit(str(error), STATUS_ERROR, 0)
         if result.refresh_errors:
             error = result.refresh_errors[0]
             if self._plugin_diagnostic is not None:
                 self._plugin_diagnostic("committed_visibility_refresh", error)
             else:
-                self.msg_signal.emit(str(error), "c", 0)
+                self.msg_signal.emit(str(error), STATUS_ERROR, 0)
         self._refreshTimeSeriesPlotActionState()
         return True
 
@@ -3375,7 +3378,7 @@ class GuiController(QObject):
         toolbar.setSeriesControlsEnabled(False)
         self._refreshTimeSeriesPlotActionState()
         if len(record_ids) > 1:
-            self.msg_signal.emit("Multiple time series selected", "i", 0)
+            self.msg_signal.emit("Multiple time series selected", STATUS_INFO, 0)
 
     def _refreshTimeSeriesPlotActionState(self):
         """Project renderer-owned plot availability into plot-level toolbar actions."""
@@ -3521,7 +3524,7 @@ class GuiController(QObject):
         if not self._applyTimeSeriesXAxisMode(mode):
             return
         message = "X range set to Data range." if mode == "from_data" else "Stored manual time range applied."
-        self.msg_signal.emit(message, "i", 0)
+        self.msg_signal.emit(message, STATUS_INFO, 0)
 
     def showManualXAxisPopup(self):
         """Open the transactional session-local time-range editor."""
@@ -3742,7 +3745,7 @@ class GuiController(QObject):
             "symmetric": "Y range set to Symmetric.",
             "manual": "Stored manual Y-axis ranges applied.",
         }
-        self.msg_signal.emit(messages[self.time_series_y_axis_mode], "i", 0)
+        self.msg_signal.emit(messages[self.time_series_y_axis_mode], STATUS_INFO, 0)
 
     def showManualYAxisPopup(self):
         """Open the editor and capture both policies and viewports transactionally."""
@@ -3804,7 +3807,7 @@ class GuiController(QObject):
         self._manual_y_axis_session = None
         self.manual_y_axis_popup.closeAfterCommit()
         self._syncTimeSeriesYAxisControls(updated.policy)
-        self.msg_signal.emit("Current Y-axis view saved as Manual.", "i", 0)
+        self.msg_signal.emit("Current Y-axis view saved as Manual.", STATUS_INFO, 0)
 
     def previewManualYAxisRange(self, axis_name, lower, upper):
         """Preview the complete draft through the same paths used by Apply."""
@@ -3874,7 +3877,7 @@ class GuiController(QObject):
             "Y range set to Data range." if resulting_policy == "from_data"
             else "Stored manual Y-axis ranges applied."
         )
-        self.msg_signal.emit(message, "i", 0)
+        self.msg_signal.emit(message, STATUS_INFO, 0)
 
     def cancelManualYAxisRange(self):
         """Restore both original policies and all captured X/Y view ranges."""
@@ -4157,7 +4160,7 @@ class GuiController(QObject):
             )
         else:
             message = "Replica disabled."
-        self.msg_signal.emit(message, "i", 0)
+        self.msg_signal.emit(message, STATUS_INFO, 0)
 
     def setTimeSeriesReplicaInterval(self, interval_mm):
         """Store a positive replica interval and redraw only when Replica is active."""
@@ -4168,7 +4171,7 @@ class GuiController(QObject):
         self._applyTimeSeriesReplicaState(refresh=self.time_series_replica_enabled)
         self._persistCurrentReplicaAnalysisDefaults()
         self.msg_signal.emit(
-            f"Replica interval set to ±{interval_mm:.1f} mm.", "i", 0
+            f"Replica interval set to ±{interval_mm:.1f} mm.", STATUS_INFO, 0
         )
 
     def _applyReplicaPairCount(self, pair_count):
@@ -4194,7 +4197,7 @@ class GuiController(QObject):
         self._persistCurrentReplicaAnalysisDefaults()
 
         self.msg_signal.emit(
-            f"Replica pairs set to {self.time_series_replica_pair_count}.", "i", 0
+            f"Replica pairs set to {self.time_series_replica_pair_count}.", STATUS_INFO, 0
         )
 
     def syncMapIndicatorSettingsPopup(self):
@@ -4302,7 +4305,7 @@ class GuiController(QObject):
             tool = self.initializeClickTool(reference=False)
             self.iface.mapCanvas().setMapTool(tool)
             self._syncStandaloneReferenceOverlay()
-            self.msg_signal.emit("Click any point on the map to view its time series.", "t", 0)
+            self.msg_signal.emit("Click any point on the map to view its time series.", STATUS_INSTRUCTION, 0)
         else:
             self.removeClickTool(reference=False)
 
@@ -4314,7 +4317,7 @@ class GuiController(QObject):
             tool = self.initializeClickTool(reference=True)
             self.iface.mapCanvas().setMapTool(tool)
             self._syncStandaloneTargetOverlay()
-            self.msg_signal.emit("Click any point on the map to set it as reference.", "t", 0)
+            self.msg_signal.emit("Click any point on the map to set it as reference.", STATUS_INSTRUCTION, 0)
         else:
             self.ui.pb_set_reference.setChecked(False)
             self.removeClickTool(reference=True)
@@ -4327,7 +4330,7 @@ class GuiController(QObject):
             self.initializePolygonDrawingTool()
             self._syncStandaloneReferenceOverlay()
             self.msg_signal.emit("Click to add polygon vertices; double-click or right-click to finish and plot time "
-                                 "series.", "t", 0)
+                                 "series.", STATUS_INSTRUCTION, 0)
         else:
             self.deactivatePolygonDrawingTool(reference=False)
 
@@ -4338,7 +4341,7 @@ class GuiController(QObject):
         if status:
             self.initializePolygonDrawingTool(reference=True)
             self._syncStandaloneTargetOverlay()
-            self.msg_signal.emit("Click to add polygon vertices; double-click or right-click to finish.", "t", 0)
+            self.msg_signal.emit("Click to add polygon vertices; double-click or right-click to finish.", STATUS_INSTRUCTION, 0)
         else:
             self.deactivatePolygonDrawingTool(reference=True)
 
@@ -4353,14 +4356,14 @@ class GuiController(QObject):
 
         self.removePolygonDrawingTool(reference=True)  # remove reference polygon
         self.deactivatePolygonDrawingTool(reference=False)  # deactivate polygon
-        self.msg_signal.emit("Reference point has been reset.", "done", 5000)
+        self.msg_signal.emit("Reference point has been reset.", STATUS_SUCCESS, 5000)
 
     def syncOffsetWithReferenceClicked(self, status):
         if status:
             self.syncOffsetWithReference()
-            self.msg_signal.emit("Reference linked to the selected reference location.", "done", 0)
+            self.msg_signal.emit("Reference linked to the selected reference location.", STATUS_SUCCESS, 0)
         else:
-            self.msg_signal.emit("Reference unlinked; the current value is now editable.", "i", 0)
+            self.msg_signal.emit("Reference unlinked; the current value is now editable.", STATUS_INFO, 0)
 
     def addSelectedLayers(self):
         """
@@ -4447,11 +4450,11 @@ class GuiController(QObject):
         self.settings.setValue(settings_key, extension.lstrip('.').lower())
 
     def saveTsPlot(self):
-        self.msg_signal.emit("", "", 0)
+        self.msg_signal.emit("", STATUS_INFO, 0)
 
         plotter = self.choose_point_click_handler.plot_ts
         if not plotter.has_exportable_plot():
-            self.msg_signal.emit('No time-series plot to export.', 'w', 0)
+            self.msg_signal.emit('No time-series plot to export.', STATUS_WARNING, 0)
             return
 
         plot_extension = self.last_plot_export_format.lower().lstrip('.')
@@ -4487,7 +4490,7 @@ class GuiController(QObject):
 
         result = plotter.savePlotAsImage(file_path)
         if not result.success:
-            self.msg_signal.emit(result.error or "Plot export failed.", 'e', 0)
+            self.msg_signal.emit(result.error or "Plot export failed.", STATUS_ERROR, 0)
             return
 
         exported_filename = result.filename
@@ -4500,7 +4503,7 @@ class GuiController(QObject):
         )
         self.last_save_ts_name = os.path.basename(exported_filename)
         self.msg_signal.emit(
-            f"Plot exported to {exported_filename}", 'done', 0
+            f"Plot exported to {exported_filename}", STATUS_SUCCESS, 0
         )
 
     @staticmethod
@@ -4581,7 +4584,7 @@ class GuiController(QObject):
         """Export committed records to separate deterministic files in one folder."""
         if any(not self._recordHasExportableTimeSeriesData(record) for record in records):
             self.msg_signal.emit(
-                "One or more selected time series have no exportable data.", "w", 0
+                "One or more selected time series have no exportable data.", STATUS_WARNING, 0
             )
             return False
 
@@ -4619,7 +4622,7 @@ class GuiController(QObject):
                 self.msg_signal.emit(
                     f"Time-series export failed for {file_path}: {error}. "
                     f"Exported {len(written)} of {len(targets)} files.",
-                    "e",
+                    STATUS_ERROR,
                     0,
                 )
                 return False
@@ -4627,13 +4630,13 @@ class GuiController(QObject):
 
         self._rememberExportPath(targets[0])
         self.msg_signal.emit(
-            f"Exported {len(targets)} time series to {directory}", "done", 3000
+            f"Exported {len(targets)} time series to {directory}", STATUS_SUCCESS, 3000
         )
         return True
 
     def exportSelectedCommittedTimeSeries(self):
         """Export selected committed time series using single or batch flow."""
-        self.msg_signal.emit("", "", 0)
+        self.msg_signal.emit("", STATUS_INFO, 0)
 
         selected_ids = self.ui.time_series_point_panel.selected_committed_ids()
         if not selected_ids:
@@ -4651,7 +4654,7 @@ class GuiController(QObject):
 
         record = records[0]
         if not self._recordHasExportableTimeSeriesData(record):
-            self.msg_signal.emit('No time series to export.', 'w', 0)
+            self.msg_signal.emit('No time series to export.', STATUS_WARNING, 0)
             return
 
         ts_extension = self.last_ts_export_format.lower().lstrip('.')
@@ -4689,7 +4692,7 @@ class GuiController(QObject):
             self._exportCommittedTimeSeriesRecord(file_path, record)
         except (OSError, IOError, ValueError) as error:
             self.msg_signal.emit(
-                f"Time-series export failed for {file_path}: {error}", 'e', 0
+                f"Time-series export failed for {file_path}: {error}", STATUS_ERROR, 0
             )
             return
 
@@ -4697,4 +4700,4 @@ class GuiController(QObject):
         self._rememberExportFormat('insar_explorer/ts_export_format', file_path)
         self.last_ts_export_format = os.path.splitext(file_path)[1].lstrip('.').lower()
 
-        self.msg_signal.emit(f'Time series exported: {file_path}', 'done', 3000)
+        self.msg_signal.emit(f'Time series exported: {file_path}', STATUS_SUCCESS, 3000)
