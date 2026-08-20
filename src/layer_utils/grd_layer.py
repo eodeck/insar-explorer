@@ -12,11 +12,30 @@ def checkGrdLayer(layer):
         message = 'Invalid Layer: Please select a valid raster layer.'
         return False, message
     elif layer.type() == VECTOR_LAYER:
-        message = 'This is a vector layer. Please select a raster layer.'
+        message = 'This is a vector layers. Please select a raster layer.'
+        return False, message
+
+    provider_name = ""
+    try:
+        provider = layer.dataProvider()
+        provider_name = provider.name() if provider is not None else ""
+    except (AttributeError, RuntimeError):
+        provider_name = ""
+    if not provider_name:
+        try:
+            provider_name = layer.providerType()
+        except (AttributeError, RuntimeError):
+            provider_name = ""
+
+    if provider_name != "gdal":
+        message = "The selected raster layer is not a supported local time-series raster."
         return False, message
 
     file_path = layer.source()
-    dataset = gdal.Open(file_path)
+    try:
+        dataset = gdal.Open(file_path)
+    except RuntimeError:
+        dataset = None
 
     if dataset is None:
         message = 'Invalid Layer: Unable to open the file with GDAL.'
