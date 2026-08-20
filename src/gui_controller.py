@@ -3007,7 +3007,7 @@ class GuiController(QObject):
             return
         self.time_series_clipboard = clipboard
         self._refreshTimeSeriesClipboardProjection()
-        self.msg_signal.emit("Copied style, Fit and Replica", STATUS_SUCCESS, 3000)
+        self.msg_signal.emit("Copied style, Fit and Replica.", STATUS_SUCCESS, 3000)
 
     def pasteCommittedTimeSeriesSettings(self, category):
         """Atomically paste one typed category to selected committed destinations."""
@@ -3075,7 +3075,7 @@ class GuiController(QObject):
         }
         count = len(record_ids)
         self.msg_signal.emit(
-            "Pasted {} to {} time series".format(labels[category], count),
+            "Pasted {} to {} time series.".format(labels[category], count),
             STATUS_SUCCESS, 3000,
         )
 
@@ -3142,7 +3142,7 @@ class GuiController(QObject):
         panel.committed_view.setFocus()
         self.committedTimeSeriesSelectionChanged(panel.selected_committed_ids())
         self.msg_signal.emit(
-            "Assigned distinct colors to {} time series".format(len(record_ids)),
+            "Assigned distinct colors to {} time series.".format(len(record_ids)),
             STATUS_SUCCESS, 3000,
         )
         return record_ids
@@ -3230,7 +3230,7 @@ class GuiController(QObject):
             else:
                 self.msg_signal.emit(str(error), STATUS_ERROR, 0)
         count = len(removed_ids)
-        message = "Removed {} time series".format(count)
+        message = "Removed {} time series.".format(count)
         self.msg_signal.emit(message, STATUS_SUCCESS, 3000)
         return removed_ids
 
@@ -3367,7 +3367,7 @@ class GuiController(QObject):
         toolbar.setSeriesControlsEnabled(False)
         self._refreshTimeSeriesPlotActionState()
         if len(record_ids) > 1:
-            self.msg_signal.emit("Multiple time series selected", STATUS_INFO, 0)
+            self.msg_signal.emit("Multiple time series selected.", STATUS_INFO, 0)
 
     def _refreshTimeSeriesPlotActionState(self):
         """Project renderer-owned plot availability into plot-level toolbar actions."""
@@ -4492,7 +4492,7 @@ class GuiController(QObject):
         )
         self.last_save_ts_name = os.path.basename(exported_filename)
         self.msg_signal.emit(
-            f"Plot exported to {exported_filename}", STATUS_SUCCESS, 0
+            f"Plot exported: {exported_filename}", STATUS_SUCCESS, 0
         )
 
     @staticmethod
@@ -4619,7 +4619,7 @@ class GuiController(QObject):
 
         self._rememberExportPath(targets[0])
         self.msg_signal.emit(
-            f"Exported {len(targets)} time series to {directory}", STATUS_SUCCESS, 3000
+            f"Exported {len(targets)} time series to {directory}.", STATUS_SUCCESS, 3000
         )
         return True
 

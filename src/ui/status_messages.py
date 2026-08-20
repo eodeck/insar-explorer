@@ -11,6 +11,7 @@ class StatusMessageType(str, Enum):
     ERROR = "error"
 
 
+# Deprecated rendering-boundary compatibility only. Active plugin emitters must not use these.
 _LEGACY_STATUS_ALIASES = {
     "": StatusMessageType.INFO.value,
     "i": StatusMessageType.INFO.value,
