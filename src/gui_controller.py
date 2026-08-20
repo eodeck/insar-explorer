@@ -43,6 +43,7 @@ from .ui.map_settings.symbology_defaults import (
     normalize_map_symbology_settings,
 )
 from .ui.widgets.split_tool_button import SplitButtonPopupHoverReconciler
+from .ui.status_messages import normalize_status_message_type
 from .qt_compat import (
     ITEM_IS_ENABLED,
     ITEM_IS_SELECTABLE,
@@ -1328,6 +1329,7 @@ class GuiController(QObject):
 
     def setMessageBar(self, message, v, t):
 
+        v = normalize_status_message_type(v)
         width = self.ui.lb_msg_bar.width()
         font_metrics = self.ui.lb_msg_bar.fontMetrics()
         avg_char_width = max(1, font_metrics.horizontalAdvance(str(message)) // max(1, len(str(message))))
@@ -1341,15 +1343,15 @@ class GuiController(QObject):
         if message == "":
             v = ''
 
-        if v == 'w':
+        if v == 'warning':
             message = warning + str(message)
-        elif v == 'e':
+        elif v == 'error':
             message = error + str(message)
-        elif v == 'i':
+        elif v == 'info':
             message = info + str(message)
-        elif v == 't':
+        elif v == 'instruction':
             message = tip + str(message)
-        elif v == 'done':
+        elif v == 'success':
             message = done + str(message)
         else:
             message = str(message)
