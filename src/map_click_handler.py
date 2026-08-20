@@ -15,6 +15,11 @@ from .qt_compat import WAIT_CURSOR
 from .time_series.map_indicator_style import (
     semantic_indicator_color,
 )
+from .ui.status_messages import STATUS_WARNING
+
+
+NO_VALID_TIME_SERIES_WARNING = "No valid time-series data are available at this location."
+INVALID_TIME_SERIES_LAYER_WARNING = "The selected layer cannot provide time-series data."
 
 import numpy as np
 
@@ -152,16 +157,11 @@ class MapClickHandler:
 
         status, message = vector_layer_utils.checkVectorLayer(layer)
         if status is False:
-            self.msg_signal.emit(message, "i", 0)
+            self.msg_signal.emit(message, STATUS_WARNING, 0)
             return
 
         closest_feature_id = self.findFeatureAtPoint(layer, point, self.iface.mapCanvas(),
                                                      only_the_closest_one=True, only_ids=True)
-
-        if closest_feature_id:
-            self.msg_signal.emit("", "i", 0)
-        else:
-            self.msg_signal.emit("No nearby point found. Select another point.", "w", 0)
 
         return closest_feature_id
 
@@ -183,7 +183,7 @@ class MapClickHandler:
             self.clearReferenceFeatureHighlight()
 
         closest_feature = None
-        if closest_feature_id:
+        if closest_feature_id is not None:
             closest_feature = layer.getFeature(closest_feature_id)
             # attributes_text = "\n".join(
             #     [f"{field.name()}: {value}" for field, value in zip(layer.fields(), closest_feature.attributes())]
@@ -349,14 +349,35 @@ class TSClickHandler(MapClickHandler):
             start_callback()
         if not layer:
             layer = self.iface.activeLayer()
-        status_vector, message = vector_layer_utils.checkVectorLayer(layer)
-        status_raster, message = grd_layer_utils.checkGrdLayer(layer)
+
+        status_vector, _ = vector_layer_utils.checkVectorLayerTimeseries(layer)
+        status_raster, _ = grd_layer_utils.checkGrdTimeseries(layer)
         if status_vector:
             self.choosePointClickedVector(point=point, layer=layer, ref=ref)
         elif status_raster:
             self.choosePointClickedRaster(point=point, layer=layer, ref=ref)
         else:
+            self._warnInvalidTimeSeriesLayer()
             return
+
+    def _warnNoValidTimeSeriesData(self):
+        """Report one recoverable warning for a completed no-data selection attempt."""
+        self.msg_signal.emit(NO_VALID_TIME_SERIES_WARNING, STATUS_WARNING, 5000)
+
+    def _warnInvalidTimeSeriesLayer(self):
+        """Report one recoverable warning for an invalid time-series layer."""
+        self.msg_signal.emit(INVALID_TIME_SERIES_LAYER_WARNING, STATUS_WARNING, 5000)
+
+    @staticmethod
+    def _hasUsableTimeSeriesValues(values):
+        """Return True when an extracted value matrix contains at least one finite value."""
+        if values is None:
+            return False
+        try:
+            array = np.asarray(values, dtype=float)
+        except (TypeError, ValueError):
+            return False
+        return bool(array.size and np.isfinite(array).any())
 
     def _referenceInputsForNewTarget(self):
         """Return active reference values and the complete typed selection."""
@@ -428,63 +449,79 @@ class TSClickHandler(MapClickHandler):
         return success
 
     def choosePointClickedVector(self, *, point: QgsPointXY, layer: QgsMapLayer = None, ref=False):
-        feature = self.identifyClickedFeature(point, layer=layer, ref=ref)
+        if not layer:
+            layer = self.iface.activeLayer()
 
-        status, message = vector_layer_utils.checkVectorLayerTimeseries(layer)
+        status, _ = vector_layer_utils.checkVectorLayerTimeseries(layer)
         if status is False:
-            self.msg_signal.emit(message, "i", 0)
+            self._warnInvalidTimeSeriesLayer()
             return
 
-        if feature:
-            crds = Coordinates(x=feature.geometry().asPoint().x(), y=feature.geometry().asPoint().y(), crs=layer.crs())
-            coords = None
-            ref_coords = None
+        feature = self.identifyClickedFeature(point, layer=layer, ref=ref)
+        if feature is None:
+            self._warnNoValidTimeSeriesData()
+            return
 
-            attributes = vector_layer_utils.getFeatureAttributes(feature)
-            date_values = vector_layer_utils.extractDateValueAttributes(attributes)
-            if not ref:
-                ts_values = date_values[:, 1]
-                ref_values, ref_coords = self._referenceInputsForNewTarget()
-                coords = crds
-            else:
-                ref_values = date_values[:, 1]
-                if self.selected_field_name:
-                    self.map_reference_clicked_value = (
-                        vector_layer_utils.getFeatureFieldValue(attributes, self.selected_field_name))
-                ts_values = None
-                ref_coords = crds
+        crds = Coordinates(x=feature.geometry().asPoint().x(), y=feature.geometry().asPoint().y(), crs=layer.crs())
+        coords = None
+        ref_coords = None
 
-            dates = date_values[:, 0]
-            analysis = self._analysisForNewRecord() if not ref else None
-            if ref:
-                self._applySelectedReference(
-                    dates=dates, values=ref_values, selection=ref_coords
+        attributes = vector_layer_utils.getFeatureAttributes(feature)
+        date_values = vector_layer_utils.extractDateValueAttributes(attributes)
+        if not ref:
+            ts_values = date_values[:, 1]
+            ref_values, ref_coords = self._referenceInputsForNewTarget()
+            coords = crds
+        else:
+            ref_values = date_values[:, 1]
+            if self.selected_field_name:
+                self.map_reference_clicked_value = (
+                    vector_layer_utils.getFeatureFieldValue(attributes, self.selected_field_name))
+            ts_values = None
+            ref_coords = crds
+
+        dates = date_values[:, 0]
+        analysis = self._analysisForNewRecord() if not ref else None
+        if ref:
+            if not self._hasUsableTimeSeriesValues(ref_values):
+                self._warnNoValidTimeSeriesData()
+                return
+            if not self._applySelectedReference(
+                dates=dates, values=ref_values, selection=ref_coords
+            ):
+                self._warnNoValidTimeSeriesData()
+                return
+        else:
+            previous = self.plot_ts.pending_record()
+            previous_id = None if previous is None else previous.id
+            self.plot_ts.plotTs(
+                dates=dates, ts_values=ts_values, ref_values=ref_values,
+                coords=coords, ref_coords=ref_coords, update=False,
+                analysis=analysis, source_provenance=time_series_source_from_layer(layer),
+                report_statistics=True,
+            )
+            pending = self.plot_ts.pending_record()
+            if pending is not None and pending.id != previous_id:
+                self._commitSelectedTarget(
+                    dates=dates, values=ts_values, selection=pending.target,
+                    source=pending.source, plot_multiple=False,
                 )
             else:
-                previous = self.plot_ts.pending_record()
-                previous_id = None if previous is None else previous.id
-                self.plot_ts.plotTs(
-                    dates=dates, ts_values=ts_values, ref_values=ref_values,
-                    coords=coords, ref_coords=ref_coords, update=False,
-                    analysis=analysis, source_provenance=time_series_source_from_layer(layer),
-                    report_statistics=True,
-                )
-                pending = self.plot_ts.pending_record()
-                if pending is not None and pending.id != previous_id:
-                    self._commitSelectedTarget(
-                        dates=dates, values=ts_values, selection=pending.target,
-                        source=pending.source, plot_multiple=False,
-                    )
+                self._warnNoValidTimeSeriesData()
 
     def choosePointClickedRaster(self, *, point: QgsPointXY, layer: QgsMapLayer = None, ref=False):
-        status, message = grd_layer_utils.checkGrdTimeseries(layer)
+        if not layer:
+            layer = self.iface.activeLayer()
+
+        status, _ = grd_layer_utils.checkGrdTimeseries(layer)
         if status is False:
-            self.msg_signal.emit(message, "i", 0)
+            self._warnInvalidTimeSeriesLayer()
             return
 
         date_values = self.raster_layer.getRasterTimeseriesAttributes(layer, point=point)
 
         if date_values.size == 0:
+            self._warnNoValidTimeSeriesData()
             return
 
         clicked_point = QgsGeometry.fromPointXY(point)
@@ -492,6 +529,10 @@ class TSClickHandler(MapClickHandler):
             self.highlightSelectedFeatures(clicked_point)
         else:
             self.highlightSelectedReferenceFeature(clicked_point)
+
+        if not self._hasUsableTimeSeriesValues(date_values[:, 1]):
+            self._warnNoValidTimeSeriesData()
+            return
 
         crds = Coordinates(x=clicked_point.asPoint().x(), y=clicked_point.asPoint().y(), crs=layer.crs())
         canvas_crs = self.iface.mapCanvas().mapSettings().destinationCrs()
@@ -520,9 +561,11 @@ class TSClickHandler(MapClickHandler):
         dates = date_values[:, 0]
         analysis = self._analysisForNewRecord() if not ref else None
         if ref:
-            self._applySelectedReference(
+            if not self._applySelectedReference(
                 dates=dates, values=ref_values, selection=ref_coords
-            )
+            ):
+                self._warnNoValidTimeSeriesData()
+                return
         else:
             previous = self.plot_ts.pending_record()
             previous_id = None if previous is None else previous.id
@@ -538,6 +581,8 @@ class TSClickHandler(MapClickHandler):
                     dates=dates, values=ts_values, selection=pending.target,
                     source=pending.source, plot_multiple=False,
                 )
+            else:
+                self._warnNoValidTimeSeriesData()
 
     def resetReferencePoint(self):
         """Clear reference state and reconstruct canonical unreferenced pending data."""
@@ -567,12 +612,12 @@ class PolygonClickHandler(MapClickHandler):
         # Check whether layer is a vector layer
         status, message = vector_layer_utils.checkVectorLayer(layer)
         if status is False:
-            self.msg_signal.emit(message, "i", 0)
+            self.msg_signal.emit(message, STATUS_WARNING, 0)
             return []
 
         # Check whether polygon geometry is valid
         if not polygon or not polygon.isGeosValid():
-            self.msg_signal.emit("Invalid polygon geometry.", "w", 0)
+            self.msg_signal.emit("Invalid polygon geometry.", STATUS_WARNING, 0)
             return []
 
         # Prepare a feature request that uses the bounding box of the polygon
@@ -584,10 +629,8 @@ class PolygonClickHandler(MapClickHandler):
             if feature.geometry().intersects(polygon):
                 features.append(feature)
 
-        if features:
-            self.msg_signal.emit(f"{len(features)} features identified.", "i", 0)
-        else:
-            self.msg_signal.emit("No features found within the polygon.", "w", 0)
+        if not features:
+            self._warnNoValidTimeSeriesData()
 
         if len(features) == 0:
             return None
@@ -598,8 +641,8 @@ class PolygonClickHandler(MapClickHandler):
         if not layer:
             layer = self.iface.activeLayer()
 
-        status_vector, message = vector_layer_utils.checkVectorLayer(layer)
-        status_raster, message = grd_layer_utils.checkGrdLayer(layer)
+        status_vector, _ = vector_layer_utils.checkVectorLayerTimeseries(layer)
+        status_raster, _ = grd_layer_utils.checkGrdTimeseries(layer)
 
         if status_vector:
             self.choosePolygonDrawnVector(layer=layer, polygon=polygon, ref=ref)
@@ -607,15 +650,16 @@ class PolygonClickHandler(MapClickHandler):
             pass
             # self.choosePolygonDrawnRaster(layer=layer, ref=ref)
         else:
+            self._warnInvalidTimeSeriesLayer()
             return
 
     def choosePolygonDrawnVector(self, *, layer: QgsMapLayer = None, polygon=None, ref=False):
         if not layer:
             layer = self.iface.activeLayer()
 
-        status, message = vector_layer_utils.checkVectorLayerTimeseries(layer)
+        status, _ = vector_layer_utils.checkVectorLayerTimeseries(layer)
         if status is False:
-            self.msg_signal.emit(message, "i", 0)
+            self._warnInvalidTimeSeriesLayer()
             return
 
         features = self.identifyFeaturesInPolygon(layer=layer, polygon=polygon, ref=ref)
@@ -649,9 +693,14 @@ class PolygonClickHandler(MapClickHandler):
 
             analysis = self._analysisForNewRecord() if not ref else None
             if ref:
-                self._applySelectedReference(
+                if not self._hasUsableTimeSeriesValues(ref_values):
+                    self._warnNoValidTimeSeriesData()
+                    return
+                if not self._applySelectedReference(
                     dates=dates, values=ref_values, selection=ref_coords
-                )
+                ):
+                    self._warnNoValidTimeSeriesData()
+                    return
             else:
                 previous = self.plot_ts.pending_record()
                 previous_id = None if previous is None else previous.id
@@ -668,6 +717,8 @@ class PolygonClickHandler(MapClickHandler):
                         dates=dates, values=ts_values, selection=pending.target,
                         source=pending.source, plot_multiple=True,
                     )
+                else:
+                    self._warnNoValidTimeSeriesData()
 
 
 class ClickHandler(TSClickHandler, PolygonClickHandler):

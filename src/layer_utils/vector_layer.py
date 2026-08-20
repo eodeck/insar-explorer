@@ -10,16 +10,16 @@ def checkVectorLayer(layer):
     """ check layer is a valid vector layer """
 
     if layer is None:
-        message = '<span style="color:red;">Invalid Layer: Please select a valid vector layer.</span>'
+        message = 'Invalid Layer: Please select a valid vector layer.'
         return False, message
     elif not layer.isValid():
-        message = '<span style="color:red;">Invalid Layer: Please select a valid vector layer.</span>'
+        message = 'Invalid Layer: Please select a valid vector layer.'
         return False, message
     elif not (layer.type() == VECTOR_LAYER):
-        message = '<span style="color:red;">This is not a vector layer: Please select a valid vector layer.</span>'
+        message = 'This is not a vector layer: Please select a valid vector layer.'
         return False, message
     elif not (layer.geometryType() == 0):
-        message = '<span style="color:red;">Invalid Layer: Please select a valid point layer.</span>'
+        message = 'Invalid Layer: Please select a valid point layer.'
         return False, message
     else:
         return True, ""
@@ -37,9 +37,9 @@ def getVectorVelocityFieldName(layer):
             break
 
     if field_name is None:
-        joined_names = ',&nbsp;'.join(velocity_field_name_options)
-        message = (f'<span style="color:red;">Invalid Layer: Please select a vector layer with valid velocity field.'
-                   f'.&nbsp;Supported field names: [{joined_names}].</span>')
+        joined_names = ', '.join(velocity_field_name_options)
+        message = (f'Invalid Layer: Please select a vector layer with valid velocity field.'
+                   f'. Supported field names: [{joined_names}].')
 
     return field_name, message
 
@@ -64,7 +64,7 @@ def checkVectorLayerTimeseries(layer):
     if count > 0:
         status = True
     else:
-        message = ('<span style="color:red;">Invalid Layer: Please select a vector or raster layer with valid '
+        message = ('Invalid Layer: Please select a vector or raster layer with valid '
                    'timeseries data.')
         status = False
 

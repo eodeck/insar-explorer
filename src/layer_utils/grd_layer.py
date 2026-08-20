@@ -6,28 +6,27 @@ from ..qt_compat import VECTOR_LAYER
 
 def checkGrdLayer(layer):
     if layer is None:
-        message = '<span style="color:red;">No layer selected: Please select a raster layer.</span>'
+        message = 'No layer selected: Please select a raster layer.'
         return False, message
     elif not layer.isValid():
-        message = '<span style="color:red;">Invalid Layer: Please select a valid raster layer.</span>'
+        message = 'Invalid Layer: Please select a valid raster layer.'
         return False, message
     elif layer.type() == VECTOR_LAYER:
-        message = ('<span style="color:red;">This is a vector layers. Please select a raster layer.'
-                   '</span>')
+        message = 'This is a vector layer. Please select a raster layer.'
         return False, message
 
     file_path = layer.source()
     dataset = gdal.Open(file_path)
 
     if dataset is None:
-        message = '<span style="color:red;">Invalid Layer: Unable to open the file with GDAL.</span>'
+        message = 'Invalid Layer: Unable to open the file with GDAL.'
         return False, message
 
     driver = dataset.GetDriver().ShortName
     if driver in ['netCDF', 'GMT']:  # for GMTSAR and MintPy files converted to grd
         return True, ""
     else:
-        message = '<span style="color:red;">Invalid Layer: The file is not a GMT grd file.</span>'
+        message = 'Invalid Layer: The file is not a GMT grd file.'
         return False, message
 
 
@@ -57,7 +56,7 @@ def checkGrdTimeseries(layer):
     if count > 0:
         status = True
     else:
-        message = ('<span style="color:red;">Invalid Layer: Please select a vector or raster layer with valid '
+        message = ('Invalid Layer: Please select a vector or raster layer with valid '
                    'timeseries data.')
         status = False
 
