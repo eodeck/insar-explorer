@@ -1,7 +1,7 @@
 import os
 import math
 import re
-from dataclasses import replace
+from dataclasses import dataclass, replace
 
 from qgis.gui import QgsMapToolEmitPoint
 from qgis.core import QgsProject
@@ -17,6 +17,7 @@ from . import setup_frames
 from .bootstrap import ensure_time_series_services
 from .map_setting import InsarMap
 from .layer_utils import vector_layer as vector_layer_utils
+from .layer_utils import grd_layer as grd_layer_utils
 from .about import about as insar_explorer_about
 from .drawing_tools.polygon_drawing_tool import PolygonDrawingTool
 from .ui.popups.time_series_style_popup import TimeSeriesStylePopup
@@ -97,6 +98,14 @@ from .time_series.copy_paste import (
     apply_fit_snapshot, apply_replica_snapshot, apply_style_snapshot,
     capture_fit, capture_replica, capture_style,
 )
+
+
+@dataclass(frozen=True)
+class TimeSeriesSelectionCapability:
+    """Describe active-layer support for Target/Reference extraction."""
+
+    supported: bool
+    supports_polygon: bool
 
 
 class GuiController(QObject):
@@ -303,6 +312,7 @@ class GuiController(QObject):
         self._active_map_settings_default_fingerprint = None
         self._layer_selection_working_states = {}
         self._active_selection_state_layer_id = None
+        self._active_time_series_selection_capability = TimeSeriesSelectionCapability(False, False)
         self._map_tool_signal_connected = False
         self._session_teardown_complete = False
         self.initializeUiParams()
@@ -428,6 +438,7 @@ class GuiController(QObject):
 
         self._layer_selection_working_states.clear()
         self._active_selection_state_layer_id = None
+        self._active_time_series_selection_capability = TimeSeriesSelectionCapability(False, False)
 
         self._layer_map_settings_working_states.clear()
         self._layer_map_settings_editing_baselines.clear()
@@ -470,6 +481,7 @@ class GuiController(QObject):
 
         self._setLiveSymbologyEnabled(False)
         self._syncPointMarkerControls(layer)
+        selection_capability = self._projectTimeSeriesSelectionCapability(layer)
         pending_layer_id = self._pending_default_range_layer_id
         if pending_layer_id is not None and pending_layer_id != layer_id:
             # Invalidate queued work for a previous layer/context.  Keep a same-
@@ -538,18 +550,11 @@ class GuiController(QObject):
                         self._initializeFreshLayerMapSettingsEditorState()
                         self._scheduleDefaultRangeInitialization(layer)
 
-            if layer_type == VECTOR_LAYER:
-                self.ui.pb_choose_polygon.setEnabled(True)
-                self.ui.pb_set_reference_polygon.setEnabled(True)
-            elif layer_type == RASTER_LAYER:
-                self._deactivatePolygonSelectionToolsForRaster()
+            if layer_type == RASTER_LAYER:
                 self.ui.settings_panel.setEnabled(False)
-                self.ui.pb_choose_polygon.setEnabled(False)
-                self.ui.pb_set_reference_polygon.setEnabled(False)
 
             if layer_type == RASTER_LAYER and not is_local_raster:
                 self.ui.settings_panel.setEnabled(False)
-                self.ui.pb_choose_point.setChecked(False)
                 self._active_selection_state_layer_id = None
                 self._active_map_settings_state_layer_id = None
                 self._active_map_settings_state_is_vector = False
@@ -558,7 +563,17 @@ class GuiController(QObject):
                 message = "Unsupported layer selected. Please choose a layer compatible with InSAR Explorer."
             elif layer_type == VECTOR_LAYER and not fields_available:
                 self.ui.settings_panel.setEnabled(True)
-                self._active_selection_state_layer_id = None
+                self._active_selection_state_layer_id = (
+                    layer_id if selection_capability.supported else None
+                )
+                if (
+                    selection_capability.supported
+                    and not same_selection_context
+                    and cached_selection_state is not None
+                ):
+                    self._restoreLayerSelectionWorkingState(
+                        layer, cached_selection_state
+                    )
                 self._active_map_settings_state_layer_id = None
                 self._active_map_settings_state_is_vector = False
                 self._active_map_settings_provenance = None
@@ -566,8 +581,14 @@ class GuiController(QObject):
                 message = ""
             else:
                 self.ui.settings_panel.setEnabled(True)
-                self._active_selection_state_layer_id = layer_id
-                if not same_selection_context and cached_selection_state is not None:
+                self._active_selection_state_layer_id = (
+                    layer_id if selection_capability.supported else None
+                )
+                if (
+                    selection_capability.supported
+                    and not same_selection_context
+                    and cached_selection_state is not None
+                ):
                     self._restoreLayerSelectionWorkingState(
                         layer, cached_selection_state
                     )
@@ -580,6 +601,7 @@ class GuiController(QObject):
                 ):
                     self._layer_map_settings_editing_baselines[layer_id] = cached_map_state
                 message = ""
+            self._syncTimeSeriesSelectionControlState()
             self._syncMapSettingsActionState()
             self.msg_signal.emit(message, STATUS_INFO, 0)
         else:
@@ -588,6 +610,7 @@ class GuiController(QObject):
             self._active_map_settings_state_is_vector = False
             self._active_map_settings_provenance = None
             self._active_map_settings_default_fingerprint = None
+            self._syncTimeSeriesSelectionControlState()
             self._syncMapSettingsActionState()
 
     def _deactivatePolygonSelectionToolsForRaster(self):
@@ -598,6 +621,53 @@ class GuiController(QObject):
         if self._isActiveMapTool(canvas.mapTool(), self.drawing_tool_reference):
             self.deactivatePolygonDrawingTool(reference=True)
         self._syncSelectionControlsToActiveMapTool()
+
+    def _timeSeriesSelectionCapability(self, layer):
+        """Return Target/Reference extraction capability for one active layer."""
+        if layer is None:
+            return TimeSeriesSelectionCapability(False, False)
+        try:
+            layer_type = layer.type()
+        except (AttributeError, RuntimeError):
+            return TimeSeriesSelectionCapability(False, False)
+
+        if layer_type == VECTOR_LAYER:
+            supported, _ = vector_layer_utils.checkVectorLayerTimeseries(layer)
+            return TimeSeriesSelectionCapability(bool(supported), bool(supported))
+        if layer_type == RASTER_LAYER:
+            supported, _ = grd_layer_utils.checkGrdTimeseries(layer)
+            return TimeSeriesSelectionCapability(bool(supported), False)
+        return TimeSeriesSelectionCapability(False, False)
+
+    def _syncTimeSeriesSelectionControlState(self):
+        """Project final Selection-control enablement from active-layer capability."""
+        capability = self._active_time_series_selection_capability
+        point_enabled = bool(capability.supported)
+        polygon_enabled = point_enabled and bool(capability.supports_polygon)
+        reference = self.choose_point_click_handler.reference_session.current()
+        reset_enabled = (
+            point_enabled
+            and self._active_selection_state_layer_id is not None
+            and reference is not None
+        )
+
+        self.ui.pb_choose_point.setEnabled(point_enabled)
+        self.ui.pb_set_reference.setEnabled(point_enabled)
+        self.ui.pb_choose_polygon.setEnabled(polygon_enabled)
+        self.ui.pb_set_reference_polygon.setEnabled(polygon_enabled)
+        self.ui.pb_reset_reference.setEnabled(reset_enabled)
+
+    def _projectTimeSeriesSelectionCapability(self, layer):
+        """Project active-layer extraction capability onto Selection controls."""
+        capability = self._timeSeriesSelectionCapability(layer)
+        self._active_time_series_selection_capability = capability
+        if not capability.supported:
+            self._deactivateSelectionToolsForLayerChange()
+        elif not capability.supports_polygon:
+            self._deactivatePolygonSelectionToolsForRaster()
+
+        self._syncTimeSeriesSelectionControlState()
+        return capability
 
     def _syncPointMarkerControls(self, layer=None):
         """Project active-layer geometry onto point-only marker controls."""
@@ -1194,6 +1264,7 @@ class GuiController(QObject):
         if reference:
             self._syncStandaloneReferenceOverlay()
             self.syncOffsetWithReference()
+        self._syncTimeSeriesSelectionControlState()
 
     def removeClickTool(self, reference=False):
         """Remove one role-specific point tool without affecting the other role."""
@@ -1257,6 +1328,7 @@ class GuiController(QObject):
         if reference:
             self._syncStandaloneReferenceOverlay()
         self.syncOffsetWithReference()
+        self._syncTimeSeriesSelectionControlState()
 
     def _syncStandaloneReferenceOverlay(self) -> None:
         """Project an accepted Reference while no Target/pending record exists."""
@@ -4311,6 +4383,7 @@ class GuiController(QObject):
 
         self.removePolygonDrawingTool(reference=True)  # remove reference polygon
         self.deactivatePolygonDrawingTool(reference=False)  # deactivate polygon
+        self._syncTimeSeriesSelectionControlState()
         self.msg_signal.emit("Reference reset.", STATUS_SUCCESS, 5000)
 
     def syncOffsetWithReferenceClicked(self, status):

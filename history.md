@@ -1,6 +1,7 @@
 ### History
 
 v2.8.0
+- Disable selection buttons for invalid layers.
 - Polish statusbar messages.
 - Reset transient session state on dock teardown.
 - Make Maps settings and Selection panels collapsible.
