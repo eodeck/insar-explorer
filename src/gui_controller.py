@@ -967,9 +967,36 @@ class GuiController(QObject):
         current = self._currentLayerMapSettingsWorkingState(layer_id)
         if current is None:
             return False
-        return (
+
+        current = self._mapSettingsStateWithoutDirty(current)
+        baseline = self._mapSettingsStateWithoutDirty(baseline)
+        if self.ui.cb_symbol_value_offset_sync_with_ref.isChecked():
+            current = replace(
+                current, reference_offset=baseline.reference_offset
+            )
+        return current != baseline
+
+    def _currentLayerDiffersFromAppliedMapSettingsState(self, fallback_state=None):
+        """Return whether the active editor differs from its applied checkpoint."""
+        layer_id = self._active_map_settings_state_layer_id
+        if layer_id is None:
+            return False
+        applied = self._layer_map_settings_applied_states.get(layer_id)
+        fallback_dirty = False
+        if applied is None:
+            applied = fallback_state
+            if fallback_state is not None:
+                fallback_dirty = bool(
+                    fallback_state.dirty or fallback_state.range_state.dirty
+                )
+        if applied is None:
+            return bool(self._symbology_dirty)
+        current = self._currentLayerMapSettingsWorkingState(layer_id)
+        if current is None:
+            return bool(self._symbology_dirty)
+        return fallback_dirty or (
             self._mapSettingsStateWithoutDirty(current)
-            != self._mapSettingsStateWithoutDirty(baseline)
+            != self._mapSettingsStateWithoutDirty(applied)
         )
 
     @staticmethod
@@ -1089,7 +1116,9 @@ class GuiController(QObject):
         self._setRangeSource(state.range_source)
         return True
 
-    def _restoreLayerMapSettingsWorkingState(self, layer, state):
+    def _restoreLayerMapSettingsWorkingState(
+        self, layer, state, restore_reference_offset=True
+    ):
         """Restore one compatible cached Map Settings state without applying it."""
         if not self._isLayerMapSettingsWorkingStateCompatible(layer, state):
             self._layer_map_settings_working_states.pop(
@@ -1102,7 +1131,8 @@ class GuiController(QObject):
             )
             return False
 
-        self._setReferenceValue(state.reference_offset)
+        if restore_reference_offset:
+            self._setReferenceValue(state.reference_offset)
         self._setMapColormapState(
             state.colormap_id, state.colormap_reversed
         )
@@ -2113,11 +2143,24 @@ class GuiController(QObject):
         state = self._layer_map_settings_editing_baselines.get(layer_id)
         if state is None or not self._currentLayerChangedSinceEditingBaseline():
             return False
-        if not self._restoreLayerMapSettingsWorkingState(layer, state):
-            return False
 
-        self._layer_map_settings_working_states[layer_id] = state
-        self._setSymbologyDirty(state.dirty)
+        linked_reference = bool(
+            self.ui.cb_symbol_value_offset_sync_with_ref.isChecked()
+        )
+        if not self._restoreLayerMapSettingsWorkingState(
+            layer, state, restore_reference_offset=not linked_reference
+        ):
+            return False
+        if linked_reference:
+            self._syncReferenceValueFromSelection()
+
+        pending_apply = self._currentLayerDiffersFromAppliedMapSettingsState(
+            fallback_state=state
+        )
+        self._setSymbologyDirty(pending_apply)
+        current = self._currentLayerMapSettingsWorkingState(layer_id)
+        if current is not None:
+            self._layer_map_settings_working_states[layer_id] = current
         self.msg_signal.emit("Unapplied map settings reverted.", STATUS_SUCCESS, 3000)
         return True
 
@@ -4394,6 +4437,7 @@ class GuiController(QObject):
             self.msg_signal.emit(
                 "Reference offset unlinked. The value is now editable.", STATUS_INFO, 0
             )
+        self._syncMapSettingsActionState()
 
     def addSelectedLayers(self):
         """
