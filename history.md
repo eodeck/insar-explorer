@@ -1,6 +1,7 @@
 ### History
 
 v2.8.0
+- Improve about dialog.
 - Disable selection buttons for invalid layers.
 - Polish statusbar messages.
 - Reset transient session state on dock teardown.

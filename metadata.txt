@@ -2,12 +2,12 @@
 name=InSAR Explorer
 qgisMinimumVersion=3.0
 qgisMaximumVersion=4.99
-description=InSAR Explorer is a QGIS plugin that allows for dynamic visualization and analysis of InSAR time series data
+description=InSAR Explorer is a QGIS plugin for interactive visualization and analysis of InSAR time-series data.
 version=2.8.0dev
 author=Mahmud Haghighi
 email=insar-explorer@eodeck.com
 
-about=InSAR Explorer is a QGIS plugin designed for interactive visualization and analysis of InSAR time series results. With a user-friendly interface, it allows users to dynamically plot and explore ground displacement data over time. You can find the source code on GitHub (https://github.com/eodeck/insar-explorer). A sample shapefile containing time series data for testing the plugin is available on Zenodo (https://zenodo.org/records/14052813). Currently, vector data from SARvey, MintPy, MintPy, SARscape, and EGMS and raster data from GMTSAR and Mintpy are supported. Please refer to the documentation for more information about how to prepare the data (https://insar-explorer.eodeck.com/)
+about=InSAR Explorer is a QGIS plugin for interactive visualization and analysis of InSAR time-series data. It supports vector and raster time-series products from InSAR processing workflows including SARvey, MintPy, SARscape, EGMS, and GMTSAR. See the project documentation for supported data formats, data preparation, sample data, source code, and support.
 
 tracker=https://github.com/eodeck/insar-explorer/issues
 repository=https://github.com/eodeck/insar-explorer

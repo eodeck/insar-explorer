@@ -36,13 +36,13 @@
          </sizepolicy>
         </property>
         <property name="toolTip">
-         <string/>
+         <string>About InSAR Explorer</string>
         </property>
         <property name="text">
-         <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;a href="https://insar-explorer.eodeck.com/"&gt;&lt;span style=" text-decoration: underline; color:#0068da;"&gt;About InSAR Explorer&lt;/span&gt;&lt;/a&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+         <string>&lt;a href="about"&gt;About InSAR Explorer&lt;/a&gt;</string>
         </property>
         <property name="openExternalLinks">
-         <bool>true</bool>
+         <bool>false</bool>
         </property>
        </widget>
       </item>
