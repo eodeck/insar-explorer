@@ -536,10 +536,7 @@ class CommittedSelectionOverlayController:
             overlay.item.setFillColor(transparent_point_fill())
             overlay.item.setPenWidth(COMMITTED_POINT_PEN_WIDTH)
             sizes = derive_point_indicator_sizes(settings.point_size)
-            size = sizes.record_marker
-            if self._pending_active:
-                size = max(1, size - 1)
-            overlay.item.setIconSize(size)
+            overlay.item.setIconSize(sizes.record_marker)
             return
         fill = QColor(color)
         fill_alpha = (

@@ -21,9 +21,6 @@ COMMITTED_COLOR_ALPHA = 200
 COMMITTED_COLOR_ALPHA_WHILE_PENDING = 95
 
 _CURRENT_BOX_PADDING = 6
-_RECORD_MARKER_REDUCTION = 2
-_MIN_RECORD_MARKER_SIZE = 1
-
 
 @dataclass(frozen=True)
 class PointIndicatorSizes:
@@ -40,7 +37,7 @@ def derive_point_indicator_sizes(point_size: int) -> PointIndicatorSizes:
     return PointIndicatorSizes(
         current_marker=base,
         current_box=base + _CURRENT_BOX_PADDING,
-        record_marker=max(base - _RECORD_MARKER_REDUCTION, _MIN_RECORD_MARKER_SIZE),
+        record_marker=base,
     )
 
 
