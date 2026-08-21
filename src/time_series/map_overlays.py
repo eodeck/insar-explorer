@@ -28,7 +28,6 @@ from .map_indicator_style import (
     PENDING_LINE_WIDTH,
     PENDING_POINT_PEN_WIDTH,
     derive_point_indicator_sizes,
-    point_indicator_outer_color,
     semantic_indicator_color,
     transparent_point_fill,
 )
@@ -44,8 +43,8 @@ def _enum_value(owner, enum_name, value_name):
 
 _VERTEX_MARKER_BOX = _enum_value(QgsVertexMarker, "IconType", "ICON_BOX")
 _VERTEX_MARKER_CIRCLE = _enum_value(QgsVertexMarker, "IconType", "ICON_CIRCLE")
-_POINT_OUTER_RING = "outer_ring"
-_POINT_INNER_RING = "inner_ring"
+_POINT_CURRENT_BOX = "current_box"
+_POINT_MARKER = "marker"
 
 
 def point_marker_icon_for_role(role: str):
@@ -120,19 +119,27 @@ def _resolve_point_for_canvas(canvas, selection):
     )
 
 
-def _new_point_indicator_items(canvas, point, role: str, settings):
-    """Create the one- or two-layer point indicator for active settings."""
-    items = []
-    if settings.show_point_outer_ring:
-        outer = _new_point_marker(canvas, point, role)
-        items.append(
-            OverlayItem(outer, role, SpatialSelectionKind.POINT, _POINT_OUTER_RING)
-        )
-    inner = _new_point_marker(canvas, point, role)
-    items.append(
-        OverlayItem(inner, role, SpatialSelectionKind.POINT, _POINT_INNER_RING)
+def _new_current_point_indicator_items(canvas, point, role: str):
+    """Create role marker plus box for one current working point selection."""
+    current_box = QgsVertexMarker(canvas)
+    current_box.setCenter(point)
+    current_box.setIconType(_VERTEX_MARKER_BOX)
+    current_box.setFillColor(transparent_point_fill())
+    marker = _new_point_marker(canvas, point, role)
+    return (
+        OverlayItem(
+            current_box, role, SpatialSelectionKind.POINT, _POINT_CURRENT_BOX
+        ),
+        OverlayItem(marker, role, SpatialSelectionKind.POINT, _POINT_MARKER),
     )
-    return tuple(items)
+
+
+def _new_record_point_indicator_items(canvas, point, role: str):
+    """Create the semantic role marker for one record-owned point selection."""
+    marker = _new_point_marker(canvas, point, role)
+    return (
+        OverlayItem(marker, role, SpatialSelectionKind.POINT, _POINT_MARKER),
+    )
 
 
 @dataclass(frozen=True)
@@ -288,9 +295,7 @@ class PendingTimeSeriesMapOverlayController:
 
     def _create_point_items(self, selection, role: str) -> Tuple[OverlayItem, ...]:
         point = _resolve_point_for_canvas(self._canvas, selection)
-        return _new_point_indicator_items(
-            self._canvas, point, role, self._settings_provider()
-        )
+        return _new_current_point_indicator_items(self._canvas, point, role)
 
     def _create_polygon_item(self, selection):
         resolved = resolve_polygon_indicator_geometry(selection)
@@ -315,17 +320,13 @@ class PendingTimeSeriesMapOverlayController:
         alpha = round(255 * settings.opacity_percent / 100.0)
         color = semantic_indicator_color(overlay.role, settings, alpha=alpha)
         if overlay.geometry_kind == SpatialSelectionKind.POINT:
-            is_outer = overlay.presentation_part == _POINT_OUTER_RING
-            overlay.item.setColor(
-                point_indicator_outer_color(settings, alpha=alpha)
-                if is_outer
-                else color
-            )
+            is_current_box = overlay.presentation_part == _POINT_CURRENT_BOX
+            overlay.item.setColor(color)
             overlay.item.setFillColor(transparent_point_fill())
             overlay.item.setPenWidth(PENDING_POINT_PEN_WIDTH)
             sizes = derive_point_indicator_sizes(settings.point_size)
             overlay.item.setIconSize(
-                sizes.pending_outer if is_outer else sizes.pending_inner
+                sizes.current_box if is_current_box else sizes.current_marker
             )
             return
         fill = QColor(color)
@@ -501,9 +502,7 @@ class CommittedSelectionOverlayController:
 
     def _create_point_items(self, selection, role: str) -> Tuple[OverlayItem, ...]:
         point = _resolve_point_for_canvas(self._canvas, selection)
-        return _new_point_indicator_items(
-            self._canvas, point, role, self._settings_provider()
-        )
+        return _new_record_point_indicator_items(self._canvas, point, role)
 
     def _create_polygon_item(self, selection):
         resolved = resolve_polygon_indicator_geometry(selection)
@@ -533,14 +532,11 @@ class CommittedSelectionOverlayController:
         alpha = round(alpha * settings.opacity_percent / 100.0)
         color = semantic_indicator_color(overlay.role, settings, alpha=alpha)
         if overlay.geometry_kind == SpatialSelectionKind.POINT:
-            is_outer = overlay.presentation_part == _POINT_OUTER_RING
-            overlay.item.setColor(
-                point_indicator_outer_color(settings, alpha=alpha) if is_outer else color
-            )
+            overlay.item.setColor(color)
             overlay.item.setFillColor(transparent_point_fill())
             overlay.item.setPenWidth(COMMITTED_POINT_PEN_WIDTH)
             sizes = derive_point_indicator_sizes(settings.point_size)
-            size = sizes.committed_outer if is_outer else sizes.committed_inner
+            size = sizes.record_marker
             if self._pending_active:
                 size = max(1, size - 1)
             overlay.item.setIconSize(size)
