@@ -4234,8 +4234,6 @@ class GuiController(QObject):
         normalized = type(settings)(
             QColor(settings.target_color),
             QColor(settings.reference_color),
-            QColor(settings.point_outer_color),
-            bool(settings.show_point_outer_ring),
             int(settings.point_size),
             int(settings.opacity_percent),
         )
