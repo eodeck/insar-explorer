@@ -1762,7 +1762,10 @@ class PlotTs():
                     date_axis.setDateFormat(appearance.date_format)
 
             font_size = f"{int(appearance.font_size)}pt"
-            self.ax.setTitle(appearance.time_series_title, size=font_size)
+            if appearance.time_series_title:
+                self.ax.setTitle(appearance.time_series_title, size=font_size)
+            else:
+                self.ax.setTitle(None)
             self.ax.setLabel(
                 "bottom", appearance.time_series_x_label,
                 **{"font-size": font_size}
