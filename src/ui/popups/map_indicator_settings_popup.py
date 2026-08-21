@@ -64,6 +64,7 @@ class MapIndicatorSettingsPopup(QWidget):
         self.opacity.setObjectName("spin_map_indicator_opacity")
         self.opacity.setAccessibleName("Indicator opacity")
         self.opacity.setRange(0, 100)
+        self.opacity.setSingleStep(5)
         self.opacity.setSuffix(" %")
         self.opacity.setMaximumWidth(110)
 
