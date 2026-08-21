@@ -6,6 +6,7 @@ from qgis.PyQt.QtGui import QColor, QIcon
 from ...ui_windows.color_picker import ColorPicker
 from ...time_series.ensemble_style import (
     ENSEMBLE_MEMBER_WIDTH_RANGE,
+    ENSEMBLE_MEMBER_WIDTH_STEP,
 )
 from ...time_series.style_schema import (
     LINE_STYLE_OPTIONS,
@@ -216,7 +217,7 @@ class TimeSeriesStylePopup(QWidget):
         self.ensemble_member_width = QDoubleSpinBox(self.ensemble_member_group)
         self.ensemble_member_width.setRange(*ENSEMBLE_MEMBER_WIDTH_RANGE)
         self.ensemble_member_width.setDecimals(NUMERIC_DECIMALS)
-        self.ensemble_member_width.setSingleStep(NUMERIC_STEP)
+        self.ensemble_member_width.setSingleStep(ENSEMBLE_MEMBER_WIDTH_STEP)
         self.ensemble_member_opacity = self._createOpacitySpinBox(self.ensemble_member_group)
         member_layout.addRow("Color", self.ensemble_member_color)
         member_layout.addRow("Width", self.ensemble_member_width)
