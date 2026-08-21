@@ -18,7 +18,8 @@ try:
     )
 except ImportError:
     from PySide6.QtCore import QEvent, QItemSelectionModel, QPoint, QRect, QSize, Qt
-    from PySide6.QtGui import QAction, QActionGroup, QGuiApplication, QPalette
+    # QAction and QActionGroup are intentionally re-exported by this compatibility facade.
+    from PySide6.QtGui import QAction, QActionGroup, QGuiApplication, QPalette  # noqa: F401
     from PySide6.QtWidgets import (
         QApplication, QAbstractItemView, QAbstractSpinBox, QColorDialog, QComboBox,
         QCompleter, QFrame, QHeaderView, QMessageBox, QSizePolicy, QStyle,

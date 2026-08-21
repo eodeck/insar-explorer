@@ -222,7 +222,10 @@ class GuiController(QObject):
         plotter.pending_changed_callback = self._syncPendingTimeSeriesPanel
         plotter.committed_changed_callback = self._syncCommittedTimeSeriesList
         self.time_series_list_state = TimeSeriesListState()
-        settings_provider = lambda: self.map_indicator_settings.active
+
+        def settings_provider():
+            return self.map_indicator_settings.active
+
         self.time_series_map_overlays = CommittedSelectionOverlayController(
             self.iface.mapCanvas(), diagnostic=self._plugin_diagnostic,
             settings_provider=settings_provider,
@@ -4407,7 +4410,11 @@ class GuiController(QObject):
         if status:
             self.initializePolygonDrawingTool(reference=True)
             self._syncStandaloneTargetOverlay()
-            self.msg_signal.emit("Click to add polygon vertices; double-click or right-click to finish.", STATUS_INSTRUCTION, 0)
+            self.msg_signal.emit(
+                "Click to add polygon vertices; double-click or right-click to finish.",
+                STATUS_INSTRUCTION,
+                0
+            )
         else:
             self.deactivatePolygonDrawingTool(reference=True)
             self.msg_signal.emit("", STATUS_INFO, 0)

@@ -41,5 +41,5 @@ def classFactory(iface):  # pylint: disable=invalid-name
 
 # Initialize runtime compatibility patches for supported QGIS/Qt versions.
 # This must run before the plugin imports or uses patched components.
-from .src.pyqtgraph_compat import applyPyqtgraphCompatPatches
+from .src.pyqtgraph_compat import applyPyqtgraphCompatPatches  # noqa: E402
 applyPyqtgraphCompatPatches()

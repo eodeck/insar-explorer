@@ -100,7 +100,7 @@ class LegacyJsonUserPreferencesRepository:
         """Load a metadata block and tolerate missing or malformed content."""
         try:
             return self._mapping(JsonSettings(self.config_file).load(block_key=self.BLOCK_KEY))
-        except Exception as exc:
+        except Exception:
             warnings.warn(
                 "Legacy time-series preferences could not be loaded; factory defaults will be used.",
                 RuntimeWarning,
