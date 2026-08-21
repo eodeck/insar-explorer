@@ -49,6 +49,7 @@ _MARKER_EDGE_DARK = "#202020"
 _MARKER_EDGE_LIGHT = "#f2f2f2"
 _MARKER_EDGE_LIGHT_BACKGROUND_THRESHOLD = 0.5
 _PLOT_GRID_ALPHA = 0.25
+_INTERACTIVE_ANTIALIAS = True
 
 
 @dataclass(frozen=True)
@@ -1210,7 +1211,8 @@ class PlotTs():
                 for i in range(series.plot_multiple_values.shape[1]):
                     item = pg.PlotDataItem(
                         x, series.plot_multiple_values[:, i],
-                        pen=self._pen(series_line_color, series_line_width, series_line_alpha, series_line_style)
+                        pen=self._pen(series_line_color, series_line_width, series_line_alpha, series_line_style),
+                        antialias=_INTERACTIVE_ANTIALIAS,
                     )
                     transaction.add_item(self.ax, item)
                     items.plot_multiple_lines.append(item)
@@ -1223,6 +1225,7 @@ class PlotTs():
                 size=marker_size,
                 pen=self._seriesMarkerPen(marker, marker_color, marker_alpha),
                 brush=self._brush(marker_color, marker_alpha),
+                antialias=_INTERACTIVE_ANTIALIAS,
             )
             transaction.add_item(self.ax, items.scatter)
 
@@ -1232,7 +1235,9 @@ class PlotTs():
             items.line = pg.PlotDataItem(
                 x,
                 series.plot_values,
-                pen=self._pen(line_color, line_width, line_alpha, line_style))
+                pen=self._pen(line_color, line_width, line_alpha, line_style),
+                antialias=_INTERACTIVE_ANTIALIAS,
+            )
             transaction.add_item(self.ax, items.line)
 
         if analysis.replica.enabled:
@@ -1286,7 +1291,8 @@ class PlotTs():
                 symbol=self._symbol(marker_replica),
                 size=marker_size_replica,
                 pen=None,
-                brush=self._brush(marker_replica_color, marker_alpha)
+                brush=self._brush(marker_replica_color, marker_alpha),
+                antialias=_INTERACTIVE_ANTIALIAS,
             )
             transaction.add_item(self.ax, replicate_up)
             replicate_up_list.append(replicate_up)
@@ -1300,6 +1306,7 @@ class PlotTs():
                 size=marker_size_replica,
                 pen=None,
                 brush=self._brush(down_color, marker_alpha),
+                antialias=_INTERACTIVE_ANTIALIAS,
             )
             transaction.add_item(self.ax, replicate_dn)
             replicate_dn_list.append(replicate_dn)
@@ -1341,7 +1348,8 @@ class PlotTs():
             fit_plot = pg.PlotDataItem(
                 self._datesToX(model_x),
                 model_y,
-                pen=self._pen(fit_line_color, fit_line_width, fit_line_alpha, fit_line_type)
+                pen=self._pen(fit_line_color, fit_line_width, fit_line_alpha, fit_line_type),
+                antialias=_INTERACTIVE_ANTIALIAS,
             )
             transaction.add_item(self.ax, fit_plot)
         observed_values = np.asarray(series.plot_values, dtype=np.float64)
@@ -1411,13 +1419,15 @@ class PlotTs():
                     size=marker_size,
                     pen=self._seriesMarkerPen(marker, marker_color, marker_alpha),
                     brush=self._brush(marker_color, marker_alpha),
+                    antialias=_INTERACTIVE_ANTIALIAS,
                 )
                 transaction.add_item(self.ax_residuals, items.residual_scatter)
             if line_style and line_width > 0 and line_alpha > 0:
                 items.residual_line = pg.PlotDataItem(
                     x,
                     residuals_values,
-                    pen=self._pen(line_color, line_width, line_alpha, line_style)
+                    pen=self._pen(line_color, line_width, line_alpha, line_style),
+                    antialias=_INTERACTIVE_ANTIALIAS,
                 )
                 transaction.add_item(self.ax_residuals, items.residual_line)
             items.residual_y_data = [residuals_values]
@@ -2030,6 +2040,7 @@ class PlotTs():
             x=[], y=[], symbol='o', size=8,
             pen=pg.mkPen(self._hoverMarkerFallbackColor(), width=10),
             brush=pg.mkBrush(0, 0, 0, 0),
+            antialias=_INTERACTIVE_ANTIALIAS,
         )
         marker.setZValue(1e6)
         marker.hide()
