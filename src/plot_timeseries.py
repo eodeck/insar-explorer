@@ -44,6 +44,11 @@ from .models.time_series import (
 )
 
 _UNSET = object()
+_MARKER_EDGE_WIDTH = 1.0
+_MARKER_EDGE_DARK = "#202020"
+_MARKER_EDGE_LIGHT = "#f2f2f2"
+_MARKER_EDGE_LIGHT_BACKGROUND_THRESHOLD = 0.5
+_PLOT_GRID_ALPHA = 0.25
 
 
 @dataclass(frozen=True)
@@ -69,7 +74,50 @@ except ImportError:
     __version__ = "xx.xx.xx"
 
 
-class FormattedDateAxisItem(pg.DateAxisItem):
+class _IndependentGridPenMixin:
+    """Render extended grid lines independently from axis and tick foreground."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._automatic_grid_pen = None
+
+    def setAutomaticGridPen(self, pen):
+        """Set the pen used only for grid extensions drawn through the plot area."""
+        self._automatic_grid_pen = pg.mkPen(pen)
+        self.picture = None
+        self.update()
+
+    def generateDrawSpecs(self, painter):
+        """Generate grid and local tick specs with independent pens."""
+        if self.grid is False or self._automatic_grid_pen is None:
+            return super().generateDrawSpecs(painter)
+
+        original_grid = self.grid
+        original_tick_pen = self._tickPen
+        try:
+            self._tickPen = self._automatic_grid_pen
+            grid_specs = super().generateDrawSpecs(painter)
+
+            self.grid = False
+            self._tickPen = original_tick_pen
+            axis_specs = super().generateDrawSpecs(painter)
+        finally:
+            self.grid = original_grid
+            self._tickPen = original_tick_pen
+
+        if grid_specs is None or axis_specs is None:
+            return axis_specs or grid_specs
+
+        axis_spec, axis_tick_specs, text_specs = axis_specs
+        _, grid_tick_specs, _ = grid_specs
+        return axis_spec, grid_tick_specs + axis_tick_specs, text_specs
+
+
+class AutomaticContrastAxisItem(_IndependentGridPenMixin, pg.AxisItem):
+    """Axis item with plot-area grid contrast independent from canvas foreground."""
+
+
+class FormattedDateAxisItem(_IndependentGridPenMixin, pg.DateAxisItem):
     """Date axis that honors the configured label format and calendar granularity."""
 
     YEAR_ONLY_FORMAT = "%Y"
@@ -1129,7 +1177,6 @@ class PlotTs():
         marker_size = series_style.marker_size
         marker_color = series_style.marker_color
         marker_alpha = series_style.marker_opacity
-        edge_color = series_style.marker_edge_color
         line_style = series_style.line_style
         line_color = series_style.line_color
         line_alpha = series_style.line_opacity
@@ -1171,10 +1218,12 @@ class PlotTs():
                 main_y_data.append(series.plot_multiple_values[:, i])
 
         if marker_size > 0 and marker_alpha > 0:
-            items.scatter = pg.ScatterPlotItem(x=x, y=series.plot_values, symbol=self._symbol(marker),
-                                               size=marker_size,
-                                               pen=self._pen(edge_color, 0.2, marker_alpha),
-                                               brush=self._brush(marker_color, marker_alpha))
+            items.scatter = pg.ScatterPlotItem(
+                x=x, y=series.plot_values, symbol=self._symbol(marker),
+                size=marker_size,
+                pen=self._seriesMarkerPen(marker, marker_color, marker_alpha),
+                brush=self._brush(marker_color, marker_alpha),
+            )
             transaction.add_item(self.ax, items.scatter)
 
         main_y_data.append(series.plot_values)
@@ -1345,7 +1394,6 @@ class PlotTs():
             marker_size = residual_style.marker_size
             marker_color = residual_style.marker_color
             marker_alpha = residual_style.marker_alpha
-            edge_color = residual_style.marker_edge_color
             line_style = residual_style.line_style
             line_color = residual_style.line_color
             line_alpha = residual_style.line_alpha
@@ -1361,8 +1409,8 @@ class PlotTs():
                     y=residuals_values,
                     symbol=self._symbol(marker),
                     size=marker_size,
-                    pen=self._pen(edge_color, 0.2, marker_alpha),
-                    brush=self._brush(marker_color, marker_alpha)
+                    pen=self._seriesMarkerPen(marker, marker_color, marker_alpha),
+                    brush=self._brush(marker_color, marker_alpha),
                 )
                 transaction.add_item(self.ax_residuals, items.residual_scatter)
             if line_style and line_width > 0 and line_alpha > 0:
@@ -1403,19 +1451,34 @@ class PlotTs():
         if not ax:
             ax = self.ax
         grid_type = parms['grid']
-        ax.showGrid(x=grid_type in ('vertical', 'both'), y=grid_type in ('horizontal', 'both'), alpha=0.25)
+        self._applyAutomaticGridContrast(ax, parms['background color'])
+        ax.showGrid(
+            x=grid_type in ('vertical', 'both'),
+            y=grid_type in ('horizontal', 'both'),
+            alpha=_PLOT_GRID_ALPHA,
+        )
 
     def setLabels(self, ax=None, parms={}):
         if not ax:
             ax = self.ax
 
         font_size = f"{int(parms['font size'])}pt"
-        if parms['title'] != "":
-            ax.setTitle(parms['title'], size=font_size)
+        foreground = self._canvasForegroundColor(
+            self.settings_model.appearance.canvas_background
+        ).name()
+        ax.setTitle(
+            parms['title'] or None, size=font_size, color=foreground
+        )
         if parms['xlabel'] != "":
-            ax.setLabel('bottom', parms['xlabel'], **{'font-size': font_size})
+            ax.setLabel(
+                'bottom', parms['xlabel'],
+                **{'font-size': font_size, 'color': foreground}
+            )
         if parms['ylabel'] != "":
-            ax.setLabel('left', parms['ylabel'], **{'font-size': font_size})
+            ax.setLabel(
+                'left', parms['ylabel'],
+                **{'font-size': font_size, 'color': foreground}
+            )
 
     def setXticks(self, ax=None, parms={}):
         if not ax:
@@ -1730,6 +1793,9 @@ class PlotTs():
             ax = self.ax
         background_color = self._color(parms['background color'])
         ax.getViewBox().setBackgroundColor(background_color)
+        self._applyAutomaticAxisForeground(
+            ax, self.settings_model.appearance.canvas_background
+        )
         self._applyDateFormat(ax=ax, parms=parms)
 
     def setFigureStyle(self, parms={}):
@@ -1749,10 +1815,16 @@ class PlotTs():
                 font.setPointSize(int(appearance.font_size))
                 for axis_name in ("left", "bottom"):
                     axis.getAxis(axis_name).setTickFont(font)
+                self._applyAutomaticAxisForeground(
+                    axis, appearance.canvas_background
+                )
+                self._applyAutomaticGridContrast(
+                    axis, appearance.plot_background
+                )
                 axis.showGrid(
                     x=appearance.grid_mode in ("vertical", "both"),
                     y=appearance.grid_mode in ("horizontal", "both"),
-                    alpha=0.25,
+                    alpha=_PLOT_GRID_ALPHA,
                 )
                 axis.getViewBox().setBackgroundColor(
                     self._color(appearance.plot_background)
@@ -1762,28 +1834,41 @@ class PlotTs():
                     date_axis.setDateFormat(appearance.date_format)
 
             font_size = f"{int(appearance.font_size)}pt"
-            self.ax.setTitle(appearance.time_series_title, size=font_size)
+            foreground = self._canvasForegroundColor(
+                appearance.canvas_background
+            ).name()
+            self.ax.setTitle(
+                appearance.time_series_title or None,
+                size=font_size,
+                color=foreground,
+            )
             self.ax.setLabel(
                 "bottom", appearance.time_series_x_label,
-                **{"font-size": font_size}
+                **{"font-size": font_size, "color": foreground}
             )
             self.ax.setLabel(
                 "left", appearance.time_series_y_label,
-                **{"font-size": font_size}
+                **{"font-size": font_size, "color": foreground}
             )
             if self.ax_residuals is not None:
-                self.ax_residuals.setTitle(appearance.residual_title, size=font_size)
+                self.ax_residuals.setTitle(
+                    appearance.residual_title or None,
+                    size=font_size,
+                    color=foreground,
+                )
                 self.ax_residuals.setLabel(
                     "bottom", appearance.residual_x_label,
-                    **{"font-size": font_size}
+                    **{"font-size": font_size, "color": foreground}
                 )
                 self.ax_residuals.setLabel(
                     "left", appearance.residual_y_label,
-                    **{"font-size": font_size}
+                    **{"font-size": font_size, "color": foreground}
                 )
             self.ui.plot_widget.setBackground(
                 self._color(appearance.canvas_background)
             )
+            if changed_properties is None or "plot_background" in changed_properties:
+                self._refreshAutomaticMarkerEdges()
         finally:
             self.restoreViewport(viewport)
         self._draw()
@@ -1808,10 +1893,13 @@ class PlotTs():
                     pass
 
     def _addPlot(self, row=0):
-        axis = FormattedDateAxisItem(
+        bottom_axis = FormattedDateAxisItem(
             orientation='bottom', date_format=self.settings_model.appearance.date_format
         )
-        plot_item = self.ui.plot_widget.addPlot(row=row, col=0, axisItems={'bottom': axis})
+        left_axis = AutomaticContrastAxisItem(orientation='left')
+        plot_item = self.ui.plot_widget.addPlot(
+            row=row, col=0, axisItems={'bottom': bottom_axis, 'left': left_axis}
+        )
         self._stylePlotFrame(plot_item)
         self._connectAxisViewSignals(plot_item, row=row)
         self._connectAutoButton(plot_item)
@@ -2313,6 +2401,98 @@ class PlotTs():
             styles = PEN_STYLE_BY_NAME
             pen.setStyle(styles[line_style])
         return pen
+
+    @staticmethod
+    def _backgroundIsLight(background_color):
+        """Return whether a configured background color is visually light."""
+        color = QColor(background_color)
+        if not color.isValid():
+            color = QColor("white")
+        luminance = (
+            0.299 * color.redF()
+            + 0.587 * color.greenF()
+            + 0.114 * color.blueF()
+        )
+        return luminance >= _MARKER_EDGE_LIGHT_BACKGROUND_THRESHOLD
+
+    @classmethod
+    def _contrastColorForBackground(cls, background_color):
+        """Return a neutral high-contrast color for one background."""
+        return QColor(
+            _MARKER_EDGE_DARK
+            if cls._backgroundIsLight(background_color)
+            else _MARKER_EDGE_LIGHT
+        )
+
+    @classmethod
+    def _plotAreaContrastColor(cls, background_color):
+        """Return the automatic contrast color for plot-area graphics."""
+        return cls._contrastColorForBackground(background_color)
+
+    @classmethod
+    def _canvasForegroundColor(cls, background_color):
+        """Return the automatic axis/text foreground for the plot canvas."""
+        return cls._contrastColorForBackground(background_color)
+
+    @classmethod
+    def _markerEdgeColorForBackground(cls, background_color):
+        """Return a neutral marker-edge color contrasting with the plot background."""
+        return cls._plotAreaContrastColor(background_color)
+
+    def _applyAutomaticAxisForeground(self, ax, canvas_background):
+        """Apply Canvas-background contrast to axis lines, ticks, and tick text."""
+        pen = pg.mkPen(self._canvasForegroundColor(canvas_background))
+        for axis_name in ("left", "bottom"):
+            axis = ax.getAxis(axis_name)
+            axis.setPen(pen)
+            axis.setTextPen(pen)
+            axis.setTickPen(pen)
+
+    def _applyAutomaticGridContrast(self, ax, plot_background):
+        """Apply Plot-area contrast to grid extensions independently of axis pens."""
+        pen = pg.mkPen(self._plotAreaContrastColor(plot_background))
+        for axis_name in ("left", "bottom"):
+            axis = ax.getAxis(axis_name)
+            if hasattr(axis, "setAutomaticGridPen"):
+                axis.setAutomaticGridPen(pen)
+
+    def _seriesMarkerPen(self, marker, marker_color, alpha=1.0):
+        """Return the native symbol pen for one ordinary data marker."""
+        if marker in ("+", "x"):
+            color = self._color(marker_color, alpha)
+        else:
+            color = self._markerEdgeColorForBackground(
+                self.settings_model.appearance.plot_background
+            )
+            color.setAlphaF(float(alpha))
+        return pg.mkPen(color, width=_MARKER_EDGE_WIDTH)
+
+    def _refreshAutomaticMarkerEdges(self):
+        """Refresh rendered series and residual marker pens for the plot background."""
+        records = list(self._series_store.records())
+        pending = self.pending_record()
+        if pending is not None:
+            records.append(pending)
+        for record in records:
+            graphics = self._graphics_by_series_id.get(record.id)
+            if graphics is None:
+                graphics = self._pending_graphics_by_series_id.get(record.id)
+            if graphics is None:
+                continue
+            if graphics.scatter is not None:
+                style = record.presentation.series
+                graphics.scatter.setPen(
+                    self._seriesMarkerPen(
+                        style.marker, style.marker_color, style.marker_opacity
+                    )
+                )
+            if graphics.residual_scatter is not None:
+                style = record.presentation.residual
+                graphics.residual_scatter.setPen(
+                    self._seriesMarkerPen(
+                        style.marker, style.marker_color, style.marker_alpha
+                    )
+                )
 
     def _brush(self, color=None, alpha=1.0):
         return pg.mkBrush(self._color(color, alpha))
