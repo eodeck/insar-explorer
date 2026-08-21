@@ -41,11 +41,11 @@ class MapIndicatorSettingsPopup(QWidget):
         self.map_markers_group.setObjectName("group_map_indicators_markers")
         form = QFormLayout(self.map_markers_group)
         self.target_color = CompactColorButton(
-            "■", "Target indicator color", self.map_markers_group,
+            "●", "Target indicator color", self.map_markers_group,
             accessible_name="Target indicator color",
         )
         self.reference_color = CompactColorButton(
-            "●", "Reference indicator color", self.map_markers_group,
+            "■", "Reference indicator color", self.map_markers_group,
             accessible_name="Reference indicator color",
         )
         self.point_size = QSpinBox(self.map_markers_group)
