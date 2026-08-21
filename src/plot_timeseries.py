@@ -44,6 +44,10 @@ from .models.time_series import (
 )
 
 _UNSET = object()
+_MARKER_EDGE_WIDTH = 1.0
+_MARKER_EDGE_DARK = "#202020"
+_MARKER_EDGE_LIGHT = "#f2f2f2"
+_MARKER_EDGE_LIGHT_BACKGROUND_THRESHOLD = 0.5
 
 
 @dataclass(frozen=True)
@@ -1129,7 +1133,6 @@ class PlotTs():
         marker_size = series_style.marker_size
         marker_color = series_style.marker_color
         marker_alpha = series_style.marker_opacity
-        edge_color = series_style.marker_edge_color
         line_style = series_style.line_style
         line_color = series_style.line_color
         line_alpha = series_style.line_opacity
@@ -1171,10 +1174,12 @@ class PlotTs():
                 main_y_data.append(series.plot_multiple_values[:, i])
 
         if marker_size > 0 and marker_alpha > 0:
-            items.scatter = pg.ScatterPlotItem(x=x, y=series.plot_values, symbol=self._symbol(marker),
-                                               size=marker_size,
-                                               pen=self._pen(edge_color, 0.2, marker_alpha),
-                                               brush=self._brush(marker_color, marker_alpha))
+            items.scatter = pg.ScatterPlotItem(
+                x=x, y=series.plot_values, symbol=self._symbol(marker),
+                size=marker_size,
+                pen=self._seriesMarkerPen(marker, marker_color, marker_alpha),
+                brush=self._brush(marker_color, marker_alpha),
+            )
             transaction.add_item(self.ax, items.scatter)
 
         main_y_data.append(series.plot_values)
@@ -1345,7 +1350,6 @@ class PlotTs():
             marker_size = residual_style.marker_size
             marker_color = residual_style.marker_color
             marker_alpha = residual_style.marker_alpha
-            edge_color = residual_style.marker_edge_color
             line_style = residual_style.line_style
             line_color = residual_style.line_color
             line_alpha = residual_style.line_alpha
@@ -1361,8 +1365,8 @@ class PlotTs():
                     y=residuals_values,
                     symbol=self._symbol(marker),
                     size=marker_size,
-                    pen=self._pen(edge_color, 0.2, marker_alpha),
-                    brush=self._brush(marker_color, marker_alpha)
+                    pen=self._seriesMarkerPen(marker, marker_color, marker_alpha),
+                    brush=self._brush(marker_color, marker_alpha),
                 )
                 transaction.add_item(self.ax_residuals, items.residual_scatter)
             if line_style and line_width > 0 and line_alpha > 0:
@@ -1787,6 +1791,8 @@ class PlotTs():
             self.ui.plot_widget.setBackground(
                 self._color(appearance.canvas_background)
             )
+            if changed_properties is None or "plot_background" in changed_properties:
+                self._refreshAutomaticMarkerEdges()
         finally:
             self.restoreViewport(viewport)
         self._draw()
@@ -2316,6 +2322,61 @@ class PlotTs():
             styles = PEN_STYLE_BY_NAME
             pen.setStyle(styles[line_style])
         return pen
+
+    @staticmethod
+    def _markerEdgeColorForBackground(background_color):
+        """Return a neutral marker-edge color contrasting with the plot background."""
+        color = QColor(background_color)
+        if not color.isValid():
+            color = QColor("white")
+        luminance = (
+            0.299 * color.redF()
+            + 0.587 * color.greenF()
+            + 0.114 * color.blueF()
+        )
+        return QColor(
+            _MARKER_EDGE_DARK
+            if luminance >= _MARKER_EDGE_LIGHT_BACKGROUND_THRESHOLD
+            else _MARKER_EDGE_LIGHT
+        )
+
+    def _seriesMarkerPen(self, marker, marker_color, alpha=1.0):
+        """Return the native symbol pen for one ordinary data marker."""
+        if marker in ("+", "x"):
+            color = self._color(marker_color, alpha)
+        else:
+            color = self._markerEdgeColorForBackground(
+                self.settings_model.appearance.plot_background
+            )
+            color.setAlphaF(float(alpha))
+        return pg.mkPen(color, width=_MARKER_EDGE_WIDTH)
+
+    def _refreshAutomaticMarkerEdges(self):
+        """Refresh rendered series and residual marker pens for the plot background."""
+        records = list(self._series_store.records())
+        pending = self.pending_record()
+        if pending is not None:
+            records.append(pending)
+        for record in records:
+            graphics = self._graphics_by_series_id.get(record.id)
+            if graphics is None:
+                graphics = self._pending_graphics_by_series_id.get(record.id)
+            if graphics is None:
+                continue
+            if graphics.scatter is not None:
+                style = record.presentation.series
+                graphics.scatter.setPen(
+                    self._seriesMarkerPen(
+                        style.marker, style.marker_color, style.marker_opacity
+                    )
+                )
+            if graphics.residual_scatter is not None:
+                style = record.presentation.residual
+                graphics.residual_scatter.setPen(
+                    self._seriesMarkerPen(
+                        style.marker, style.marker_color, style.marker_alpha
+                    )
+                )
 
     def _brush(self, color=None, alpha=1.0):
         return pg.mkBrush(self._color(color, alpha))
