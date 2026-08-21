@@ -1,7 +1,7 @@
 **MintPy**
 ^^^^^^^^^^
 
-    You can visualize `Mintpy <https://github.com/insarlab/MintPy>`_, results in InSAR Explorer by converting the time series data from HDF5 format to a GMT `grd` file or shapefile.
+    You can visualize `MintPy <https://github.com/insarlab/MintPy>`_ results in InSAR Explorer by converting the time series data from HDF5 format to a GMT `grd` file or shapefile.
     Since MintPy processes data in raster format, converting to `grd` is the recommended method for visualization in InSAR Explorer.
     However, Method 2 provides more fields for the quality of points.
 

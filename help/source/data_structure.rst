@@ -37,4 +37,4 @@ Data Structure
             -| timeseries-YYYYMMDD*.grd
             -| ...
 
-    Once one of the `grd` files is opened in QGIS, the plugin automatically detects the associated time series files and handle them accordingly.
+    Once one of the `grd` files is opened in QGIS, the plugin automatically detects the associated time series files and handles them accordingly.
