@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# InsarExplorer documentation build configuration file, created by
+# InSAR Explorer documentation build configuration file, created by
 # sphinx-quickstart on Sun Feb 12 17:11:03 2012.
 #
 # This file is execfile()d with the current directory set to its containing dir.
@@ -40,7 +40,7 @@ source_suffix = '.rst'
 master_doc = 'index'
 
 # General information about the project.
-project = u'InsarExplorer'
+project = u'InSAR Explorer'
 copyright = u'2024-2026, Mahmud Haghighi'
 
 # The version info for the project you're documenting, acts as replacement for
