@@ -18,7 +18,7 @@ from .bootstrap import ensure_time_series_services
 from .map_setting import InsarMap
 from .layer_utils import vector_layer as vector_layer_utils
 from .layer_utils import grd_layer as grd_layer_utils
-from .about import about as insar_explorer_about
+from .ui_windows.about_dialog import AboutDialog
 from .drawing_tools.polygon_drawing_tool import PolygonDrawingTool
 from .ui.popups.time_series_style_popup import TimeSeriesStylePopup
 from .ui.popups.fit_popup import FitPopup
@@ -1465,10 +1465,9 @@ class GuiController(QObject):
         self.ui.label_about.setOpenExternalLinks(False)
         self.ui.label_about.linkActivated.connect(self.aboutLabelClicked)
 
-    def aboutLabelClicked(self):
-        from .ui_windows.message_box import MessageBox
-        text = insar_explorer_about
-        MessageBox(text)
+    def aboutLabelClicked(self, _link=None):
+        dialog = AboutDialog(self.ui)
+        exec_dialog(dialog)
 
     def connectTimeseriesSignals(self):
         panel = self.ui.time_series_point_panel
