@@ -23,8 +23,8 @@
  This script initializes the plugin, making it known to QGIS.
 """
 
-__version__ = "2.8.0dev"
-__date__ = "2026.07.29"
+__version__ = "2.8.0"
+__date__ = "2026.08.22"
 
 
 # noinspection PyPep8Naming
