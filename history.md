@@ -1,44 +1,41 @@
 ### History
 
 v2.8.0
-- Improve about dialog.
-- Disable selection buttons for invalid layers.
-- Polish statusbar messages.
-- Reset transient session state on dock teardown.
-- Make Maps settings and Selection panels collapsible.
-- Preserve per-layer Target/Reference working state.
-- Add revert for unapplied Map Setting changes.
-- Preserve per-layer Map Settings working state.
-- Remove adaptive y-axis mode.
-- Add source layer selection and zoom to target/reference to the context menu of commited items.
-- Retain time series across active layer changes.
-- Add time series hover readout.
-- Added marker type and stroke te settings.
-- Previewed polygon while drawing.
-- Added support for double-click to finish a polygon.
-- Support exporting one or multiple time series data.
-- Added an offset-reset button.
-- Improve reference offset behavior and apply only when user explicitly clicks on apply or live apply is active.
-- Added support for continuous colormaps.
-- Added fast calculation mode for field statistics.
-- Simplified map settings panel.
-- Move symbology controls into popup.
-- Used Turbo instead of reversed Turbo in colormaps.
-- Improved field search and filtering.
-- Recompute derived ranges on field/layer change.
-- Allow adaptive precision in data range spinboxes.
-- Enhanced map settings panel.
-- Added distinct color assignment to record list context menu.
-- Added time series rename actions using F2 and context menu.
-- Added map indicator settings popup.
-- Added map indicator for selected record.
-- Added copy/paste button/context menu for time series record list.
-- Added remove button/context menu to remove records from the time series record list.
-- Added time series record list.
-- Retire hold on options and TS and Settings tabs.
-- Move sync offset button to the map settings panel.
-- Added pending time series selection to the time series selection panel.
-- Introduced time series selection panel
+
+#### Map and selection
+- Improved Target/Reference selection controls and disabled them for invalid layers.
+- Added pending time-series selection and retained committed selections while creating new ones.
+- Added polygon drawing preview and double-click completion.
+- Preserved per-layer Target/Reference and Map Settings working state.
+- Added map indicators for selected records and configurable Target/Reference indicator appearance.
+- Added reference-offset reset and improved reference-offset apply/sync behavior.
+
+#### Time-series management
+- Added the time-series Selections list for retaining and comparing multiple series.
+- Added rename, remove, copy/paste settings, and distinct-color actions for selected time series.
+- Added source-layer selection and zoom-to-Target/Reference actions.
+- Retained time series across active-layer changes.
+- Added time-series hover readout.
+
+#### Plotting and appearance
+- Added marker type and marker stroke settings.
+- Added continuous colormaps and switched the default Turbo direction.
+- Simplified and enhanced Map Settings, including field search/filtering, derived-range refresh, adaptive range precision, and a symbology popup.
+- Added collapsible Map Settings and Selection panels.
+- Removed adaptive Y-axis mode.
+
+#### Export
+- Added export of one or multiple selected time-series datasets.
+
+#### Usability and reliability
+- Improved status-bar messages.
+- Reset transient session state when the dock is torn down.
+- Added revert for unapplied Map Settings changes.
+- Added fast field-statistics calculation.
+- Improved About dialog.
+
+#### Documentation and compatibility
+- Updated documentation and release metadata.
 
 v2.7.1
 - Removed false QGIS 4 persistence warnings for Fit and Replica settings.
