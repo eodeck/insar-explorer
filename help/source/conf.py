@@ -47,12 +47,13 @@ copyright = u'2024-2026, Mahmud Haghighi'
 # |version| and |release|, also used in various other places throughout the
 # built documents.
 #
-sys.path.insert(0, os.path.abspath('../../..'))
-try:
-    from insar_explorer import __version__
-except ImportError:
-    __version__ = "xx.xx.xx"
+# sys.path.insert(0, os.path.abspath('../../..'))
+# try:
+#     from insar_explorer import __version__
+# except ImportError:
+#     __version__ = "xx.xx.xx"
 
+__version__ = "2.8.0dev"
 version = __version__
 release = __version__
 
