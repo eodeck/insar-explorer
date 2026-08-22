@@ -22,6 +22,7 @@ COMMITTED_COLOR_ALPHA_WHILE_PENDING = 95
 
 _CURRENT_BOX_PADDING = 6
 
+
 @dataclass(frozen=True)
 class PointIndicatorSizes:
     """Derived current-selection and record point-marker sizes."""

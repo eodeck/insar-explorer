@@ -1,33 +1,31 @@
 from dataclasses import dataclass
+
+import numpy as np
 from qgis.PyQt.QtWidgets import QApplication
 from qgis.core import QgsPointXY, QgsGeometry, QgsMapLayer, QgsRectangle, QgsFeatureRequest, QgsSettings, Qgis
 from qgis.gui import QgsHighlight
 from qgis.core import QgsProject, QgsCoordinateTransform, QgsCoordinateReferenceSystem
 from qgis.PyQt.QtGui import QColor, QCursor
 
+from . import plot_timeseries as pts
 from .bootstrap import ensure_time_series_services
+from .layer_utils import grd_layer as grd_layer_utils
+from .layer_utils import raster_layer as raster_layer_utils
+from .layer_utils import vector_layer as vector_layer_utils
 from .models.time_series import (
     MapPointSnapshot, SpatialSelection, SpatialSelectionKind, TimeSeriesSource,
 )
-from .time_series.target_session import CanonicalTargetSnapshot
-from .time_series.reference_session import ActiveReference
 from .qt_compat import WAIT_CURSOR
 from .time_series.map_indicator_style import (
     semantic_indicator_color,
 )
+from .time_series.reference_session import ActiveReference
+from .time_series.target_session import CanonicalTargetSnapshot
 from .ui.status_messages import STATUS_WARNING
 
 
 NO_VALID_TIME_SERIES_WARNING = "No valid time-series data are available at this location."
 INVALID_TIME_SERIES_LAYER_WARNING = "The selected layer cannot provide time-series data."
-
-import numpy as np
-
-
-from . import plot_timeseries as pts
-from .layer_utils import vector_layer as vector_layer_utils
-from .layer_utils import grd_layer as grd_layer_utils
-from .layer_utils import raster_layer as raster_layer_utils
 
 
 @dataclass

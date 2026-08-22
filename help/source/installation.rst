@@ -6,7 +6,7 @@ Installation
 
         1. Open QGIS.
         2. Go to `Plugins` > `Manage and Install Plugins…`.
-        3. In the `All` tab of the Plugin Manager, type `Insar Explorer` in the search bar.
+        3. In the `All` tab of the Plugin Manager, type `InSAR Explorer` in the search bar.
         4. Select the `InSAR Explorer` plugin from the list and click `Install Plugin`.
 
     **Method 2: Install the development version from ZIP file**

@@ -28,7 +28,7 @@ class SeriesStyleSettings:
     marker_opacity: float = 0.8
     marker_edge_color: str = "black"
     marker_size: float = 5.0
-    line_style: str = ""
+    line_style: str = "-"
     line_color: str = "#1f77b4"
     line_opacity: float = 0.8
     line_width: float = 1.0
@@ -43,7 +43,7 @@ class SeriesStyleSettings:
             marker_opacity=normalize_alpha(values.get("marker alpha"), 0.8),
             marker_edge_color=normalize_color(values.get("marker edge color"), "black"),
             marker_size=normalize_number(values.get("marker size"), MARKER_SIZE_RANGE, 5.0),
-            line_style=normalize_line_style(values.get("line style"), ""),
+            line_style=normalize_line_style(values.get("line style"), "-"),
             line_color=normalize_color(values.get("line color"), "#1f77b4"),
             line_opacity=normalize_alpha(values.get("line alpha"), 0.8),
             line_width=normalize_number(values.get("line width"), LINE_WIDTH_RANGE, 1.0),
