@@ -35,6 +35,20 @@ The following components have been modified to address security scanner warnings
             "PySide UI compilation is disabled in this QGIS-vendored PyQtGraph. "
         )
       ```
+  3. Adapted the active Qt bootstrap for the QGIS-vendored build to use `qgis.PyQt` instead of independently importing or probing system PyQt/PySide bindings. The pyqtgraph-facing `QtCore`, `QtGui`, and `QtWidgets` facade is preserved, while the active binding is controlled by QGIS. Direct `PyQt5` / `PyQt6` imports were removed from the active QGIS runtime path, and PySide is not selected as the active binding in this build.
+  4. Added centralized `exec_qt(...)` compatibility that prefers modern `exec()` and dynamically falls back to Qt5 `exec_()`, forwarding arguments and preserving return values. The module-level `exec()` application-event-loop helper now delegates through `exec_qt(...)`.
+
+- `dockarea/Dock.py`
+  - Route drag execution through `exec_qt(...)` instead of directly calling Qt5-style `exec_()`. Modern `exec()` is preferred, Qt5 fallback remains supported, and dock drag/drop behavior is otherwise unchanged.
+
+- `exporters/PrintExporter.py`
+  - Route print-dialog execution through `exec_qt(...)` instead of directly calling `exec_()`, preserving Qt5/Qt6 dialog compatibility with no other print-export behavior change.
+
+- `debug.py`
+  - Obtain SIP through the QGIS-controlled pyqtgraph Qt facade / `qgis.PyQt` path instead of importing it directly from `PyQt5`, avoiding an independent system-PyQt binding.
+
+- QGIS Qt integration architecture
+  - These are intentional local QGIS-vendor patches, not generic upstream pyqtgraph changes. The retained runtime follows `QGIS -> qgis.PyQt -> vendored pyqtgraph Qt facade -> retained pyqtgraph runtime` so pyqtgraph stays aligned with the Qt binding already loaded by QGIS while preserving QGIS 3 / Qt5 and QGIS 4 / Qt6 compatibility.
 
 - `metaarray/MetaArray.py`
   1. `import ast`

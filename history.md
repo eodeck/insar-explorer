@@ -1,7 +1,7 @@
 ### History
 
 v2.10.1-dev
-
+- Improved QGIS compatibility of the bundled pyqtgraph integration.
 
 v2.10.0
 
