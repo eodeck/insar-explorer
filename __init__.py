@@ -23,7 +23,7 @@
  This script initializes the plugin, making it known to QGIS.
 """
 
-__version__ = "2.10.1-dev"
+__version__ = "2.10.1"
 __date__ = "2026.08.24"
 
 

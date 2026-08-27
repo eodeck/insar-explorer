@@ -53,7 +53,7 @@ copyright = u'2024-2026, Mahmud Haghighi'
 # except ImportError:
 #     __version__ = "xx.xx.xx"
 
-__version__ = "2.10.1-dev"
+__version__ = "2.10.1"
 version = __version__
 release = __version__
 
