@@ -1,5 +1,5 @@
 from ..parametertree import Parameter
-from ..Qt import QtCore, QtGui, QtWidgets
+from ..Qt import QtCore, QtGui, QtWidgets, exec_qt
 from .Exporter import Exporter
 
 translate = QtCore.QCoreApplication.translate
@@ -38,7 +38,7 @@ class PrintExporter(Exporter):
         printer = QtGui.QPrinter(QtGui.QPrinter.HighResolution)
         dialog = QtGui.QPrintDialog(printer)
         dialog.setWindowTitle(translate('Exporter', "Print Document"))
-        if dialog.exec_() != QtWidgets.QDialog.DialogCode.Accepted:
+        if exec_qt(dialog) != QtWidgets.QDialog.DialogCode.Accepted:
             return
             
         res = QtGui.QGuiApplication.primaryScreen().physicalDotsPerInchX()

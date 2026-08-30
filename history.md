@@ -3,6 +3,8 @@
 v2.11.0dev
 
 
+v2.10.1
+- Improved QGIS compatibility of the bundled pyqtgraph integration.
 
 v2.10.0
 
