@@ -1,6 +1,6 @@
 import warnings
 
-from ..Qt import QtCore, QtGui, QtWidgets
+from ..Qt import QtCore, QtGui, QtWidgets, exec_qt
 from ..widgets.VerticalLabel import VerticalLabel
 from .DockDrop import DockDrop
 
@@ -198,7 +198,7 @@ class Dock(QtWidgets.QWidget):
         self.drag.setMimeData(mime)
         self.widgetArea.setStyleSheet(self.dragStyle)
         self.update()
-        action = self.drag.exec() if hasattr(self.drag, 'exec') else self.drag.exec_()
+        action = exec_qt(self.drag)
         self.updateStyle()
 
     def float(self):

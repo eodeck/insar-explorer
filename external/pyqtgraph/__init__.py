@@ -17,7 +17,7 @@ import numpy  # # pyqtgraph requires numpy
 ## between PyQt and PySide.
 from .colors import palette
 from .Qt import QtCore, QtGui, QtWidgets
-from .Qt import exec_ as exec
+from .Qt import exec
 from .Qt import mkQApp
 
 ## not really safe--If we accidentally create another QApplication, the process hangs (and it is very difficult to trace the cause)
