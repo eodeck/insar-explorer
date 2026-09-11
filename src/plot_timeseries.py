@@ -9,9 +9,12 @@ from uuid import UUID
 
 import numpy as np
 from ..external import pyqtgraph as pg
-from qgis.PyQt.QtCore import QPointF
+from qgis.PyQt.QtCore import QPointF, QRectF
 from qgis.PyQt.QtGui import QColor, QFont
 from qgis.PyQt.QtWidgets import QApplication
+from ..external.pyqtgraph.graphicsItems.LegendItem import (
+    ItemSample, LegendItem, drawSymbol,
+)
 
 from .model_fitting import calculateFitStatistics, FittingModels, ModelFitError
 from .export_plot import TimeSeriesPlotExporter
@@ -51,6 +54,44 @@ _MARKER_EDGE_LIGHT = "#f2f2f2"
 _MARKER_EDGE_LIGHT_BACKGROUND_THRESHOLD = 0.5
 _PLOT_GRID_ALPHA = 0.25
 _INTERACTIVE_ANTIALIAS = True
+
+
+class PassiveLegendSample(ItemSample):
+    """Native legend sample which never changes renderer-owned item visibility."""
+
+    def mouseClickEvent(self, event):
+        event.accept()
+
+
+class ReplicaLegendSample(PassiveLegendSample):
+    """One native legend sample that shows the first positive and negative replicas."""
+
+    def __init__(self, items):
+        super().__init__(items[0])
+        self._items = tuple(items)
+
+    def boundingRect(self):
+        return QRectF(0, 0, 20, 20)
+
+    def paint(self, painter, *args):
+        for x, item in zip((6, 14), self._items):
+            opts = item.opts
+            if opts.get("antialias"):
+                painter.setRenderHint(painter.RenderHint.Antialiasing)
+            painter.save()
+            painter.translate(x, 10)
+            drawSymbol(
+                painter, opts.get("symbol", "o"), opts.get("size", 5),
+                pg.mkPen(opts.get("pen")), pg.mkBrush(opts.get("brush")),
+            )
+            painter.restore()
+
+
+class StableLegendItem(LegendItem):
+    """A native pyqtgraph legend with preset-only placement."""
+
+    def mouseDragEvent(self, event):
+        event.accept()
 
 
 @dataclass(frozen=True)
@@ -260,6 +301,8 @@ class PlotTs():
         self.fit_models = []
         self.fit_seasonal_flag = False
         self.ax_residuals = None
+        self._main_legend = None
+        self._residual_legend = None
         self.plot_residuals_flag = False
         self.random_marker_color_flag = False
         self.parms = {}
@@ -437,6 +480,8 @@ class PlotTs():
             self.refreshCompatibilityViews()
         if "appearance" in change_set.domains:
             self.applyAppearanceSettings(change_set.properties.get("appearance", frozenset()))
+        if "legend" in change_set.domains:
+            self.refreshLegends()
 
     def refreshCompatibilityViews(self):
         """Rebuild all temporary compatibility views from the runtime model.
@@ -715,6 +760,7 @@ class PlotTs():
         self._rebuildYDataRanges()
         self.restoreViewport(viewport)
         self.refreshAutomaticAxisRanges(draw=False)
+        self.refreshLegends()
 
     def plotTs(self, *, dates=None, ts_values=None, ref_values=_UNSET, plot_multiple=True, coords=_UNSET,
                ref_coords=_UNSET, update=False, analysis=_UNSET, source_provenance=_UNSET,
@@ -935,6 +981,7 @@ class PlotTs():
         transaction.commit()
         self._rebuildYDataRanges()
         self.refreshAutomaticAxisRanges(draw=False)
+        self.refreshLegends()
         return graphics
 
     def rerender_record(
@@ -971,6 +1018,7 @@ class PlotTs():
         self._set_current_series(active)
         self._rebuildYDataRanges()
         self.refreshAutomaticAxisRanges(draw=False)
+        self.refreshLegends()
         return new_graphics
 
     def replace_and_rerender_records(self, records, *, notify=True, draw=True):
@@ -1059,6 +1107,7 @@ class PlotTs():
         self._set_current_series(active)
         self._rebuildYDataRanges()
         self.refreshAutomaticAxisRanges(draw=False)
+        self.refreshLegends()
         if draw:
             self._draw()
         if notify:
@@ -1151,6 +1200,7 @@ class PlotTs():
 
         if self._series_store.active_id() == record_id:
             self._set_current_series(record)
+        self.refreshLegends()
         return True
 
     @staticmethod
@@ -1500,12 +1550,115 @@ class PlotTs():
         """Return visible committed records plus the visible pending record."""
         records = [
             record for record in self._series_store.records()
-            if record.id not in self._hidden_committed_ids
+            if record.id not in self._hidden_committed_ids and record.presentation.visible
         ]
         pending = self.pending_record()
         if pending is not None and pending.presentation.visible:
             records.append(pending)
         return tuple(records)
+
+    @staticmethod
+    def _legend_label(record):
+        """Return the user-facing label for one rendered time series."""
+        return (record.presentation.label or "").strip() or "Unnamed"
+
+    @staticmethod
+    def _first_graphics_item(*items):
+        """Return the first successfully rendered graphics item."""
+        return next((item for item in items if item is not None), None)
+
+    def _removeLegend(self, axis, legend):
+        """Detach one native legend safely before rebuilding or clearing an axis."""
+        if legend is None:
+            return
+        try:
+            legend.clear()
+            legend.setParentItem(None)
+            if axis is not None and getattr(axis, "legend", None) is legend:
+                axis.legend = None
+        except RuntimeError:
+            pass
+
+    def _legendPlacement(self, legend):
+        """Apply the selected preset with a small inset from the plot edge."""
+        placements = {
+            "top_right": ((1, 0), (1, 0), (-10, 10)),
+            "top_left": ((0, 0), (0, 0), (10, 10)),
+            "bottom_right": ((1, 1), (1, 1), (-10, -10)),
+            "bottom_left": ((0, 1), (0, 1), (10, -10)),
+            "right": ((1, .5), (1, .5), (-10, 0)),
+            "left": ((0, .5), (0, .5), (10, 0)),
+        }
+        item_pos, parent_pos, offset = placements[self.settings_model.legend.location]
+        legend.anchor(itemPos=item_pos, parentPos=parent_pos, offset=offset)
+
+    def _newLegend(self, axis):
+        """Create one styled, passive native pyqtgraph legend for an axis."""
+        appearance = self.settings_model.appearance
+        text = self._plotAreaContrastColor(appearance.plot_background)
+        border = self._plotAreaContrastColor(appearance.plot_background)
+        background = self._color(appearance.plot_background, 0.88)
+        legend = StableLegendItem(
+            offset=None, pen=pg.mkPen(border), brush=pg.mkBrush(background),
+            labelTextColor=text, sampleType=PassiveLegendSample,
+        )
+        legend.setParentItem(axis.getViewBox())
+        axis.legend = legend
+        self._legendPlacement(legend)
+        return legend
+
+    def refreshLegends(self):
+        """Rebuild native legends from visible records and committed graphics only."""
+        self._removeLegend(
+            self.ax, self._main_legend or getattr(self.ax, "legend", None)
+        )
+        self._removeLegend(
+            self.ax_residuals,
+            self._residual_legend or getattr(self.ax_residuals, "legend", None),
+        )
+        self._main_legend = None
+        self._residual_legend = None
+        if not self.settings_model.legend.enabled or self.ax is None:
+            return
+
+        main_entries = []
+        residual_entries = []
+        settings = self.settings_model.legend
+        for record in self.visibleTimeSeriesRecords():
+            graphics = self._graphics_for_series(record)
+            if graphics is None:
+                continue
+            label = self._legend_label(record)
+            base = self._first_graphics_item(
+                graphics.scatter, graphics.line, *(graphics.plot_multiple_lines or ())
+            )
+            if base is not None:
+                main_entries.append((base, label))
+            if settings.include_fit and graphics.fit_plot is not None:
+                main_entries.append((
+                    graphics.fit_plot, settings.fit_prefix + label + settings.fit_suffix,
+                ))
+            replica_up = self._first_graphics_item(*(graphics.replicate_up or ()))
+            replica_down = self._first_graphics_item(*(graphics.replicate_dn or ()))
+            if settings.include_replica and replica_up is not None and replica_down is not None:
+                main_entries.append((
+                    ReplicaLegendSample((replica_up, replica_down)),
+                    settings.replica_prefix + label + settings.replica_suffix,
+                ))
+            residual = self._first_graphics_item(
+                graphics.residual_scatter, graphics.residual_line
+            )
+            if residual is not None:
+                residual_entries.append((residual, label))
+
+        if main_entries:
+            self._main_legend = self._newLegend(self.ax)
+            for item, label in main_entries:
+                self._main_legend.addItem(item, label)
+        if residual_entries and self.ax_residuals is not None:
+            self._residual_legend = self._newLegend(self.ax_residuals)
+            for item, label in residual_entries:
+                self._residual_legend.addItem(item, label)
 
     def hasPlottedTimeSeriesData(self):
         """Return whether visible record-owned observations can define a plot range."""
@@ -2213,6 +2366,8 @@ class PlotTs():
         """Destroy plot axes and canvas items without deciding record lifetime."""
         self._clearHoverReadout()
         self._discardHoverMarker()
+        self._main_legend = None
+        self._residual_legend = None
         self.ui.plot_widget.clear()
         self.ui.plot_widget.plot_items = []
         self.ax = None
@@ -2517,6 +2672,7 @@ class PlotTs():
         self._series_store.replace_many(records)
         current = self.current_series()
         self._set_current_series(current)
+        self.refreshLegends()
 
     def rerenderTimeSeriesSnapshots(
         self, snapshots: List[TimeSeriesSnapshot], *, draw: bool = True
@@ -2627,6 +2783,7 @@ class PlotTs():
         self._rebuildYDataRanges()
         self.refreshAutomaticAxisRanges(draw=False)
         self._notify_pending_changed()
+        self.refreshLegends()
         return rendered_record
 
     def rerender_editable_record(self, record, *, plot_multiple=True, report_statistics=False):
@@ -2657,12 +2814,14 @@ class PlotTs():
             self._set_current_series(rendered_record)
             self._rebuildYDataRanges()
             self.refreshAutomaticAxisRanges(draw=False)
+            self.refreshLegends()
             self._notify_pending_changed()
             return graphics
         if record.id in self._hidden_committed_ids:
             if not self._series_store.replace(record):
                 raise KeyError(f"time-series record not found: {record.id}")
             self._set_current_series(record)
+            self.refreshLegends()
             self._notify_committed_changed()
             return None
         result = self.rerender_record(
@@ -2680,6 +2839,7 @@ class PlotTs():
         updated = replace(record, presentation=replace(record.presentation, label=normalized))
         self._pending_session.set(updated)
         self._set_current_series(updated)
+        self.refreshLegends()
         self._notify_pending_changed()
         return True
 
@@ -2712,6 +2872,7 @@ class PlotTs():
             raise
         self._hidden_committed_ids.discard(record.id)
         self._set_current_series(record)
+        self.refreshLegends()
         self._notify_pending_changed()
         self._notify_committed_changed()
         return record
@@ -2727,6 +2888,7 @@ class PlotTs():
         self._set_current_series(self.current_series())
         self._rebuildYDataRanges()
         self.refreshAutomaticAxisRanges(draw=False)
+        self.refreshLegends()
         self._draw()
         self._notify_pending_changed()
         return record
@@ -2776,6 +2938,7 @@ class PlotTs():
         self._set_current_series(self.pending_record() or self.current_series())
         self._rebuildYDataRanges()
         self.refreshAutomaticAxisRanges(draw=False)
+        self.refreshLegends()
         self._draw()
         if notify:
             self._notify_committed_changed()
@@ -2928,6 +3091,10 @@ class PlotTs():
                 operation()
             except Exception as error:
                 errors.append(error)
+        try:
+            self.refreshLegends()
+        except Exception as error:
+            errors.append(error)
         return tuple(errors)
 
     def is_committed_visible(self, series_id: UUID) -> bool:
