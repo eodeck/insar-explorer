@@ -15,13 +15,14 @@ from ..settings.model import (
     ExportSettings,
     FitAnalysisDefaults,
     FitStyleSettings,
+    LegendSettings,
     ReplicaAnalysisDefaults,
     ReplicaSettings,
     ResidualStyleSettings,
     SeriesStyleSettings,
 )
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 DEFAULT_PREFIX = "insar_explorer/time_series"
 
 
@@ -161,6 +162,14 @@ KEY_SPECS = (
     ("export", "dpi", "export/dpi", "choice", ExportSettings.DPI_OPTIONS),
     ("export", "aspect_ratio", "export/aspect_ratio", "float", (1, 10)),
     ("export", "include_attribution", "export/include_attribution", "bool", None),
+    ("legend", "enabled", "legend/enabled", "bool", None),
+    ("legend", "location", "legend/location", "choice", LegendSettings.LOCATIONS),
+    ("legend", "include_fit", "legend/include_fit", "bool", None),
+    ("legend", "include_replica", "legend/include_replica", "bool", None),
+    ("legend", "fit_prefix", "legend/fit_prefix", "str", None),
+    ("legend", "fit_suffix", "legend/fit_suffix", "str", None),
+    ("legend", "replica_prefix", "legend/replica_prefix", "str", None),
+    ("legend", "replica_suffix", "legend/replica_suffix", "str", None),
 )
 
 _SCOPE_TYPES = {
@@ -173,6 +182,7 @@ _SCOPE_TYPES = {
     "replica_analysis_defaults": ReplicaAnalysisDefaults,
     "appearance": AppearanceSettings,
     "export": ExportSettings,
+    "legend": LegendSettings,
 }
 
 
@@ -311,3 +321,6 @@ class QSettingsUserPreferencesRepository:
 
     def save_export(self, settings: ExportSettings) -> None:
         self.save_scope("export", settings)
+
+    def save_legend(self, settings: LegendSettings) -> None:
+        self.save_scope("legend", settings)

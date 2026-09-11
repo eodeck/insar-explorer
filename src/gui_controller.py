@@ -27,6 +27,7 @@ from .ui.popups.manual_x_axis_popup import ManualXAxisPopup
 from .ui.popups.export_settings_popup import ExportSettingsPopup
 from .ui.popups.appearance_popup import AppearancePopup
 from .ui.popups.replica_popup import ReplicaPopup
+from .ui.popups.legend_popup import LegendPopup
 from .ui.popups.map_indicator_settings_popup import MapIndicatorSettingsPopup
 from .ui.map_settings.range_state import (
     LayerRangeWorkingState, RangeSource, STD_RANGE_SOURCES, StdCalculationMode,
@@ -90,7 +91,7 @@ from .time_series.style_palette import (
 )
 from .time_series.settings.model import (
     AppearanceSettings, AxisManualRange, EnsembleStyleSettings, ExportSettings,
-    FitStyleSettings, ReplicaSettings, ReplicaStyleSettings, ResidualStyleSettings, SeriesStyleSettings,
+    FitStyleSettings, LegendSettings, ReplicaSettings, ReplicaStyleSettings, ResidualStyleSettings, SeriesStyleSettings,
     XAxisSettings,
 )
 from .time_series.settings.persistence import build_legacy_plot_params
@@ -293,6 +294,7 @@ class GuiController(QObject):
         self.export_settings_popup = ExportSettingsPopup(self.ui)
         self.appearance_popup = AppearancePopup(self.ui)
         self.replica_popup = ReplicaPopup(self.ui)
+        self.legend_popup = LegendPopup(self.ui)
         self.map_indicator_settings_popup = MapIndicatorSettingsPopup(self.ui)
         self._installSplitButtonPopupHoverReconciliation()
         self._manual_y_axis_session = None
@@ -340,6 +342,7 @@ class GuiController(QObject):
             (self.fit_popup, toolbar.fit_button),
             (self.replica_popup, toolbar.replica_button),
             (self.export_settings_popup, toolbar.plot_export_button),
+            (self.legend_popup, toolbar.legend_button),
         )
         self._split_button_popup_hover_reconcilers = []
         for popup, split_button in mappings:
@@ -1565,6 +1568,8 @@ class GuiController(QObject):
             self.setTimeSeriesReplicaEnabled
         )
         self.ui.time_series_toolbar.replicaSettingsRequested.connect(self.showReplicaPopup)
+        self.ui.time_series_toolbar.legendEnabledChanged.connect(self.setLegendEnabled)
+        self.ui.time_series_toolbar.legendSettingsRequested.connect(self.showLegendPopup)
         self.ui.time_series_toolbar.plotStyleRequested.connect(self.showTimeSeriesStylePopup)
         fit_popup = self.fit_popup
         toolbar = self.ui.time_series_toolbar
@@ -1677,6 +1682,7 @@ class GuiController(QObject):
         self.replica_popup.applySavedDefaultRequested.connect(self.restoreReplicaDefaults)
         self.replica_popup.applyFactoryDefaultRequested.connect(self.applyFactoryReplicaDefaults)
         self.replica_popup.saveCurrentAsDefaultRequested.connect(self.setCurrentReplicaAsDefault)
+        self.legend_popup.settingsChanged.connect(self.updateLegendSettings)
         indicator_popup = self.map_indicator_settings_popup
         indicator_popup.settingsChanged.connect(self.updateMapIndicatorSettings)
         indicator_popup.applySavedDefaultRequested.connect(
@@ -2804,6 +2810,61 @@ class GuiController(QObject):
         self.appearance_popup.show()
         self.appearance_popup.raise_()
 
+    def syncLegendPopup(self):
+        """Refresh the Labels popup from authoritative runtime settings."""
+        settings = self.choose_point_click_handler.plot_ts.settings_model.legend
+        self.legend_popup.setSettings(settings)
+        self.ui.time_series_toolbar.setLegendEnabled(settings.enabled)
+
+    def _persistLegendSettings(self, settings):
+        """Persist legend preferences without noisy success messages per edit."""
+        try:
+            self.choose_point_click_handler.plot_ts.user_preferences.save_legend(settings)
+        except PreferencesPersistenceError as exc:
+            self.msg_signal.emit(str(exc), STATUS_ERROR, 5000)
+
+    def setLegendEnabled(self, enabled):
+        """Immediately apply and persist the Labels split-button state."""
+        plotter = self.choose_point_click_handler.plot_ts
+        settings = replace(plotter.settings_model.legend, enabled=bool(enabled))
+        plotter.settings_model.replace_domain("legend", settings)
+        self._persistLegendSettings(settings)
+        self.syncLegendPopup()
+
+    def updateLegendSettings(
+        self, location, include_fit, include_replica,
+        fit_prefix, fit_suffix, replica_prefix, replica_suffix,
+    ):
+        """Immediately apply and persist the complete Labels popup state."""
+        plotter = self.choose_point_click_handler.plot_ts
+        settings = LegendSettings(
+            enabled=plotter.settings_model.legend.enabled,
+            location=location,
+            include_fit=include_fit,
+            include_replica=include_replica,
+            fit_prefix=fit_prefix,
+            fit_suffix=fit_suffix,
+            replica_prefix=replica_prefix,
+            replica_suffix=replica_suffix,
+        )
+        plotter.settings_model.replace_domain("legend", settings)
+        self._persistLegendSettings(settings)
+        self.syncLegendPopup()
+
+    def showLegendPopup(self):
+        """Open the Labels editor anchored beneath the split-button arrow."""
+        self.syncLegendPopup()
+        anchor = self.ui.time_series_toolbar.legend_button.secondary_button
+        self.legend_popup.adjustSize()
+        anchor_top_left = anchor.mapToGlobal(QPoint(0, 0))
+        anchor_rect = QRect(anchor_top_left, anchor.size())
+        geometry = available_screen_geometry(anchor_rect.center(), anchor)
+        self.legend_popup.move(screen_aware_popup_position(
+            anchor_rect, self.legend_popup.sizeHint(), geometry
+        ))
+        self.legend_popup.show()
+        self.legend_popup.raise_()
+
     def syncExportSettingsPopup(self):
         """Refresh the export popup from the authoritative runtime model."""
         self.export_settings_popup.setSettings(
@@ -3511,6 +3572,8 @@ class GuiController(QObject):
         has_plot = plotter.has_exportable_plot()
         toolbar = self.ui.time_series_toolbar
         toolbar.appearance_action.setEnabled(has_plot)
+        toolbar.setLegendAvailable(has_plot)
+        toolbar.setLegendEnabled(plotter.settings_model.legend.enabled)
         toolbar.plot_export_button.setPrimaryEnabled(has_plot)
         toolbar.setRangeControlsEnabled(plotter.hasPlottedTimeSeriesData())
 

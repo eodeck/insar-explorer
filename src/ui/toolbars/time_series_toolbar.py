@@ -24,7 +24,7 @@ from ..styles import (
 )
 from ..widgets import SplitToolButton
 from ..time_series.action_icons import (
-    REPLICA_ACTION_ICON, STYLE_ACTION_ICON,
+    LEGEND_ACTION_ICON, REPLICA_ACTION_ICON, STYLE_ACTION_ICON,
 )
 
 
@@ -45,6 +45,8 @@ class TimeSeriesToolbar(QToolBar):
     manualYAxisEditRequested = pyqtSignal()
     replicaEnabledChanged = pyqtSignal(bool)
     replicaSettingsRequested = pyqtSignal()
+    legendEnabledChanged = pyqtSignal(bool)
+    legendSettingsRequested = pyqtSignal()
     plotStyleRequested = pyqtSignal()
 
     def __init__(self, parent=None):
@@ -215,6 +217,24 @@ class TimeSeriesToolbar(QToolBar):
             "action_ts_appearance",
         )
         self.appearance_action.setEnabled(False)
+        self.legend_button = SplitToolButton(
+            icon=themed_icon(LEGEND_ACTION_ICON),
+            primary_checkable=True,
+            parent=self,
+            object_name="tool_ts_legend",
+            arrow_side=SplitToolButton.Right,
+        )
+        self.legend_button.setIconSize(self.iconSize())
+        self.legend_button.setPrimaryAccessibleName("Labels")
+        self.legend_button.setPrimaryAccessibleDescription(
+            "Show or hide plot legends. Use the arrow for label settings."
+        )
+        self.legend_button.setSecondaryToolTip("Label settings")
+        self.legend_button.setSecondaryAccessibleName("Label settings")
+        self.legend_button.setSecondaryAccessibleDescription("Open plot legend settings.")
+        self.legend_button.setPrimaryToolTip("Show plot legends")
+        self.legend_button.setStatusTip("Show or hide plot legends; use the arrow for settings.")
+        self.legend_button.setEnabled(False)
         self.plot_export_button = SplitToolButton(
             icon=themed_icon("screenshot"),
             primary_checkable=False,
@@ -267,6 +287,7 @@ class TimeSeriesToolbar(QToolBar):
         self.hover_readout.setText("")
         self.addWidget(self.hover_readout)
 
+        self.addWidget(self.legend_button)
         self.addAction(self.appearance_action)
         self.addSeparator()
         self.addWidget(self.plot_export_button)
@@ -293,6 +314,8 @@ class TimeSeriesToolbar(QToolBar):
         self.edit_manual_y_axis_action.triggered.connect(self.manualYAxisEditRequested.emit)
         self.replica_button.primaryToggled.connect(self.replicaEnabledChanged.emit)
         self.replica_button.secondaryTriggered.connect(self.replicaSettingsRequested.emit)
+        self.legend_button.primaryToggled.connect(self.legendEnabledChanged.emit)
+        self.legend_button.secondaryTriggered.connect(self.legendSettingsRequested.emit)
 
     def setHoverReadout(self, text):
         """Update the secondary time-series hover readout text."""
@@ -310,6 +333,18 @@ class TimeSeriesToolbar(QToolBar):
         enabled = bool(enabled)
         self.x_axis_button.setEnabled(enabled)
         self.y_axis_button.setEnabled(enabled)
+
+    def setLegendAvailable(self, enabled):
+        """Enable plot-wide legend controls only when a plot is available."""
+        self.legend_button.setEnabled(bool(enabled))
+
+    def setLegendEnabled(self, enabled):
+        """Update the legend toggle without emitting a user-change signal."""
+        enabled = bool(enabled)
+        self.legend_button.setChecked(enabled)
+        tooltip = "Hide plot legends" if enabled else "Show plot legends"
+        self.legend_button.setPrimaryToolTip(tooltip)
+        self.legend_button.setPrimaryStatusTip(tooltip)
 
     def setFitEnabled(self, enabled):
         """Update the Fit primary state without emitting a user-change signal."""

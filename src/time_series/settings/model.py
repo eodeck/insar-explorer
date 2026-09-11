@@ -561,6 +561,37 @@ class ExportSettings:
         )
 
 
+@dataclass(frozen=True)
+class LegendSettings:
+    """Persistent, plot-wide settings for time-series plot legends."""
+
+    enabled: bool = True
+    location: str = "top_right"
+    include_fit: bool = False
+    include_replica: bool = False
+    fit_prefix: str = ""
+    fit_suffix: str = " fit"
+    replica_prefix: str = ""
+    replica_suffix: str = " replica"
+
+    LOCATIONS: ClassVar[tuple] = (
+        "top_right", "top_left", "bottom_right", "bottom_left", "right", "left",
+    )
+
+    def __post_init__(self):
+        object.__setattr__(self, "enabled", bool(self.enabled))
+        object.__setattr__(self, "location", self.normalize_location(self.location))
+        object.__setattr__(self, "include_fit", bool(self.include_fit))
+        object.__setattr__(self, "include_replica", bool(self.include_replica))
+        for name in ("fit_prefix", "fit_suffix", "replica_prefix", "replica_suffix"):
+            object.__setattr__(self, name, str(getattr(self, name) or ""))
+
+    @classmethod
+    def normalize_location(cls, value):
+        """Return a supported placement preset, defaulting to top-right."""
+        return value if value in cls.LOCATIONS else "top_right"
+
+
 @dataclass
 class TimeSeriesSettingsModel:
     """Authoritative runtime settings for Time Series plotting."""
@@ -578,6 +609,7 @@ class TimeSeriesSettingsModel:
     x_axis: XAxisSettings = field(default_factory=XAxisSettings)
     appearance: AppearanceSettings = field(default_factory=AppearanceSettings)
     export: ExportSettings = field(default_factory=ExportSettings)
+    legend: LegendSettings = field(default_factory=LegendSettings)
     _listeners: List[Callable[[SettingsChangeSet], None]] = field(default_factory=list, init=False, repr=False)
     _batch_depth: int = field(default=0, init=False, repr=False)
     _batched_changes: SettingsChangeSet = field(default_factory=SettingsChangeSet, init=False, repr=False)
@@ -648,6 +680,7 @@ class TimeSeriesSettingsModel:
             "replica_analysis_defaults": asdict(self.replica_analysis_defaults),
             "appearance": asdict(self.appearance),
             "export": asdict(self.export),
+            "legend": asdict(self.legend),
         }
 
     def copy(self):
@@ -655,4 +688,4 @@ class TimeSeriesSettingsModel:
         return TimeSeriesSettingsModel(**{name: deepcopy(getattr(self, name)) for name in (
             "series_defaults", "fit_defaults", "residual_defaults", "fit_current",
             "residual_current", "ensemble_defaults", "replica", "fit_analysis_defaults",
-            "replica_analysis_defaults", "y_axis", "x_axis", "appearance", "export")})
+            "replica_analysis_defaults", "y_axis", "x_axis", "appearance", "export", "legend")})

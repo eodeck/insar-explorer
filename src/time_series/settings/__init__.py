@@ -2,13 +2,13 @@
 
 from .change_set import SettingsChangeSet
 from .model import (
-    AxisManualRange, EnsembleStyleSettings, ExportSettings, FitStyleSettings,
+    AxisManualRange, EnsembleStyleSettings, ExportSettings, FitStyleSettings, LegendSettings,
     AppearanceSettings, ReplicaSettings, ResidualStyleSettings,
     SeriesStyleSettings, TimeSeriesSettingsModel, XAxisSettings, YAxisSettings,
 )
 
 __all__ = [
-    "AxisManualRange", "EnsembleStyleSettings", "ExportSettings", "FitStyleSettings",
+    "AxisManualRange", "EnsembleStyleSettings", "ExportSettings", "FitStyleSettings", "LegendSettings",
     "AppearanceSettings", "ReplicaSettings", "ResidualStyleSettings",
     "SeriesStyleSettings", "SettingsChangeSet", "TimeSeriesSettingsModel",
     "XAxisSettings", "YAxisSettings",
