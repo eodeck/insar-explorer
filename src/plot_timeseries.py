@@ -87,6 +87,63 @@ class ReplicaLegendSample(PassiveLegendSample):
             painter.restore()
 
 
+class CompositeSeriesLegendSample(PassiveLegendSample):
+    """Passive sample showing the rendered line and marker for one series."""
+
+    def __init__(self, scatter=None, line=None):
+        self.scatter = scatter if self._is_visible(scatter) else None
+        self.line = line if self._is_visible(line) else None
+        super().__init__(self.scatter if self.scatter is not None else self.line)
+
+    @staticmethod
+    def _is_visible(item):
+        return item is not None and (not hasattr(item, "isVisible") or item.isVisible())
+
+    def boundingRect(self):
+        return QRectF(0, 0, 20, 20)
+
+    def paint(self, painter, *args):
+        if self.line is not None:
+            painter.setPen(pg.mkPen(self.line.opts.get("pen")))
+            painter.drawLine(0, 10, 20, 10)
+        if self.scatter is not None:
+            opts = self.scatter.opts
+            if opts.get("antialias"):
+                painter.setRenderHint(painter.RenderHint.Antialiasing)
+            painter.save()
+            painter.translate(10, 10)
+            drawSymbol(
+                painter, opts.get("symbol", "o"), opts.get("size", 5),
+                pg.mkPen(opts.get("pen")), pg.mkBrush(opts.get("brush")),
+            )
+            painter.restore()
+
+
+class EnsembleLegendSample(PassiveLegendSample):
+    """Passive sample showing a rendered ensemble spread and member line."""
+
+    def __init__(self, fill=None, member_line=None):
+        self.fill = fill if self._is_visible(fill) else None
+        self.member_line = member_line if self._is_visible(member_line) else None
+        super().__init__(self.member_line if self.member_line is not None else self.fill)
+
+    @staticmethod
+    def _is_visible(item):
+        return item is not None and (not hasattr(item, "isVisible") or item.isVisible())
+
+    def boundingRect(self):
+        return QRectF(0, 0, 20, 20)
+
+    def paint(self, painter, *args):
+        if self.fill is not None:
+            painter.setPen(self.fill.pen())
+            painter.setBrush(self.fill.brush())
+            painter.drawRect(QRectF(1, 6, 18, 8))
+        if self.member_line is not None:
+            painter.setPen(pg.mkPen(self.member_line.opts.get("pen")))
+            painter.drawLine(0, 10, 20, 10)
+
+
 class StableLegendItem(LegendItem):
     """A native pyqtgraph legend with preset-only placement."""
 
@@ -1629,11 +1686,23 @@ class PlotTs():
             if graphics is None:
                 continue
             label = self._legend_label(record)
-            base = self._first_graphics_item(
-                graphics.scatter, graphics.line, *(graphics.plot_multiple_lines or ())
+            base_sample = CompositeSeriesLegendSample(graphics.scatter, graphics.line)
+            if base_sample.scatter is not None or base_sample.line is not None:
+                main_entries.append((
+                    base_sample, label,
+                ))
+            ensemble_fill = (
+                graphics.plot_multiple_fill[-1] if graphics.plot_multiple_fill else None
             )
-            if base is not None:
-                main_entries.append((base, label))
+            ensemble_line = self._first_graphics_item(*(graphics.plot_multiple_lines or ()))
+            ensemble_sample = EnsembleLegendSample(ensemble_fill, ensemble_line)
+            if settings.include_ensemble and (
+                ensemble_sample.fill is not None or ensemble_sample.member_line is not None
+            ):
+                main_entries.append((
+                    ensemble_sample,
+                    settings.ensemble_prefix + label + settings.ensemble_suffix,
+                ))
             if settings.include_fit and graphics.fit_plot is not None:
                 main_entries.append((
                     graphics.fit_plot, settings.fit_prefix + label + settings.fit_suffix,
@@ -1645,11 +1714,14 @@ class PlotTs():
                     ReplicaLegendSample((replica_up, replica_down)),
                     settings.replica_prefix + label + settings.replica_suffix,
                 ))
-            residual = self._first_graphics_item(
+            residual_sample = CompositeSeriesLegendSample(
                 graphics.residual_scatter, graphics.residual_line
             )
-            if residual is not None:
-                residual_entries.append((residual, label))
+            if residual_sample.scatter is not None or residual_sample.line is not None:
+                residual_entries.append((
+                    residual_sample,
+                    label,
+                ))
 
         if main_entries:
             self._main_legend = self._newLegend(self.ax)
