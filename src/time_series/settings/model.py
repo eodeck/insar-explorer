@@ -569,10 +569,13 @@ class LegendSettings:
     location: str = "top_right"
     include_fit: bool = False
     include_replica: bool = False
+    include_ensemble: bool = False
     fit_prefix: str = ""
     fit_suffix: str = " fit"
     replica_prefix: str = ""
     replica_suffix: str = " replica"
+    ensemble_prefix: str = ""
+    ensemble_suffix: str = " ensemble"
 
     LOCATIONS: ClassVar[tuple] = (
         "top_right", "top_left", "bottom_right", "bottom_left", "right", "left",
@@ -583,7 +586,11 @@ class LegendSettings:
         object.__setattr__(self, "location", self.normalize_location(self.location))
         object.__setattr__(self, "include_fit", bool(self.include_fit))
         object.__setattr__(self, "include_replica", bool(self.include_replica))
-        for name in ("fit_prefix", "fit_suffix", "replica_prefix", "replica_suffix"):
+        object.__setattr__(self, "include_ensemble", bool(self.include_ensemble))
+        for name in (
+            "fit_prefix", "fit_suffix", "replica_prefix", "replica_suffix",
+            "ensemble_prefix", "ensemble_suffix",
+        ):
             object.__setattr__(self, name, str(getattr(self, name) or ""))
 
     @classmethod

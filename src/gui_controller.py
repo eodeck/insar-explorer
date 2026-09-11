@@ -1683,6 +1683,9 @@ class GuiController(QObject):
         self.replica_popup.applyFactoryDefaultRequested.connect(self.applyFactoryReplicaDefaults)
         self.replica_popup.saveCurrentAsDefaultRequested.connect(self.setCurrentReplicaAsDefault)
         self.legend_popup.settingsChanged.connect(self.updateLegendSettings)
+        self.legend_popup.applySavedDefaultRequested.connect(self.restoreLegendDefaults)
+        self.legend_popup.saveCurrentAsDefaultRequested.connect(self.setCurrentLegendAsDefault)
+        self.legend_popup.applyFactoryDefaultRequested.connect(self.applyFactoryLegendDefaults)
         indicator_popup = self.map_indicator_settings_popup
         indicator_popup.settingsChanged.connect(self.updateMapIndicatorSettings)
         indicator_popup.applySavedDefaultRequested.connect(
@@ -2816,39 +2819,54 @@ class GuiController(QObject):
         self.legend_popup.setSettings(settings)
         self.ui.time_series_toolbar.setLegendEnabled(settings.enabled)
 
-    def _persistLegendSettings(self, settings):
-        """Persist legend preferences without noisy success messages per edit."""
-        try:
-            self.choose_point_click_handler.plot_ts.user_preferences.save_legend(settings)
-        except PreferencesPersistenceError as exc:
-            self.msg_signal.emit(str(exc), STATUS_ERROR, 5000)
-
     def setLegendEnabled(self, enabled):
-        """Immediately apply and persist the Labels split-button state."""
+        """Immediately apply the Labels split-button state to runtime settings."""
         plotter = self.choose_point_click_handler.plot_ts
         settings = replace(plotter.settings_model.legend, enabled=bool(enabled))
         plotter.settings_model.replace_domain("legend", settings)
-        self._persistLegendSettings(settings)
         self.syncLegendPopup()
 
     def updateLegendSettings(
-        self, location, include_fit, include_replica,
+        self, location, include_fit, include_replica, include_ensemble,
         fit_prefix, fit_suffix, replica_prefix, replica_suffix,
+        ensemble_prefix, ensemble_suffix,
     ):
-        """Immediately apply and persist the complete Labels popup state."""
+        """Immediately apply the complete Labels popup state to runtime settings."""
         plotter = self.choose_point_click_handler.plot_ts
         settings = LegendSettings(
             enabled=plotter.settings_model.legend.enabled,
             location=location,
             include_fit=include_fit,
             include_replica=include_replica,
+            include_ensemble=include_ensemble,
             fit_prefix=fit_prefix,
             fit_suffix=fit_suffix,
             replica_prefix=replica_prefix,
             replica_suffix=replica_suffix,
+            ensemble_prefix=ensemble_prefix,
+            ensemble_suffix=ensemble_suffix,
         )
         plotter.settings_model.replace_domain("legend", settings)
-        self._persistLegendSettings(settings)
+        self.syncLegendPopup()
+
+    def restoreLegendDefaults(self):
+        """Apply saved Labels defaults without changing the persisted values."""
+        plotter = self.choose_point_click_handler.plot_ts
+        plotter.settings_model.replace_domain("legend", plotter.user_preferences.load().legend)
+        self.syncLegendPopup()
+
+    def setCurrentLegendAsDefault(self):
+        """Persist the current runtime Labels settings as the user default."""
+        settings = self.choose_point_click_handler.plot_ts.settings_model.legend
+        self._saveUserPreferences(
+            lambda: self.choose_point_click_handler.plot_ts.user_preferences.save_legend(settings),
+            "Current Labels settings saved as default.",
+        )
+
+    def applyFactoryLegendDefaults(self):
+        """Apply built-in Labels defaults without overwriting saved defaults."""
+        plotter = self.choose_point_click_handler.plot_ts
+        plotter.settings_model.replace_domain("legend", LegendSettings())
         self.syncLegendPopup()
 
     def showLegendPopup(self):
