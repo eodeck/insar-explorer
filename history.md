@@ -2,6 +2,7 @@
 
 v2.11.0dev
 
+- Added configurable legends to time-series and residual plots.
 
 v2.10.1
 - Improved QGIS compatibility of the bundled pyqtgraph integration.

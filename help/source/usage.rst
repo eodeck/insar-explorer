@@ -66,6 +66,15 @@ Use **Plot style** for the current time-series style and **Appearance** for
 plot-level presentation. The time-series toolbar also provides X- and Y-range
 controls for fitting the displayed range or using configured manual ranges.
 
+Labels
+------
+
+Use the **Labels** split button to show or hide plot legends. Its arrow opens
+legend settings, where you can choose a placement and optionally include Fit
+and Replica entries with custom prefixes and suffixes. Legends show only
+currently visible time series. Residual labels appear in the residual plot
+when it is displayed.
+
 Fit
 ---
 
