@@ -8,58 +8,98 @@
     <file>icons/colormaps/vik.png</file>
     <file>icons/colormaps/gray.png</file>
   </qresource>
-  <qresource prefix="icons">
-    <file>icons/clipboard.svg</file>
-    <file>icons/edit.svg</file>
-    <file>icons/copy_content.svg</file>
-    <file>icons/delete.svg</file>
-    <file>icons/item_add.svg</file>
-    <file>icons/item_discard.svg</file>
-    <file>icons/item_remove.svg</file>
-    <file>icons/layers.svg</file>
-    <file>icons/polygon_selection.png</file>
-    <file>icons/polygon_reference_selection.png</file>
-    <file>icons/x_axis_from_data.svg</file>
-    <file>icons/x_axis_custom.svg</file>
-    <file>icons/x_axis_manual.svg</file>
-    <file>icons/x.svg</file>
-    <file>icons/residual.svg</file>
-    <file>icons/reset_offset.svg</file>
-    <file>icons/setting.svg</file>
-    <file>icons/y_axis_symmetric.svg</file>
-    <file>icons/y_axis_from_data.svg</file>
-    <file>icons/y_axis_adaptive.svg</file>
-    <file>icons/y_axis_custom.svg</file>
-    <file>icons/y_axis_manual.svg</file>
-    <file>icons/plot_hold_on.svg</file>
-    <file>icons/screenshot.svg</file>
-    <file>icons/apply_symbology_on-the-fly.svg</file>
-    <file>icons/select_point.svg</file>
-    <file>icons/select_reset_reference.svg</file>
-    <file>icons/apply_symbology.svg</file>
-    <file>icons/select_select_reference.svg</file>
-    <file>icons/synched.svg</file>
-    <file>icons/sync_map_with_reference.svg</file>
-    <file>icons/plot_random_color.svg</file>
-    <file>icons/plot_remove_last.svg</file>
-    <file>icons/plot_settings.svg</file>
-    <file>icons/reverse.svg</file>
-    <file>icons/revert.svg</file>
-    <file>icons/rename.svg</file>
-    <file>icons/fit_curve.svg</file>
-    <file>icons/fit_poly3.svg</file>
-    <file>icons/fit_poly2.svg</file>
-    <file>icons/fit_poly1.svg</file>
-    <file>icons/fit_exponential.svg</file>
-    <file>icons/fit_log.svg</file>
-    <file>icons/fit__add_seasonal.svg</file>
-    <file>icons/bookmark.svg</file>
-    <file>icons/bookmark_star.svg</file>
-    <file>icons/bookmark_set.svg</file>
-    <file>icons/bookmark_reset.svg</file>
-    <file>icons/replica.svg</file>
-    <file>icons/data_range.svg</file>
-    <file>icons/export.svg</file>
-    <file>icons/zoom.svg</file>
+  <qresource prefix="/icons/light">
+    <file alias="apply_symbology.svg">icons/light/apply_symbology.svg</file>
+    <file alias="bookmark.svg">icons/light/bookmark.svg</file>
+    <file alias="bookmark_reset.svg">icons/light/bookmark_reset.svg</file>
+    <file alias="bookmark_set.svg">icons/light/bookmark_set.svg</file>
+    <file alias="bookmark_star.svg">icons/light/bookmark_star.svg</file>
+    <file alias="clipboard.svg">icons/light/clipboard.svg</file>
+    <file alias="copy_content.svg">icons/light/copy_content.svg</file>
+    <file alias="delete.svg">icons/light/delete.svg</file>
+    <file alias="edit.svg">icons/light/edit.svg</file>
+    <file alias="export.svg">icons/light/export.svg</file>
+    <file alias="fit__add_seasonal.svg">icons/light/fit__add_seasonal.svg</file>
+    <file alias="fit_curve.svg">icons/light/fit_curve.svg</file>
+    <file alias="fit_exponential.svg">icons/light/fit_exponential.svg</file>
+    <file alias="fit_log.svg">icons/light/fit_log.svg</file>
+    <file alias="fit_poly1.svg">icons/light/fit_poly1.svg</file>
+    <file alias="fit_poly2.svg">icons/light/fit_poly2.svg</file>
+    <file alias="fit_poly3.svg">icons/light/fit_poly3.svg</file>
+    <file alias="item_add.svg">icons/light/item_add.svg</file>
+    <file alias="item_discard.svg">icons/light/item_discard.svg</file>
+    <file alias="layers.svg">icons/light/layers.svg</file>
+    <file alias="plot_random_color.svg">icons/light/plot_random_color.svg</file>
+    <file alias="plot_settings.svg">icons/light/plot_settings.svg</file>
+    <file alias="polygon_reference_selection.svg">icons/light/polygon_reference_selection.svg</file>
+    <file alias="polygon_selection.svg">icons/light/polygon_selection.svg</file>
+    <file alias="rename.svg">icons/light/rename.svg</file>
+    <file alias="replica.svg">icons/light/replica.svg</file>
+    <file alias="reset_offset.svg">icons/light/reset_offset.svg</file>
+    <file alias="residual.svg">icons/light/residual.svg</file>
+    <file alias="reverse.svg">icons/light/reverse.svg</file>
+    <file alias="revert.svg">icons/light/revert.svg</file>
+    <file alias="screenshot.svg">icons/light/screenshot.svg</file>
+    <file alias="select_point.svg">icons/light/select_point.svg</file>
+    <file alias="select_reset_reference.svg">icons/light/select_reset_reference.svg</file>
+    <file alias="select_select_reference.svg">icons/light/select_select_reference.svg</file>
+    <file alias="setting.svg">icons/light/setting.svg</file>
+    <file alias="sync_map_with_reference.svg">icons/light/sync_map_with_reference.svg</file>
+    <file alias="x.svg">icons/light/x.svg</file>
+    <file alias="x_axis_custom.svg">icons/light/x_axis_custom.svg</file>
+    <file alias="x_axis_from_data.svg">icons/light/x_axis_from_data.svg</file>
+    <file alias="x_axis_manual.svg">icons/light/x_axis_manual.svg</file>
+    <file alias="y_axis_custom.svg">icons/light/y_axis_custom.svg</file>
+    <file alias="y_axis_from_data.svg">icons/light/y_axis_from_data.svg</file>
+    <file alias="y_axis_manual.svg">icons/light/y_axis_manual.svg</file>
+    <file alias="y_axis_symmetric.svg">icons/light/y_axis_symmetric.svg</file>
+    <file alias="zoom.svg">icons/light/zoom.svg</file>
+  </qresource>
+  <qresource prefix="/icons/dark">
+    <file alias="apply_symbology.svg">icons/dark/apply_symbology.svg</file>
+    <file alias="bookmark.svg">icons/dark/bookmark.svg</file>
+    <file alias="bookmark_reset.svg">icons/dark/bookmark_reset.svg</file>
+    <file alias="bookmark_set.svg">icons/dark/bookmark_set.svg</file>
+    <file alias="bookmark_star.svg">icons/dark/bookmark_star.svg</file>
+    <file alias="clipboard.svg">icons/dark/clipboard.svg</file>
+    <file alias="copy_content.svg">icons/dark/copy_content.svg</file>
+    <file alias="delete.svg">icons/dark/delete.svg</file>
+    <file alias="edit.svg">icons/dark/edit.svg</file>
+    <file alias="export.svg">icons/dark/export.svg</file>
+    <file alias="fit__add_seasonal.svg">icons/dark/fit__add_seasonal.svg</file>
+    <file alias="fit_curve.svg">icons/dark/fit_curve.svg</file>
+    <file alias="fit_exponential.svg">icons/dark/fit_exponential.svg</file>
+    <file alias="fit_log.svg">icons/dark/fit_log.svg</file>
+    <file alias="fit_poly1.svg">icons/dark/fit_poly1.svg</file>
+    <file alias="fit_poly2.svg">icons/dark/fit_poly2.svg</file>
+    <file alias="fit_poly3.svg">icons/dark/fit_poly3.svg</file>
+    <file alias="item_add.svg">icons/dark/item_add.svg</file>
+    <file alias="item_discard.svg">icons/dark/item_discard.svg</file>
+    <file alias="layers.svg">icons/dark/layers.svg</file>
+    <file alias="plot_random_color.svg">icons/dark/plot_random_color.svg</file>
+    <file alias="plot_settings.svg">icons/dark/plot_settings.svg</file>
+    <file alias="polygon_reference_selection.svg">icons/dark/polygon_reference_selection.svg</file>
+    <file alias="polygon_selection.svg">icons/dark/polygon_selection.svg</file>
+    <file alias="rename.svg">icons/dark/rename.svg</file>
+    <file alias="replica.svg">icons/dark/replica.svg</file>
+    <file alias="reset_offset.svg">icons/dark/reset_offset.svg</file>
+    <file alias="residual.svg">icons/dark/residual.svg</file>
+    <file alias="reverse.svg">icons/dark/reverse.svg</file>
+    <file alias="revert.svg">icons/dark/revert.svg</file>
+    <file alias="screenshot.svg">icons/dark/screenshot.svg</file>
+    <file alias="select_point.svg">icons/dark/select_point.svg</file>
+    <file alias="select_reset_reference.svg">icons/dark/select_reset_reference.svg</file>
+    <file alias="select_select_reference.svg">icons/dark/select_select_reference.svg</file>
+    <file alias="setting.svg">icons/dark/setting.svg</file>
+    <file alias="sync_map_with_reference.svg">icons/dark/sync_map_with_reference.svg</file>
+    <file alias="x.svg">icons/dark/x.svg</file>
+    <file alias="x_axis_custom.svg">icons/dark/x_axis_custom.svg</file>
+    <file alias="x_axis_from_data.svg">icons/dark/x_axis_from_data.svg</file>
+    <file alias="x_axis_manual.svg">icons/dark/x_axis_manual.svg</file>
+    <file alias="y_axis_custom.svg">icons/dark/y_axis_custom.svg</file>
+    <file alias="y_axis_from_data.svg">icons/dark/y_axis_from_data.svg</file>
+    <file alias="y_axis_manual.svg">icons/dark/y_axis_manual.svg</file>
+    <file alias="y_axis_symmetric.svg">icons/dark/y_axis_symmetric.svg</file>
+    <file alias="zoom.svg">icons/dark/zoom.svg</file>
   </qresource>
 </RCC>
