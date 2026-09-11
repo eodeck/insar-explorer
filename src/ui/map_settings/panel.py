@@ -1,5 +1,7 @@
 """Code-defined Map Settings panel preserving the legacy dock-widget interface."""
 
+from ..icon_theme import icon as themed_icon
+
 from qgis.PyQt import QtGui, QtWidgets
 
 from ... import color_maps
@@ -205,13 +207,13 @@ QPushButton {
         )
         self._configure_command_button(
             self.pb_reference_reset,
-            icon=":/icons/icons/reset_offset.svg",
+            icon="reset_offset",
             tooltip="Reset Reference to zero",
         )
         self.pb_reference_reset.clicked.connect(self._reset_reference_value)
         self._configure_toggle_button(
             self.cb_symbol_value_offset_sync_with_ref,
-            icon=":/icons/icons/sync_map_with_reference.svg",
+            icon="sync_map_with_reference",
             tooltip="Link Reference to the selected reference location",
             checked=False,
         )
@@ -221,7 +223,7 @@ QPushButton {
         self._sync_reference_editability()
         self._configure_command_button(
             self.pb_symbol_range_settings,
-            icon=":/icons/icons/edit.svg",
+            icon="edit",
             tooltip="Configure range source and symmetry",
         )
         self.pb_symbol_range_settings.clicked.connect(
@@ -240,13 +242,13 @@ QPushButton {
 
         self._configure_toggle_button(
             self.pb_colormap_reverse,
-            icon=":/icons/icons/reverse.svg",
+            icon="reverse",
             tooltip="Reverse colormap",
             checked=False,
         )
         self._configure_command_button(
             self.pb_symbology_settings,
-            icon=":/icons/icons/setting.svg",
+            icon="setting",
             tooltip="Configure symbology",
         )
         self.pb_symbology_settings.clicked.connect(
@@ -554,7 +556,7 @@ QPushButton {
 
     def _configure_toggle_button(self, button, *, icon, tooltip, checked):
         button.setText("")
-        button.setIcon(QtGui.QIcon(icon))
+        button.setIcon(themed_icon(icon))
         button.setToolTip(tooltip)
         button.setAccessibleName(tooltip)
         button.setCheckable(True)
@@ -636,7 +638,7 @@ QPushButton {
         """Configure the secondary action that discards unapplied editor state."""
         button = self.pb_symbology_revert
         button.setText("")
-        button.setIcon(QtGui.QIcon(":/icons/icons/revert.svg"))
+        button.setIcon(themed_icon("revert"))
         button.setToolTip("Revert unapplied map settings")
         button.setAccessibleName("Revert")
         button.setAccessibleDescription("Revert unapplied map settings")
@@ -652,7 +654,7 @@ QPushButton {
     def _configure_apply_button(self):
         button = self.pb_symbology
         button.setText("Apply")
-        button.setIcon(QtGui.QIcon(":/icons/icons/apply_symbology.svg"))
+        button.setIcon(themed_icon("apply_symbology"))
         button.setToolTip("Apply symbology")
         button.setAccessibleName("Apply symbology")
         button.setCheckable(False)
@@ -665,7 +667,7 @@ QPushButton {
 
     def _configure_button_base(self, button, *, icon, tooltip):
         button.setText("")
-        button.setIcon(QtGui.QIcon(icon))
+        button.setIcon(themed_icon(icon))
         button.setToolTip(tooltip)
         button.setAccessibleName(tooltip)
         configure_compact_command_button(

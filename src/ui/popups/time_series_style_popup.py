@@ -1,7 +1,9 @@
 """Compact popup editor for time-series series and fit-line styles."""
 
+from ..icon_theme import icon as themed_icon
+
 from qgis.PyQt.QtCore import pyqtSignal
-from qgis.PyQt.QtGui import QColor, QIcon
+from qgis.PyQt.QtGui import QColor
 
 from ...ui_windows.color_picker import ColorPicker
 from ...time_series.ensemble_style import (
@@ -165,7 +167,7 @@ class TimeSeriesStylePopup(QWidget):
         layout.addLayout(groups_layout)
 
         self.randomize_button = QPushButton(tab)
-        self.randomize_button.setIcon(QIcon(":/icons/icons/plot_random_color.svg"))
+        self.randomize_button.setIcon(themed_icon("plot_random_color"))
         configure_compact_command_button(self.randomize_button)
         self.randomize_button.setToolTip("Randomize marker and line color")
         actions_layout = QHBoxLayout()

@@ -1,5 +1,7 @@
 """Dedicated time-series point panel for selection controls and future records."""
 
+from ..icon_theme import icon as themed_icon
+
 from dataclasses import dataclass
 from typing import Optional, Tuple
 from uuid import UUID
@@ -80,8 +82,8 @@ class CommittedSelectionSnapshot:
 
 
 PENDING_ACTION_ICONS = {
-    "add": ":/icons/icons/item_add.svg",
-    "discard": ":/icons/icons/item_discard.svg",
+    "add": "item_add",
+    "discard": "item_discard",
 }
 
 
@@ -90,7 +92,7 @@ def configure_time_series_action_button(
 ):
     """Apply the shared compact time-series action-button presentation."""
     button.setText("")
-    button.setIcon(QtGui.QIcon(icon))
+    button.setIcon(themed_icon(icon))
     button.setToolTip(tooltip)
     button.setAccessibleName(accessible_name)
     configure_compact_command_button(
@@ -131,15 +133,15 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
     SUBGROUP_TEXT_EMPHASIS = 0.76
     PLACEHOLDER_TEXT_EMPHASIS = 0.62
     _BUTTON_METADATA = (
-        ("pb_choose_point", ":/icons/icons/select_point.svg", True, True,
+        ("pb_choose_point", "select_point", True, True,
          "Select a time-series point on the map", "Select time-series point"),
-        ("pb_choose_polygon", ":/icons/icons/polygon_selection.png", True, True,
+        ("pb_choose_polygon", "polygon_selection", True, True,
          "Select time-series points within a polygon", "Select time-series polygon"),
-        ("pb_set_reference", ":/icons/icons/select_select_reference.svg", True, True,
+        ("pb_set_reference", "select_select_reference", True, True,
          "Select a reference point on the map", "Select reference point"),
-        ("pb_set_reference_polygon", ":/icons/icons/polygon_reference_selection.png", True, True,
+        ("pb_set_reference_polygon", "polygon_reference_selection", True, True,
          "Select reference points within a polygon", "Select reference polygon"),
-        ("pb_reset_reference", ":/icons/icons/select_reset_reference.svg", False, False,
+        ("pb_reset_reference", "select_reset_reference", False, False,
          "Reset the active reference selection", "Reset reference"),
     )
 
@@ -172,7 +174,7 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         for name, icon_path, checkable, flat, _, _ in self._BUTTON_METADATA:
             button = QtWidgets.QPushButton(self)
             button.setObjectName(name)
-            button.setIcon(QtGui.QIcon(icon_path))
+            button.setIcon(themed_icon(icon_path))
             button.setCheckable(checkable)
             button.setFlat(flat)
             buttons[name] = button
@@ -405,7 +407,7 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         self.copy_paste_button.setObjectName("tb_copy_paste_time_series")
         configure_time_series_action_button(
             self.copy_paste_button,
-            icon=":/icons/icons/clipboard.svg",
+            icon="clipboard",
             tooltip="Copy or paste time-series settings",
             accessible_name="Copy and paste time-series settings",
         )
@@ -417,7 +419,7 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         removal_actions.addWidget(self.copy_paste_button, 0, ALIGN_VCENTER)
         self.export_selected_button = self._pending_action_button(
             "pb_export_selected_time_series",
-            ":/icons/icons/export.svg",
+            "export",
             "Export selected time-series data",
             "Export selected time-series data",
         )
@@ -432,7 +434,7 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         )
         self.remove_selected_button = self._pending_action_button(
             "pb_remove_selected_time_series",
-            ":/icons/icons/delete.svg",
+            "delete",
             "Remove selected time series",
             "Remove selected time series",
         )
@@ -452,7 +454,7 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         )
         configure_time_series_action_button(
             self.indicator_settings_button,
-            icon=":/icons/icons/setting.svg",
+            icon="setting",
             tooltip="Configure target and reference map indicators",
             accessible_name="Target and reference indicator settings",
         )

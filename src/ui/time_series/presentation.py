@@ -13,12 +13,12 @@ PENDING_ACTION_BUTTON_SIZE = TIME_SERIES_ACTION_BUTTON_SIZE
 PENDING_ACTION_ICON_SIZE = TIME_SERIES_ACTION_ICON_SIZE
 
 TARGET_RESOURCES = {
-    "point": ":/icons/icons/select_point.svg",
-    "polygon": ":/icons/icons/polygon_selection.png",
+    "point": "select_point",
+    "polygon": "polygon_selection",
 }
 REFERENCE_RESOURCES = {
-    "point": ":/icons/icons/select_select_reference.svg",
-    "polygon": ":/icons/icons/polygon_reference_selection.png",
+    "point": "select_select_reference",
+    "polygon": "polygon_reference_selection",
 }
 SOURCE_REFERENCE_KINDS = {"source", "source_data", "data"}
 

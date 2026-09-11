@@ -10,6 +10,7 @@ from ...qt_compat import (
     ITEM_IS_USER_CHECKABLE, TEXT_ALIGNMENT_ROLE, TOOLTIP_ROLE, UNCHECKED,
 )
 from .committed_columns import COMMITTED_COLUMN_COUNT, CommittedTimeSeriesColumn
+from ..icon_theme import icon as themed_icon
 from .presentation import (
     SOURCE_REFERENCE_KINDS, optional_label_display, placeholder_colour,
     resource_for_selection, selection_kind_value, selection_tooltip,
@@ -53,6 +54,14 @@ class CommittedTimeSeriesModel(QAbstractTableModel):
         """Reset projection after an authoritative list/store transition."""
         self.beginResetModel()
         self.endResetModel()
+
+    def refresh_icons(self):
+        """Notify views that themed decoration icons should be requested again."""
+        rows = self.rowCount()
+        if rows:
+            first = self.index(0, 0)
+            last = self.index(rows - 1, self.columnCount() - 1)
+            self.dataChanged.emit(first, last, [DECORATION_ROLE])
 
     def entry_at(self, row):
         entries = self._list_state.entries()
@@ -123,7 +132,7 @@ class CommittedTimeSeriesModel(QAbstractTableModel):
             resource = resource_for_selection(
                 target=column == CommittedTimeSeriesColumn.TARGET, kind=kind
             )
-            return QtGui.QIcon(resource) if resource else None
+            return themed_icon(resource) if resource else None
         if role == DISPLAY_ROLE and column == CommittedTimeSeriesColumn.REFERENCE:
             return "Data" if kind in SOURCE_REFERENCE_KINDS else None
         if role == TOOLTIP_ROLE:
