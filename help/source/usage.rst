@@ -70,10 +70,20 @@ Labels
 ------
 
 Use the **Labels** split button to show or hide plot legends. Its arrow opens
-legend settings, where you can choose a placement and optionally include Fit
-and Replica entries with custom prefixes and suffixes. Legends show only
-currently visible time series. Residual labels appear in the residual plot
-when it is displayed.
+legend settings, where you can choose a placement and optionally include
+Ensemble, Fit, and Replica entries with custom prefixes and suffixes. Base
+time-series and residual samples show both their marker and line when both are
+enabled. Ensemble entries show their rendered member line and/or spread band.
+Legends show only currently visible time series. Residual labels appear in the
+residual plot when it is displayed.
+
+Labels defaults
+~~~~~~~~~~~~~~~
+
+Labels edits apply to the current plot immediately. Use the **Defaults** menu
+to apply the saved **Default**, restore the built-in **Factory default**, or
+choose **Set as default** to save the current Labels settings for future
+sessions. Editing a setting alone does not change the saved default.
 
 Fit
 ---
