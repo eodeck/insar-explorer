@@ -22,7 +22,7 @@ from ..settings.model import (
     SeriesStyleSettings,
 )
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 DEFAULT_PREFIX = "insar_explorer/time_series"
 
 
@@ -173,6 +173,9 @@ KEY_SPECS = (
     ("legend", "replica_suffix", "legend/replica_suffix", "str", None),
     ("legend", "ensemble_prefix", "legend/ensemble_prefix", "str", None),
     ("legend", "ensemble_suffix", "legend/ensemble_suffix", "str", None),
+    ("legend", "sync_font_size", "legend/sync_font_size", "bool", None),
+    ("legend", "font_size", "legend/font_size", "float", (1, 200)),
+    ("legend", "background_opacity", "legend/background_opacity", "float", (0, 1)),
 )
 
 _SCOPE_TYPES = {

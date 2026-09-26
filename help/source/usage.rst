@@ -70,20 +70,25 @@ Labels
 ------
 
 Use the **Labels** split button to show or hide plot legends. Its arrow opens
-legend settings, where you can choose a placement and optionally include
-Ensemble, Fit, and Replica entries with custom prefixes and suffixes. Base
+the Labels popup, which has **General** and **Entries** tabs. **General**
+controls legend placement, background opacity, and legend text size.
+**Match Appearance text size** is enabled by default; when it is disabled, you
+can choose a custom legend text size. **Entries** controls Fit, Replica, and
+Ensemble legend inclusion, together with their prefixes and suffixes. Base
 time-series and residual samples show both their marker and line when both are
 enabled. Ensemble entries show their rendered member line and/or spread band.
 Legends show only currently visible time series. Residual labels appear in the
-residual plot when it is displayed.
+residual plot when it is displayed. Main and residual legends use the configured
+text size and opacity in the plot and in exported SVG and PNG figures.
 
 Labels defaults
 ~~~~~~~~~~~~~~~
 
-Labels edits apply to the current plot immediately. Use the **Defaults** menu
-to apply the saved **Default**, restore the built-in **Factory default**, or
-choose **Set as default** to save the current Labels settings for future
-sessions. Editing a setting alone does not change the saved default.
+Labels edits apply to the current plot immediately. Each tab has its own
+**Defaults** menu. **Default**, **Factory default**, and **Set as default**
+apply only to settings in that tab; editing a setting alone does not change the
+saved default. The Labels toolbar enable/disable button is independent and is
+not changed by Defaults actions in either tab.
 
 Fit
 ---

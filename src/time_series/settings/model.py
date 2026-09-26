@@ -576,6 +576,9 @@ class LegendSettings:
     replica_suffix: str = " replica"
     ensemble_prefix: str = ""
     ensemble_suffix: str = " ensemble"
+    sync_font_size: bool = True
+    font_size: float = 9.0
+    background_opacity: float = 0.88
 
     LOCATIONS: ClassVar[tuple] = (
         "top_right", "top_left", "bottom_right", "bottom_left", "right", "left",
@@ -587,6 +590,15 @@ class LegendSettings:
         object.__setattr__(self, "include_fit", bool(self.include_fit))
         object.__setattr__(self, "include_replica", bool(self.include_replica))
         object.__setattr__(self, "include_ensemble", bool(self.include_ensemble))
+        object.__setattr__(self, "sync_font_size", bool(self.sync_font_size))
+        object.__setattr__(
+            self, "font_size", normalize_number(self.font_size, (1.0, 200.0), 9.0)
+        )
+        try:
+            opacity = float(self.background_opacity)
+        except (TypeError, ValueError, OverflowError):
+            opacity = 0.88
+        object.__setattr__(self, "background_opacity", max(0.0, min(1.0, opacity)))
         for name in (
             "fit_prefix", "fit_suffix", "replica_prefix", "replica_suffix",
             "ensemble_prefix", "ensemble_suffix",

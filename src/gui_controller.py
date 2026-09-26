@@ -103,6 +103,26 @@ from .time_series.copy_paste import (
 )
 
 
+GENERAL_FIELDS = (
+    "location",
+    "sync_font_size",
+    "font_size",
+    "background_opacity",
+)
+
+ENTRIES_FIELDS = (
+    "include_fit",
+    "include_replica",
+    "include_ensemble",
+    "fit_prefix",
+    "fit_suffix",
+    "replica_prefix",
+    "replica_suffix",
+    "ensemble_prefix",
+    "ensemble_suffix",
+)
+
+
 @dataclass(frozen=True)
 class TimeSeriesSelectionCapability:
     """Describe active-layer support for Target/Reference extraction."""
@@ -1683,9 +1703,24 @@ class GuiController(QObject):
         self.replica_popup.applyFactoryDefaultRequested.connect(self.applyFactoryReplicaDefaults)
         self.replica_popup.saveCurrentAsDefaultRequested.connect(self.setCurrentReplicaAsDefault)
         self.legend_popup.settingsChanged.connect(self.updateLegendSettings)
-        self.legend_popup.applySavedDefaultRequested.connect(self.restoreLegendDefaults)
-        self.legend_popup.saveCurrentAsDefaultRequested.connect(self.setCurrentLegendAsDefault)
-        self.legend_popup.applyFactoryDefaultRequested.connect(self.applyFactoryLegendDefaults)
+        self.legend_popup.applySavedGeneralDefaultRequested.connect(
+            self.applyLegendGeneralDefaults
+        )
+        self.legend_popup.saveCurrentGeneralAsDefaultRequested.connect(
+            self.setCurrentLegendGeneralAsDefault
+        )
+        self.legend_popup.applyFactoryGeneralDefaultRequested.connect(
+            self.applyFactoryLegendGeneralDefaults
+        )
+        self.legend_popup.applySavedEntriesDefaultRequested.connect(
+            self.applyLegendEntriesDefaults
+        )
+        self.legend_popup.saveCurrentEntriesAsDefaultRequested.connect(
+            self.setCurrentLegendEntriesAsDefault
+        )
+        self.legend_popup.applyFactoryEntriesAsDefaultRequested.connect(
+            self.applyFactoryLegendEntriesDefaults
+        )
         indicator_popup = self.map_indicator_settings_popup
         indicator_popup.settingsChanged.connect(self.updateMapIndicatorSettings)
         indicator_popup.applySavedDefaultRequested.connect(
@@ -2827,7 +2862,8 @@ class GuiController(QObject):
         self.syncLegendPopup()
 
     def updateLegendSettings(
-        self, location, include_fit, include_replica, include_ensemble,
+        self, location, sync_font_size, font_size, background_opacity,
+        include_fit, include_replica, include_ensemble,
         fit_prefix, fit_suffix, replica_prefix, replica_suffix,
         ensemble_prefix, ensemble_suffix,
     ):
@@ -2836,6 +2872,9 @@ class GuiController(QObject):
         settings = LegendSettings(
             enabled=plotter.settings_model.legend.enabled,
             location=location,
+            sync_font_size=sync_font_size,
+            font_size=font_size,
+            background_opacity=background_opacity,
             include_fit=include_fit,
             include_replica=include_replica,
             include_ensemble=include_ensemble,
@@ -2849,25 +2888,56 @@ class GuiController(QObject):
         plotter.settings_model.replace_domain("legend", settings)
         self.syncLegendPopup()
 
-    def restoreLegendDefaults(self):
-        """Apply saved Labels defaults without changing the persisted values."""
+    @staticmethod
+    def _copyLegendFields(target, source, fields):
+        """Copy only selected LegendSettings fields, preserving every other value."""
+        return replace(target, **{field: getattr(source, field) for field in fields})
+
+    def _applyLegendFields(self, source, fields):
+        """Apply selected legend fields and refresh the Labels popup."""
         plotter = self.choose_point_click_handler.plot_ts
-        plotter.settings_model.replace_domain("legend", plotter.user_preferences.load().legend)
+        settings = self._copyLegendFields(plotter.settings_model.legend, source, fields)
+        plotter.settings_model.replace_domain("legend", settings)
         self.syncLegendPopup()
 
-    def setCurrentLegendAsDefault(self):
-        """Persist the current runtime Labels settings as the user default."""
-        settings = self.choose_point_click_handler.plot_ts.settings_model.legend
+    def applyLegendGeneralDefaults(self):
+        """Apply saved General Labels defaults without changing entries or enabled state."""
+        plotter = self.choose_point_click_handler.plot_ts
+        self._applyLegendFields(plotter.user_preferences.load().legend, GENERAL_FIELDS)
+
+    def applyLegendEntriesDefaults(self):
+        """Apply saved Labels entry defaults without changing General values or enabled state."""
+        plotter = self.choose_point_click_handler.plot_ts
+        self._applyLegendFields(plotter.user_preferences.load().legend, ENTRIES_FIELDS)
+
+    def applyFactoryLegendGeneralDefaults(self):
+        """Apply built-in General Labels defaults without changing entries or enabled state."""
+        self._applyLegendFields(LegendSettings(), GENERAL_FIELDS)
+
+    def applyFactoryLegendEntriesDefaults(self):
+        """Apply built-in Labels entry defaults without changing General values or enabled state."""
+        self._applyLegendFields(LegendSettings(), ENTRIES_FIELDS)
+
+    def _saveLegendFieldsAsDefault(self, fields, message):
+        """Persist selected runtime legend fields while retaining the other saved defaults."""
+        plotter = self.choose_point_click_handler.plot_ts
+        saved = plotter.user_preferences.load().legend
+        merged = self._copyLegendFields(saved, plotter.settings_model.legend, fields)
         self._saveUserPreferences(
-            lambda: self.choose_point_click_handler.plot_ts.user_preferences.save_legend(settings),
-            "Current Labels settings saved as default.",
+            lambda: plotter.user_preferences.save_legend(merged), message
         )
 
-    def applyFactoryLegendDefaults(self):
-        """Apply built-in Labels defaults without overwriting saved defaults."""
-        plotter = self.choose_point_click_handler.plot_ts
-        plotter.settings_model.replace_domain("legend", LegendSettings())
-        self.syncLegendPopup()
+    def setCurrentLegendGeneralAsDefault(self):
+        """Save only the current General Labels settings as defaults."""
+        self._saveLegendFieldsAsDefault(
+            GENERAL_FIELDS, "Labels general settings saved as default."
+        )
+
+    def setCurrentLegendEntriesAsDefault(self):
+        """Save only the current Labels entry settings as defaults."""
+        self._saveLegendFieldsAsDefault(
+            ENTRIES_FIELDS, "Labels entry settings saved as default."
+        )
 
     def showLegendPopup(self):
         """Open the Labels editor anchored beneath the split-button arrow."""

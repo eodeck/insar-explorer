@@ -222,7 +222,7 @@ class TimeSeriesToolbar(QToolBar):
             primary_checkable=True,
             parent=self,
             object_name="tool_ts_legend",
-            arrow_side=SplitToolButton.Right,
+            arrow_side=SplitToolButton.Left,
         )
         self.legend_button.setIconSize(self.iconSize())
         self.legend_button.setPrimaryAccessibleName("Labels")

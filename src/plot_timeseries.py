@@ -1652,12 +1652,20 @@ class PlotTs():
     def _newLegend(self, axis):
         """Create one styled, passive native pyqtgraph legend for an axis."""
         appearance = self.settings_model.appearance
+        legend_settings = self.settings_model.legend
+        if legend_settings.sync_font_size:
+            text_size = appearance.font_size
+        else:
+            text_size = legend_settings.font_size
         text = self._plotAreaContrastColor(appearance.plot_background)
         border = self._plotAreaContrastColor(appearance.plot_background)
-        background = self._color(appearance.plot_background, 0.88)
+        background = self._color(
+            appearance.plot_background, legend_settings.background_opacity
+        )
         legend = StableLegendItem(
             offset=None, pen=pg.mkPen(border), brush=pg.mkBrush(background),
-            labelTextColor=text, sampleType=PassiveLegendSample,
+            labelTextColor=text, labelTextSize=f"{text_size:g}pt",
+            sampleType=PassiveLegendSample,
         )
         legend.setParentItem(axis.getViewBox())
         axis.legend = legend
@@ -2107,6 +2115,7 @@ class PlotTs():
                 self._refreshAutomaticMarkerEdges()
         finally:
             self.restoreViewport(viewport)
+        self.refreshLegends()
         self._draw()
 
     def savePlotAsImage(self, filename):
