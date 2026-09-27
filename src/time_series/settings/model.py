@@ -578,7 +578,7 @@ class LegendSettings:
     ensemble_suffix: str = " ensemble"
     sync_font_size: bool = True
     font_size: float = 9.0
-    background_opacity: float = 0.88
+    background_opacity: float = 0.80
 
     LOCATIONS: ClassVar[tuple] = (
         "top_right", "top_left", "bottom_right", "bottom_left", "right", "left",
@@ -597,7 +597,7 @@ class LegendSettings:
         try:
             opacity = float(self.background_opacity)
         except (TypeError, ValueError, OverflowError):
-            opacity = 0.88
+            opacity = 0.80
         object.__setattr__(self, "background_opacity", max(0.0, min(1.0, opacity)))
         for name in (
             "fit_prefix", "fit_suffix", "replica_prefix", "replica_suffix",

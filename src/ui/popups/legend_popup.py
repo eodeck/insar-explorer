@@ -49,7 +49,7 @@ class LegendPopup(QWidget):
 
         self.sync_font_size_checkbox.setChecked(True)
         self.font_size_spin.setValue(9.0)
-        self.background_opacity_spin.setValue(88)
+        self.background_opacity_spin.setValue(80)
         self._syncFontSizeEnabled(True)
 
         self.location_combo.currentIndexChanged.connect(self._emit_settings)
@@ -83,6 +83,7 @@ class LegendPopup(QWidget):
         self.background_opacity_spin.setRange(0, 100)
         self.background_opacity_spin.setSuffix("%")
         self.background_opacity_spin.setMaximumWidth(80)
+        self.background_opacity_spin.setSingleStep(5)
         legend_form.addRow("Location", self.location_combo)
         legend_form.addRow("Background opacity", self.background_opacity_spin)
         layout.addWidget(legend_group)
