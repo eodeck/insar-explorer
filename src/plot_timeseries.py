@@ -77,13 +77,18 @@ class ReplicaLegendSample(PassiveLegendSample):
     def boundingRect(self):
         return QRectF(0, 0, 20, 20)
 
+    @staticmethod
+    def _marker_positions():
+        """Return upper then lower marker positions within the compact sample box."""
+        return ((10, 6), (10, 14))
+
     def paint(self, painter, *args):
-        for x, item in zip((6, 14), self._items):
+        for (x, y), item in zip(self._marker_positions(), self._items):
             opts = item.opts
             if opts.get("antialias"):
                 painter.setRenderHint(painter.RenderHint.Antialiasing)
             painter.save()
-            painter.translate(x, 10)
+            painter.translate(x, y)
             drawSymbol(
                 painter, opts.get("symbol", "o"), opts.get("size", 5),
                 pg.mkPen(opts.get("pen")), pg.mkBrush(opts.get("brush")),
