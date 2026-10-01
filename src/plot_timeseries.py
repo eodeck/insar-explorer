@@ -2957,11 +2957,9 @@ class PlotTs():
 
     @staticmethod
     def _default_pending_label(record):
+        """Return the concise factory label for a genuinely new pending record."""
         kind = record.target.kind.value.title() if record.target is not None else "Time series"
-        source_name = record.source.layer_name.strip() if record.source is not None else ""
-        if len(source_name) > 32:
-            source_name = f"{source_name[:31]}…"
-        return f"{source_name} · {kind}" if source_name else kind
+        return kind
 
     def commit_pending(self) -> Optional[TimeSeriesRecord]:
         """Transfer the exact pending record and graphics into committed ownership."""
