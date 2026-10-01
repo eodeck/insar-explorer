@@ -120,14 +120,14 @@ class LegendEntryPopup(QWidget):
         blocked = [widget.blockSignals(True) for widget in widgets]
         try:
             self.target_label.setText(str(record.presentation.label or "Unnamed"))
-            self.field_combo.clear(); self.field_combo.addItem("None", None)
+            self.field_combo.clear()
             for name in fields:
                 self.field_combo.addItem(name, name)
             index = self.field_combo.findData(settings.field_name)
-            self.field_combo.setCurrentIndex(max(0, index))
+            self.field_combo.setCurrentIndex(index if index >= 0 else (0 if fields else -1))
             self.prefix_edit.setText(settings.prefix); self.suffix_edit.setText(settings.suffix)
             self.include_label_checkbox.setChecked(settings.include_label)
-            self.include_field_checkbox.setChecked(settings.include_field)
+            self.include_field_checkbox.setChecked(settings.include_field and index >= 0)
             self.fit_checkbox.setChecked(settings.include_fit)
             self.replica_checkbox.setChecked(settings.include_replica)
             self.ensemble_checkbox.setChecked(settings.include_ensemble)
@@ -151,7 +151,7 @@ class LegendEntryPopup(QWidget):
             return
         is_point = record.target is not None and record.target.kind.value == "point"
         self.legend_defaults_button.save_default_action.setEnabled(is_point)
-        has_field = bool(is_point and self.field_combo.currentData())
+        has_field = bool(is_point and self.field_combo.count())
         include_label = self.include_label_checkbox.isChecked()
         include_field = self.include_field_checkbox.isChecked() and has_field
         if not is_point:
@@ -167,7 +167,7 @@ class LegendEntryPopup(QWidget):
             for widget, value in zip(widgets, blocked): widget.blockSignals(value)
         self.include_label_checkbox.setEnabled(is_point and include_field)
         self.include_field_checkbox.setEnabled(is_point and has_field and include_label)
-        self.field_combo.setEnabled(is_point and self.field_combo.count() > 1)
+        self.field_combo.setEnabled(is_point and self.field_combo.count() > 0)
         self.prefix_edit.setEnabled(is_point and include_field)
         self.suffix_edit.setEnabled(is_point and include_field)
         if not is_point:
