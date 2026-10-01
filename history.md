@@ -2,6 +2,8 @@
 
 v2.11.0dev
 
+- Removed layer name from selection label.
+- Added a button to modify legend entries per series.
 - Added configurable legends to time-series and residual plots.
 
 v2.10.1
