@@ -32,15 +32,16 @@ def format_series_legend_label(record):
     """
     label = base_series_legend_label(record)
     settings = record.presentation.legend
+    label = label if settings.include_label else ""
     if not settings.field_name or record.target is None or record.target.kind.value != "point":
         return label
     decorate = lambda value: settings.prefix + value + settings.suffix
     target = _display_value(record.target_attributes.value(settings.field_name))
     reference = _display_value(record.reference_attributes.value(settings.field_name))
     if target is not None and reference is not None:
-        return LEGEND_SEPARATOR.join((label, "T: " + decorate(target), "R: " + decorate(reference)))
+        return LEGEND_SEPARATOR.join(part for part in (label, "T: " + decorate(target), "R: " + decorate(reference)) if part)
     if target is not None:
-        return LEGEND_SEPARATOR.join((label, decorate(target)))
+        return LEGEND_SEPARATOR.join(part for part in (label, decorate(target)) if part)
     if reference is not None:
-        return LEGEND_SEPARATOR.join((label, "R: " + decorate(reference)))
+        return LEGEND_SEPARATOR.join(part for part in (label, "R: " + decorate(reference)) if part)
     return label

@@ -1,5 +1,7 @@
 """Compact per-series editor for time-series legend entry state."""
 
+from dataclasses import replace
+
 from qgis.PyQt.QtCore import pyqtSignal
 from qgis.PyQt.QtWidgets import (
     QCheckBox, QComboBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel,
@@ -8,12 +10,14 @@ from qgis.PyQt.QtWidgets import (
 
 from ...qt_compat import POPUP_WINDOW_FLAG
 from .defaults_menu import createDefaultsMenu
+from ...models.time_series import SeriesLegendSettings
+from ...time_series.legend_formatting import format_series_legend_label
 
 
 class LegendEntryPopup(QWidget):
     """Edit only the current record's legend entry choices."""
 
-    settingsChanged = pyqtSignal(object, str, str, bool, bool, bool)
+    settingsChanged = pyqtSignal(object, str, str, bool, bool, bool, bool)
     applySavedLegendDefaultRequested = pyqtSignal()
     saveLegendDefaultRequested = pyqtSignal()
     applyFactoryLegendDefaultRequested = pyqtSignal()
@@ -32,8 +36,13 @@ class LegendEntryPopup(QWidget):
         self.tabs.addTab(self._buildRelatedTab(), "Related")
         layout.addWidget(self.tabs)
         self.field_combo.currentIndexChanged.connect(self._emitSettings)
+        self.include_label_checkbox.toggled.connect(self._emitSettings)
         self.prefix_edit.editingFinished.connect(self._emitSettings)
         self.suffix_edit.editingFinished.connect(self._emitSettings)
+        self.prefix_edit.textChanged.connect(self._updatePreview)
+        self.suffix_edit.textChanged.connect(self._updatePreview)
+        self.field_combo.currentIndexChanged.connect(self._updatePreview)
+        self.include_label_checkbox.toggled.connect(self._updatePreview)
         for checkbox in (self.fit_checkbox, self.replica_checkbox, self.ensemble_checkbox):
             checkbox.toggled.connect(self._emitSettings)
 
@@ -44,6 +53,8 @@ class LegendEntryPopup(QWidget):
         form = QFormLayout(group)
         self.target_label = QLabel(group)
         self.target_label.setObjectName("label_legend_entry_target")
+        self.include_label_checkbox = QCheckBox("Include label", group)
+        self.include_label_checkbox.setObjectName("check_legend_entry_include_label")
         self.field_combo = QComboBox(group)
         self.field_combo.setObjectName("combo_legend_entry_field")
         self.field_combo.setAccessibleName("Additional legend field")
@@ -53,10 +64,15 @@ class LegendEntryPopup(QWidget):
         self.suffix_edit = QLineEdit(group)
         self.suffix_edit.setObjectName("edit_legend_entry_suffix")
         self.suffix_edit.setAccessibleName("Legend field suffix")
+        self.preview_label = QLabel(group)
+        self.preview_label.setObjectName("label_legend_entry_preview")
+        self.preview_label.setWordWrap(True)
         form.addRow("Editing", self.target_label)
+        form.addRow(self.include_label_checkbox)
         form.addRow("Additional field", self.field_combo)
         form.addRow("Prefix", self.prefix_edit)
         form.addRow("Suffix", self.suffix_edit)
+        form.addRow("Preview", self.preview_label)
         layout.addWidget(group)
         layout.addStretch(1)
         actions = QHBoxLayout(); actions.addStretch(1)
@@ -94,7 +110,8 @@ class LegendEntryPopup(QWidget):
         """Populate controls from one immutable record without emitting changes."""
         settings = record.presentation.legend
         fields = () if record.target is None or record.target.kind.value != "point" else record.target_attributes.field_names()
-        widgets = (self.field_combo, self.prefix_edit, self.suffix_edit, self.fit_checkbox, self.replica_checkbox, self.ensemble_checkbox)
+        self._record = record
+        widgets = (self.field_combo, self.include_label_checkbox, self.prefix_edit, self.suffix_edit, self.fit_checkbox, self.replica_checkbox, self.ensemble_checkbox)
         blocked = [widget.blockSignals(True) for widget in widgets]
         try:
             self.target_label.setText(str(record.presentation.label or "Unnamed"))
@@ -109,6 +126,7 @@ class LegendEntryPopup(QWidget):
             if not has_fields:
                 self.field_combo.setToolTip("Additional fields are available for point-vector selections only.")
             self.prefix_edit.setText(settings.prefix); self.suffix_edit.setText(settings.suffix)
+            self.include_label_checkbox.setChecked(settings.include_label)
             self.fit_checkbox.setChecked(settings.include_fit)
             self.replica_checkbox.setChecked(settings.include_replica)
             self.ensemble_checkbox.setChecked(settings.include_ensemble)
@@ -117,11 +135,25 @@ class LegendEntryPopup(QWidget):
             self.ensemble_checkbox.setEnabled(bool(record.data.hasEnsembleData()))
         finally:
             for widget, value in zip(widgets, blocked): widget.blockSignals(value)
+        self._updatePreview()
 
     def settings(self):
         """Return the complete per-record entry configuration represented by the controls."""
-        return (self.field_combo.currentData(), self.prefix_edit.text(), self.suffix_edit.text(),
+        return (self.field_combo.currentData(), self.prefix_edit.text(), self.suffix_edit.text(), self.include_label_checkbox.isChecked(),
                 self.fit_checkbox.isChecked(), self.replica_checkbox.isChecked(), self.ensemble_checkbox.isChecked())
+
+    def _updatePreview(self, *_args):
+        """Render a non-mutating preview through the shared record formatter."""
+        record = getattr(self, "_record", None)
+        if record is None:
+            return
+        field_name, prefix, suffix, include_label, include_fit, include_replica, include_ensemble = self.settings()
+        settings = SeriesLegendSettings(
+            field_name=field_name, prefix=prefix, suffix=suffix, include_label=include_label,
+            include_fit=include_fit, include_replica=include_replica, include_ensemble=include_ensemble,
+        )
+        preview = format_series_legend_label(replace(record, presentation=replace(record.presentation, legend=settings)))
+        self.preview_label.setText(preview or "No main legend entry")
 
     def _emitSettings(self, *_args):
         self.settingsChanged.emit(*self.settings())

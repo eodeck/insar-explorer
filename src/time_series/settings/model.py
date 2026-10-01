@@ -619,12 +619,14 @@ class LegendEntryDefaults:
     field_name: Optional[str] = None
     prefix: str = ""
     suffix: str = ""
+    include_label: bool = True
 
     def __post_init__(self):
         object.__setattr__(self, "configured", bool(self.configured))
         object.__setattr__(self, "field_name", None if self.field_name in (None, "") else str(self.field_name))
         object.__setattr__(self, "prefix", str(self.prefix or ""))
         object.__setattr__(self, "suffix", str(self.suffix or ""))
+        object.__setattr__(self, "include_label", bool(self.include_label))
 
 
 @dataclass(frozen=True)

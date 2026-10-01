@@ -2965,12 +2965,15 @@ class GuiController(QObject):
         ))
         self.legend_entry_popup.show(); self.legend_entry_popup.raise_()
 
-    def updateLegendEntrySettings(self, field_name, prefix, suffix, include_fit, include_replica, include_ensemble):
+    def updateLegendEntrySettings(self, field_name, prefix, suffix, include_label, include_fit, include_replica, include_ensemble):
         """Replace current-record legend choices without changing plot-wide settings."""
         record = self._legendEntryRecord()
         if record is None:
             return
-        settings = SeriesLegendSettings(field_name, prefix, suffix, include_fit, include_replica, include_ensemble)
+        settings = SeriesLegendSettings(
+            field_name=field_name, prefix=prefix, suffix=suffix, include_label=include_label,
+            include_fit=include_fit, include_replica=include_replica, include_ensemble=include_ensemble,
+        )
         updated = replace(record, presentation=replace(record.presentation, legend=settings))
         self.choose_point_click_handler.plot_ts.rerender_editable_record(updated)
         self.syncLegendEntryPopup()
@@ -2981,7 +2984,7 @@ class GuiController(QObject):
             return
         resolved = resolve_initial_legend_settings(record.target_attributes, entry_defaults, related_defaults)
         self.updateLegendEntrySettings(
-            resolved.field_name, resolved.prefix, resolved.suffix,
+            resolved.field_name, resolved.prefix, resolved.suffix, resolved.include_label,
             resolved.include_fit, resolved.include_replica, resolved.include_ensemble,
         )
 
@@ -3009,7 +3012,10 @@ class GuiController(QObject):
         if record is None:
             return
         settings = record.presentation.legend
-        defaults = LegendEntryDefaults(True, settings.field_name, settings.prefix, settings.suffix)
+        defaults = LegendEntryDefaults(
+            configured=True, field_name=settings.field_name, prefix=settings.prefix,
+            suffix=settings.suffix, include_label=settings.include_label,
+        )
         self._saveUserPreferences(
             lambda: self.choose_point_click_handler.plot_ts.user_preferences.save_legend_entry_defaults(defaults),
             "Legend entry settings saved as default.",
@@ -3023,7 +3029,7 @@ class GuiController(QObject):
             return
         current = record.presentation.legend
         defaults = prefs.related_legend_defaults
-        self.updateLegendEntrySettings(current.field_name, current.prefix, current.suffix,
+        self.updateLegendEntrySettings(current.field_name, current.prefix, current.suffix, current.include_label,
                                        defaults.include_fit, defaults.include_replica, defaults.include_ensemble)
 
     def applyFactoryRelatedLegendDefaults(self):
@@ -3033,7 +3039,7 @@ class GuiController(QObject):
             current = record.presentation.legend
             defaults = RelatedLegendDefaults()
             self.updateLegendEntrySettings(
-                current.field_name, current.prefix, current.suffix,
+                current.field_name, current.prefix, current.suffix, current.include_label,
                 defaults.include_fit, defaults.include_replica, defaults.include_ensemble,
             )
 

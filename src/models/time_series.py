@@ -90,6 +90,7 @@ class SeriesLegendSettings:
     include_fit: bool = True
     include_replica: bool = True
     include_ensemble: bool = True
+    include_label: bool = True
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "field_name", None if self.field_name in (None, "") else str(self.field_name))
@@ -97,6 +98,7 @@ class SeriesLegendSettings:
             object.__setattr__(self, name, str(getattr(self, name) or ""))
         for name in ("include_fit", "include_replica", "include_ensemble"):
             object.__setattr__(self, name, bool(getattr(self, name)))
+        object.__setattr__(self, "include_label", bool(self.include_label))
 
 
 @dataclass(frozen=True)

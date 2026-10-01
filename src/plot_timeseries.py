@@ -1726,7 +1726,7 @@ class PlotTs():
             label = self._legend_label(record)
             related_label = base_series_legend_label(record)
             base_sample = CompositeSeriesLegendSample(graphics.scatter, graphics.line)
-            if base_sample.scatter is not None or base_sample.line is not None:
+            if label and (base_sample.scatter is not None or base_sample.line is not None):
                 main_entries.append((
                     base_sample, label,
                 ))
@@ -1756,7 +1756,7 @@ class PlotTs():
             residual_sample = CompositeSeriesLegendSample(
                 graphics.residual_scatter, graphics.residual_line
             )
-            if residual_sample.scatter is not None or residual_sample.line is not None:
+            if label and (residual_sample.scatter is not None or residual_sample.line is not None):
                 residual_entries.append((
                     residual_sample,
                     label,
