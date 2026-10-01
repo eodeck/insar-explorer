@@ -13,16 +13,10 @@ from .defaults_menu import createDefaultsMenu
 class LegendPopup(QWidget):
     """Edit General and Entries legend settings with immediate runtime updates."""
 
-    settingsChanged = pyqtSignal(
-        str, bool, float, float, bool, bool, bool,
-        str, str, str, str, str, str,
-    )
+    settingsChanged = pyqtSignal(str, bool, float, float)
     applySavedGeneralDefaultRequested = pyqtSignal()
     saveCurrentGeneralAsDefaultRequested = pyqtSignal()
     applyFactoryGeneralDefaultRequested = pyqtSignal()
-    applySavedEntriesDefaultRequested = pyqtSignal()
-    saveCurrentEntriesAsDefaultRequested = pyqtSignal()
-    applyFactoryEntriesAsDefaultRequested = pyqtSignal()
 
     LOCATIONS = (
         ("Top right", "top_right"),
@@ -36,15 +30,13 @@ class LegendPopup(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent, POPUP_WINDOW_FLAG)
         self.setObjectName("legendPopup")
-        self.setWindowTitle("Labels")
+        self.setWindowTitle("Plot Legend")
 
         layout = QVBoxLayout(self)
         self.tabs = QTabWidget(self)
         self.tabs.setObjectName("tabs_legend_settings")
         self.general_tab = self._buildGeneralTab()
-        self.entries_tab = self._buildEntriesTab()
         self.tabs.addTab(self.general_tab, "General")
-        self.tabs.addTab(self.entries_tab, "Entries")
         layout.addWidget(self.tabs)
 
         self.sync_font_size_checkbox.setChecked(True)
@@ -57,13 +49,6 @@ class LegendPopup(QWidget):
         self.sync_font_size_checkbox.toggled.connect(self._emit_settings)
         self.font_size_spin.valueChanged.connect(self._emit_settings)
         self.background_opacity_spin.valueChanged.connect(self._emit_settings)
-        for checkbox in (
-            self.include_fit_checkbox, self.include_replica_checkbox,
-            self.include_ensemble_checkbox,
-        ):
-            checkbox.toggled.connect(self._emit_settings)
-        for editor in self._text_editors():
-            editor.editingFinished.connect(self._emit_settings)
 
     def _buildGeneralTab(self):
         tab = QWidget(self)
@@ -195,41 +180,26 @@ class LegendPopup(QWidget):
         self.font_size_spin.setEnabled(not checked)
 
     def settings(self):
-        """Return every popup-managed LegendSettings field."""
+        """Return the plot-wide LegendSettings fields managed by this popup."""
         return (
             str(self.location_combo.currentData() or "top_right"),
             self.sync_font_size_checkbox.isChecked(),
             float(self.font_size_spin.value()),
             float(self.background_opacity_spin.value()) / 100.0,
-            self.include_fit_checkbox.isChecked(), self.include_replica_checkbox.isChecked(),
-            self.include_ensemble_checkbox.isChecked(),
-            self.fit_prefix_edit.text(), self.fit_suffix_edit.text(),
-            self.replica_prefix_edit.text(), self.replica_suffix_edit.text(),
-            self.ensemble_prefix_edit.text(), self.ensemble_suffix_edit.text(),
         )
 
     def setSettings(self, settings):
         """Refresh all controls without emitting runtime updates."""
         widgets = (
             self.location_combo, self.sync_font_size_checkbox, self.font_size_spin,
-            self.background_opacity_spin, self.include_fit_checkbox,
-            self.include_replica_checkbox, self.include_ensemble_checkbox,
-        ) + self._text_editors()
+            self.background_opacity_spin,
+        )
         previous = [widget.blockSignals(True) for widget in widgets]
         try:
             self.location_combo.setCurrentIndex(max(0, self.location_combo.findData(settings.location)))
             self.sync_font_size_checkbox.setChecked(settings.sync_font_size)
             self.font_size_spin.setValue(float(settings.font_size))
             self.background_opacity_spin.setValue(int(round(settings.background_opacity * 100)))
-            self.include_fit_checkbox.setChecked(settings.include_fit)
-            self.include_replica_checkbox.setChecked(settings.include_replica)
-            self.include_ensemble_checkbox.setChecked(settings.include_ensemble)
-            self.fit_prefix_edit.setText(settings.fit_prefix)
-            self.fit_suffix_edit.setText(settings.fit_suffix)
-            self.replica_prefix_edit.setText(settings.replica_prefix)
-            self.replica_suffix_edit.setText(settings.replica_suffix)
-            self.ensemble_prefix_edit.setText(settings.ensemble_prefix)
-            self.ensemble_suffix_edit.setText(settings.ensemble_suffix)
             self._syncFontSizeEnabled(settings.sync_font_size)
         finally:
             for widget, blocked in zip(widgets, previous):

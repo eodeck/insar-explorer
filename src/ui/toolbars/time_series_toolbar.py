@@ -47,6 +47,7 @@ class TimeSeriesToolbar(QToolBar):
     replicaSettingsRequested = pyqtSignal()
     legendEnabledChanged = pyqtSignal(bool)
     legendSettingsRequested = pyqtSignal()
+    legendEntryRequested = pyqtSignal()
     plotStyleRequested = pyqtSignal()
 
     def __init__(self, parent=None):
@@ -210,6 +211,10 @@ class TimeSeriesToolbar(QToolBar):
             "Edit the style of the current time series",
             "action_ts_plot_style",
         )
+        self.legend_entry_action = self._createAction(
+            "label", "Legend Entry", "Edit the current time-series legend entry",
+            "action_ts_legend_entry",
+        )
         self.appearance_action = self._createAction(
             "setting",
             "Appearance",
@@ -235,6 +240,9 @@ class TimeSeriesToolbar(QToolBar):
         self.legend_button.setPrimaryToolTip("Show plot legends")
         self.legend_button.setStatusTip("Show or hide plot legends; use the arrow for settings.")
         self.legend_button.setEnabled(False)
+        self.legend_button.setPrimaryAccessibleName("Plot legend")
+        self.legend_button.setSecondaryAccessibleName("Plot legend settings")
+        self.legend_button.setSecondaryToolTip("Plot legend settings")
         self.plot_export_button = SplitToolButton(
             icon=themed_icon("screenshot"),
             primary_checkable=False,
@@ -268,6 +276,7 @@ class TimeSeriesToolbar(QToolBar):
         self.addSeparator()
         self.addWidget(self.x_axis_button)
         self.addWidget(self.y_axis_button)
+        self.addAction(self.legend_entry_action)
 
         self._spacer_widget = QWidget(self)
         self._spacer_widget.setObjectName("timeSeriesToolbarSpacer")
@@ -295,10 +304,12 @@ class TimeSeriesToolbar(QToolBar):
         for action in (
             self.appearance_action,
             self.plot_style_action,
+            self.legend_entry_action,
         ):
             self._setActionControlRole(action, "command")
 
         self.plot_style_action.triggered.connect(self.plotStyleRequested.emit)
+        self.legend_entry_action.triggered.connect(self.legendEntryRequested.emit)
         self.appearance_action.triggered.connect(self.appearanceRequested.emit)
         self.plot_export_button.primaryTriggered.connect(
             self.plotExportRequested.emit
@@ -325,6 +336,7 @@ class TimeSeriesToolbar(QToolBar):
         """Enable controls that require one editable time-series record."""
         enabled = bool(enabled)
         self.plot_style_action.setEnabled(enabled)
+        self.legend_entry_action.setEnabled(enabled)
         self.fit_button.setEnabled(enabled)
         self.replica_button.setEnabled(enabled)
 
