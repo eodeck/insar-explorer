@@ -17,7 +17,7 @@ from ...time_series.legend_formatting import format_series_legend_label
 class LegendEntryPopup(QWidget):
     """Edit only the current record's legend entry choices."""
 
-    settingsChanged = pyqtSignal(object, str, str, bool, bool, bool, bool)
+    settingsChanged = pyqtSignal(object, str, str, bool, bool, bool, bool, bool)
     applySavedLegendDefaultRequested = pyqtSignal()
     saveLegendDefaultRequested = pyqtSignal()
     applyFactoryLegendDefaultRequested = pyqtSignal()
@@ -37,12 +37,14 @@ class LegendEntryPopup(QWidget):
         layout.addWidget(self.tabs)
         self.field_combo.currentIndexChanged.connect(self._emitSettings)
         self.include_label_checkbox.toggled.connect(self._emitSettings)
+        self.include_field_checkbox.toggled.connect(self._emitSettings)
         self.prefix_edit.editingFinished.connect(self._emitSettings)
         self.suffix_edit.editingFinished.connect(self._emitSettings)
         self.prefix_edit.textChanged.connect(self._updatePreview)
         self.suffix_edit.textChanged.connect(self._updatePreview)
         self.field_combo.currentIndexChanged.connect(self._updatePreview)
         self.include_label_checkbox.toggled.connect(self._updatePreview)
+        self.include_field_checkbox.toggled.connect(self._updatePreview)
         for checkbox in (self.fit_checkbox, self.replica_checkbox, self.ensemble_checkbox):
             checkbox.toggled.connect(self._emitSettings)
 
@@ -55,6 +57,8 @@ class LegendEntryPopup(QWidget):
         self.target_label.setObjectName("label_legend_entry_target")
         self.include_label_checkbox = QCheckBox("Include label", group)
         self.include_label_checkbox.setObjectName("check_legend_entry_include_label")
+        self.include_field_checkbox = QCheckBox("Include additional field", group)
+        self.include_field_checkbox.setObjectName("check_legend_entry_include_field")
         self.field_combo = QComboBox(group)
         self.field_combo.setObjectName("combo_legend_entry_field")
         self.field_combo.setAccessibleName("Additional legend field")
@@ -69,6 +73,7 @@ class LegendEntryPopup(QWidget):
         self.preview_label.setWordWrap(True)
         form.addRow("Editing", self.target_label)
         form.addRow(self.include_label_checkbox)
+        form.addRow(self.include_field_checkbox)
         form.addRow("Additional field", self.field_combo)
         form.addRow("Prefix", self.prefix_edit)
         form.addRow("Suffix", self.suffix_edit)
@@ -111,7 +116,7 @@ class LegendEntryPopup(QWidget):
         settings = record.presentation.legend
         fields = () if record.target is None or record.target.kind.value != "point" else record.target_attributes.field_names()
         self._record = record
-        widgets = (self.field_combo, self.include_label_checkbox, self.prefix_edit, self.suffix_edit, self.fit_checkbox, self.replica_checkbox, self.ensemble_checkbox)
+        widgets = (self.field_combo, self.include_label_checkbox, self.include_field_checkbox, self.prefix_edit, self.suffix_edit, self.fit_checkbox, self.replica_checkbox, self.ensemble_checkbox)
         blocked = [widget.blockSignals(True) for widget in widgets]
         try:
             self.target_label.setText(str(record.presentation.label or "Unnamed"))
@@ -120,13 +125,9 @@ class LegendEntryPopup(QWidget):
                 self.field_combo.addItem(name, name)
             index = self.field_combo.findData(settings.field_name)
             self.field_combo.setCurrentIndex(max(0, index))
-            has_fields = bool(fields)
-            self.field_combo.setEnabled(has_fields)
-            self.prefix_edit.setEnabled(has_fields); self.suffix_edit.setEnabled(has_fields)
-            if not has_fields:
-                self.field_combo.setToolTip("Additional fields are available for point-vector selections only.")
             self.prefix_edit.setText(settings.prefix); self.suffix_edit.setText(settings.suffix)
             self.include_label_checkbox.setChecked(settings.include_label)
+            self.include_field_checkbox.setChecked(settings.include_field)
             self.fit_checkbox.setChecked(settings.include_fit)
             self.replica_checkbox.setChecked(settings.include_replica)
             self.ensemble_checkbox.setChecked(settings.include_ensemble)
@@ -135,25 +136,57 @@ class LegendEntryPopup(QWidget):
             self.ensemble_checkbox.setEnabled(bool(record.data.hasEnsembleData()))
         finally:
             for widget, value in zip(widgets, blocked): widget.blockSignals(value)
+        self._updateLegendControlStates()
         self._updatePreview()
 
     def settings(self):
         """Return the complete per-record entry configuration represented by the controls."""
-        return (self.field_combo.currentData(), self.prefix_edit.text(), self.suffix_edit.text(), self.include_label_checkbox.isChecked(),
+        return (self.field_combo.currentData(), self.prefix_edit.text(), self.suffix_edit.text(), self.include_label_checkbox.isChecked(), self.include_field_checkbox.isChecked(),
                 self.fit_checkbox.isChecked(), self.replica_checkbox.isChecked(), self.ensemble_checkbox.isChecked())
+
+    def _updateLegendControlStates(self):
+        """Keep point and polygon controls in a valid non-empty configuration."""
+        record = getattr(self, "_record", None)
+        if record is None:
+            return
+        is_point = record.target is not None and record.target.kind.value == "point"
+        has_field = bool(is_point and self.field_combo.currentData())
+        include_label = self.include_label_checkbox.isChecked()
+        include_field = self.include_field_checkbox.isChecked() and has_field
+        if not is_point:
+            include_label, include_field = True, False
+        elif not include_label and not include_field:
+            include_label = True
+        widgets = (self.include_label_checkbox, self.include_field_checkbox)
+        blocked = [widget.blockSignals(True) for widget in widgets]
+        try:
+            self.include_label_checkbox.setChecked(include_label)
+            self.include_field_checkbox.setChecked(include_field)
+        finally:
+            for widget, value in zip(widgets, blocked): widget.blockSignals(value)
+        self.include_label_checkbox.setEnabled(is_point and include_field)
+        self.include_field_checkbox.setEnabled(is_point and has_field and include_label)
+        self.field_combo.setEnabled(is_point and self.field_combo.count() > 1)
+        self.prefix_edit.setEnabled(is_point and include_field)
+        self.suffix_edit.setEnabled(is_point and include_field)
+        if not is_point:
+            self.include_label_checkbox.setToolTip("Polygon legend entries use the series label in this version.")
+            self.field_combo.setToolTip("Additional fields are available for point-vector selections only.")
 
     def _updatePreview(self, *_args):
         """Render a non-mutating preview through the shared record formatter."""
         record = getattr(self, "_record", None)
         if record is None:
             return
-        field_name, prefix, suffix, include_label, include_fit, include_replica, include_ensemble = self.settings()
+        self._updateLegendControlStates()
+        field_name, prefix, suffix, include_label, include_field, include_fit, include_replica, include_ensemble = self.settings()
         settings = SeriesLegendSettings(
-            field_name=field_name, prefix=prefix, suffix=suffix, include_label=include_label,
+            field_name=field_name, prefix=prefix, suffix=suffix, include_label=include_label, include_field=include_field,
             include_fit=include_fit, include_replica=include_replica, include_ensemble=include_ensemble,
         )
         preview = format_series_legend_label(replace(record, presentation=replace(record.presentation, legend=settings)))
         self.preview_label.setText(preview or "No main legend entry")
 
     def _emitSettings(self, *_args):
+        self._updateLegendControlStates()
         self.settingsChanged.emit(*self.settings())

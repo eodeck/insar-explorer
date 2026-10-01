@@ -28,6 +28,7 @@ def resolve_initial_legend_settings(
         prefix=legend_defaults.prefix,
         suffix=legend_defaults.suffix,
         include_label=legend_defaults.include_label,
+        include_field=legend_defaults.include_field,
         include_fit=related_defaults.include_fit,
         include_replica=related_defaults.include_replica,
         include_ensemble=related_defaults.include_ensemble,

@@ -33,7 +33,8 @@ def format_series_legend_label(record):
     label = base_series_legend_label(record)
     settings = record.presentation.legend
     label = label if settings.include_label else ""
-    if not settings.field_name or record.target is None or record.target.kind.value != "point":
+    if (not settings.include_field or not settings.field_name or record.target is None
+            or record.target.kind.value != "point"):
         return label
     decorate = lambda value: settings.prefix + value + settings.suffix
     target = _display_value(record.target_attributes.value(settings.field_name))

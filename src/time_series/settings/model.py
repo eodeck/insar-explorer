@@ -620,6 +620,7 @@ class LegendEntryDefaults:
     prefix: str = ""
     suffix: str = ""
     include_label: bool = True
+    include_field: bool = False
 
     def __post_init__(self):
         object.__setattr__(self, "configured", bool(self.configured))
@@ -627,6 +628,7 @@ class LegendEntryDefaults:
         object.__setattr__(self, "prefix", str(self.prefix or ""))
         object.__setattr__(self, "suffix", str(self.suffix or ""))
         object.__setattr__(self, "include_label", bool(self.include_label))
+        object.__setattr__(self, "include_field", bool(self.include_field))
 
 
 @dataclass(frozen=True)

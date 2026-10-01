@@ -91,6 +91,7 @@ class SeriesLegendSettings:
     include_replica: bool = True
     include_ensemble: bool = True
     include_label: bool = True
+    include_field: bool = False
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "field_name", None if self.field_name in (None, "") else str(self.field_name))
@@ -99,6 +100,7 @@ class SeriesLegendSettings:
         for name in ("include_fit", "include_replica", "include_ensemble"):
             object.__setattr__(self, name, bool(getattr(self, name)))
         object.__setattr__(self, "include_label", bool(self.include_label))
+        object.__setattr__(self, "include_field", bool(self.include_field))
 
 
 @dataclass(frozen=True)
@@ -369,6 +371,23 @@ class TimeSeriesRecord:
             object.__setattr__(self, "target_attributes", PointAttributeSnapshot.from_mapping(self.target_attributes))
         if not isinstance(self.reference_attributes, PointAttributeSnapshot):
             object.__setattr__(self, "reference_attributes", PointAttributeSnapshot.from_mapping(self.reference_attributes))
+        self._normalize_legend_settings()
+
+    def _normalize_legend_settings(self) -> None:
+        """Enforce valid main-entry choices for the record's selection context."""
+        settings = self.presentation.legend
+        target = self.target
+        if target is not None and target.kind == SpatialSelectionKind.POLYGON:
+            settings = replace(settings, include_label=True, include_field=False, field_name=None)
+        elif target is not None and target.kind == SpatialSelectionKind.POINT:
+            has_field = bool(settings.field_name and settings.field_name in self.target_attributes.field_names())
+            include_field = bool(settings.include_field and has_field)
+            include_label = bool(settings.include_label)
+            if not include_label and not include_field:
+                include_label = True
+            settings = replace(settings, include_label=include_label, include_field=include_field)
+        if settings != self.presentation.legend:
+            object.__setattr__(self, "presentation", replace(self.presentation, legend=settings))
 
     @property
     def style(self) -> TimeSeriesStyle:
