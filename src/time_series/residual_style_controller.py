@@ -4,7 +4,8 @@ from copy import deepcopy
 from dataclasses import dataclass, replace
 from typing import Iterable
 
-from ..models.time_series import TimeSeriesSnapshot, TimeSeriesStyle, presentation_from_legacy_params
+from ..models.time_series import TimeSeriesSnapshot
+from .settings.model import ResidualStyleSettings
 from .style_schema import (
     RESIDUAL_DEFAULT_COLOR, RESIDUAL_LINE_WIDTH_RANGE, RESIDUAL_MARKER_SIZE_DEFAULT,
     RESIDUAL_MARKER_SIZE_RANGE, normalize_alpha, normalize_color,
@@ -15,6 +16,13 @@ RESIDUAL_STYLE_KEYS = (
     "marker", "marker color", "marker edge color", "marker size", "marker alpha",
     "line style", "line color", "line width", "line alpha",
 )
+
+
+def _with_residual_style(snapshot, params):
+    """Replace only residual appearance, retaining all record-owned domains."""
+    return replace(snapshot, presentation=replace(
+        snapshot.presentation, residual=ResidualStyleSettings.fromParams(params)
+    ))
 
 
 @dataclass(frozen=True)
@@ -87,14 +95,7 @@ class ResidualStyleController:
             for key in RESIDUAL_STYLE_KEYS:
                 if key in values:
                     residual[key] = self._normalize(key, values[key])
-            updated_style = TimeSeriesStyle.fromParams(
-                params, label=snapshot.style.label, visible=snapshot.style.visible,
-                z_order=snapshot.style.z_order,
-            )
-            changed.append(replace(snapshot, presentation=presentation_from_legacy_params(
-                updated_style.params, label=updated_style.label,
-                visible=updated_style.visible, z_order=updated_style.z_order,
-            )))
+            changed.append(_with_residual_style(snapshot, params))
         return changed
 
     def randomizeColor(self, snapshots):
