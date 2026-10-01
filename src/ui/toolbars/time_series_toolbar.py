@@ -274,8 +274,6 @@ class TimeSeriesToolbar(QToolBar):
         self.addWidget(self.fit_button)
         self.addWidget(self.replica_button)
         self.addSeparator()
-        self.addWidget(self.x_axis_button)
-        self.addWidget(self.y_axis_button)
         self.addAction(self.legend_entry_action)
 
         self._spacer_widget = QWidget(self)
@@ -297,6 +295,8 @@ class TimeSeriesToolbar(QToolBar):
         self.addWidget(self.hover_readout)
 
         self.addWidget(self.legend_button)
+        self.addWidget(self.x_axis_button)
+        self.addWidget(self.y_axis_button)
         self.addAction(self.appearance_action)
         self.addSeparator()
         self.addWidget(self.plot_export_button)
