@@ -30,6 +30,7 @@ from .qt_compat import PALETTE_WINDOW_TEXT
 from .time_series.store import TimeSeriesStore
 from .time_series.pending_session import PendingTimeSeriesSession, resolve_editable_record
 from .time_series.legend_entry import resolve_initial_legend_settings
+from .time_series.legend_formatting import base_series_legend_label, format_series_legend_label
 from .time_series.settings.model import LegendEntryDefaults, RelatedLegendDefaults
 from .models.time_series import (
     FitConfiguration,
@@ -1647,7 +1648,7 @@ class PlotTs():
     @staticmethod
     def _legend_label(record):
         """Return the user-facing label for one rendered time series."""
-        return (record.presentation.label or "").strip() or "Unnamed"
+        return format_series_legend_label(record)
 
     @staticmethod
     def _first_graphics_item(*items):
@@ -1718,12 +1719,12 @@ class PlotTs():
 
         main_entries = []
         residual_entries = []
-        settings = self.settings_model.legend
         for record in self.visibleTimeSeriesRecords():
             graphics = self._graphics_for_series(record)
             if graphics is None:
                 continue
             label = self._legend_label(record)
+            related_label = base_series_legend_label(record)
             base_sample = CompositeSeriesLegendSample(graphics.scatter, graphics.line)
             if base_sample.scatter is not None or base_sample.line is not None:
                 main_entries.append((
@@ -1734,23 +1735,23 @@ class PlotTs():
             )
             ensemble_line = self._first_graphics_item(*(graphics.plot_multiple_lines or ()))
             ensemble_sample = EnsembleLegendSample(ensemble_fill, ensemble_line)
-            if settings.include_ensemble and (
+            if record.presentation.legend.include_ensemble and (
                 ensemble_sample.fill is not None or ensemble_sample.member_line is not None
             ):
                 main_entries.append((
                     ensemble_sample,
-                    settings.ensemble_prefix + label + settings.ensemble_suffix,
+                    related_label + " ensemble",
                 ))
-            if settings.include_fit and graphics.fit_plot is not None:
+            if record.presentation.legend.include_fit and graphics.fit_plot is not None:
                 main_entries.append((
-                    graphics.fit_plot, settings.fit_prefix + label + settings.fit_suffix,
+                    graphics.fit_plot, related_label + " fit",
                 ))
             replica_up = self._first_graphics_item(*(graphics.replicate_up or ()))
             replica_down = self._first_graphics_item(*(graphics.replicate_dn or ()))
-            if settings.include_replica and replica_up is not None and replica_down is not None:
+            if record.presentation.legend.include_replica and replica_up is not None and replica_down is not None:
                 main_entries.append((
                     ReplicaLegendSample((replica_up, replica_down)),
-                    settings.replica_prefix + label + settings.replica_suffix,
+                    related_label + " replica",
                 ))
             residual_sample = CompositeSeriesLegendSample(
                 graphics.residual_scatter, graphics.residual_line
