@@ -3010,7 +3010,7 @@ class GuiController(QObject):
     def saveLegendEntryDefaults(self):
         """Persist the current field, prefix and suffix as an explicit user default."""
         record = self._legendEntryRecord()
-        if record is None:
+        if record is None or record.target is None or record.target.kind != SpatialSelectionKind.POINT:
             return
         settings = record.presentation.legend
         defaults = LegendEntryDefaults(

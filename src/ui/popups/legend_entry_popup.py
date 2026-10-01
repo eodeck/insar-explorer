@@ -150,6 +150,7 @@ class LegendEntryPopup(QWidget):
         if record is None:
             return
         is_point = record.target is not None and record.target.kind.value == "point"
+        self.legend_defaults_button.save_default_action.setEnabled(is_point)
         has_field = bool(is_point and self.field_combo.currentData())
         include_label = self.include_label_checkbox.isChecked()
         include_field = self.include_field_checkbox.isChecked() and has_field
