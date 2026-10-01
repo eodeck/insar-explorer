@@ -87,9 +87,9 @@ class SeriesLegendSettings:
     field_name: Optional[str] = None
     prefix: str = ""
     suffix: str = ""
-    include_fit: bool = False
-    include_replica: bool = False
-    include_ensemble: bool = False
+    include_fit: bool = True
+    include_replica: bool = True
+    include_ensemble: bool = True
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "field_name", None if self.field_name in (None, "") else str(self.field_name))

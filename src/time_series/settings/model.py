@@ -631,9 +631,9 @@ class LegendEntryDefaults:
 class RelatedLegendDefaults:
     """Persisted defaults for related graphics' legend inclusion."""
 
-    include_fit: bool = False
-    include_replica: bool = False
-    include_ensemble: bool = False
+    include_fit: bool = True
+    include_replica: bool = True
+    include_ensemble: bool = True
 
 
 @dataclass

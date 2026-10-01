@@ -3031,7 +3031,11 @@ class GuiController(QObject):
         record = self._legendEntryRecord()
         if record is not None:
             current = record.presentation.legend
-            self.updateLegendEntrySettings(current.field_name, current.prefix, current.suffix, False, False, False)
+            defaults = RelatedLegendDefaults()
+            self.updateLegendEntrySettings(
+                current.field_name, current.prefix, current.suffix,
+                defaults.include_fit, defaults.include_replica, defaults.include_ensemble,
+            )
 
     def saveRelatedLegendDefaults(self):
         """Persist related-entry inclusion independently of field defaults."""
