@@ -253,6 +253,7 @@ class GuiController(QObject):
         plotter.pending_changed_callback = self._syncPendingTimeSeriesPanel
         plotter.committed_changed_callback = self._syncCommittedTimeSeriesList
         self.time_series_list_state = TimeSeriesListState()
+        plotter.next_factory_sequence_number = self.time_series_list_state.next_sequence_number
 
         def settings_provider():
             return self.map_indicator_settings.active

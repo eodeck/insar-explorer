@@ -356,6 +356,7 @@ class PlotTs():
         self._graphics_by_series_id: Dict[UUID, TimeSeriesGraphics] = {}
         self._pending_graphics_by_series_id: Dict[UUID, TimeSeriesGraphics] = {}
         self.pending_changed_callback = None
+        self.next_factory_sequence_number = None
         self.committed_changed_callback = None
         self._hidden_committed_ids = set()
         self.default_style = None
@@ -945,7 +946,10 @@ class PlotTs():
                 record = replace(
                     record,
                     presentation=replace(
-                        record.presentation, label=self._default_pending_label(record)
+                        record.presentation,
+                        label=self._default_pending_label(
+                            record, self._nextFactorySequenceNumber()
+                        ),
                     ),
                 )
             self.set_pending_record(
@@ -2955,11 +2959,16 @@ class PlotTs():
         self._notify_pending_changed()
         return True
 
+    def _nextFactorySequenceNumber(self):
+        """Read the controller-owned next committed-list number when available."""
+        provider = self.next_factory_sequence_number
+        return provider() if callable(provider) else None
+
     @staticmethod
-    def _default_pending_label(record):
+    def _default_pending_label(record, sequence_number=None):
         """Return the concise factory label for a genuinely new pending record."""
         kind = record.target.kind.value.title() if record.target is not None else "Time series"
-        return kind
+        return f"{kind} {int(sequence_number)}" if sequence_number is not None else kind
 
     def commit_pending(self) -> Optional[TimeSeriesRecord]:
         """Transfer the exact pending record and graphics into committed ownership."""

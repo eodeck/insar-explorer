@@ -26,6 +26,10 @@ class TimeSeriesListState:
         """Return entries in committed insertion order."""
         return tuple(self._entries[record_id] for record_id in self._order)
 
+    def next_sequence_number(self) -> int:
+        """Return the number reserved for the next committed entry without allocating it."""
+        return self._next_sequence
+
     def entry(self, record_id: UUID) -> Optional[TimeSeriesListEntry]:
         """Return metadata for one record UUID."""
         return self._entries.get(record_id)
