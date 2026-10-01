@@ -380,7 +380,12 @@ class TimeSeriesRecord:
         if target is not None and target.kind == SpatialSelectionKind.POLYGON:
             settings = replace(settings, include_label=True, include_field=False, field_name=None)
         elif target is not None and target.kind == SpatialSelectionKind.POINT:
-            has_field = bool(settings.field_name and settings.field_name in self.target_attributes.field_names())
+            has_field = bool(
+                settings.field_name and (
+                    settings.field_name in self.target_attributes.field_names()
+                    or settings.field_name in self.reference_attributes.field_names()
+                )
+            )
             include_field = bool(settings.include_field and has_field)
             include_label = bool(settings.include_label)
             if not include_label and not include_field:

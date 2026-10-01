@@ -100,8 +100,8 @@ from .time_series.settings.persistence import build_legacy_plot_params
 from .time_series.persistence import PreferencesPersistenceError
 from .time_series.copy_paste import (
     CopyPasteCategory, TimeSeriesSettingsClipboard,
-    apply_fit_snapshot, apply_replica_snapshot, apply_style_snapshot,
-    capture_fit, capture_replica, capture_style,
+    apply_fit_snapshot, apply_legend_entry_snapshot, apply_replica_snapshot, apply_style_snapshot,
+    capture_fit, capture_legend_entry, capture_replica, capture_style,
 )
 
 
@@ -3209,6 +3209,7 @@ class GuiController(QObject):
             CopyPasteCategory.STYLE,
             CopyPasteCategory.FIT,
             CopyPasteCategory.REPLICA,
+            CopyPasteCategory.LEGEND,
             CopyPasteCategory.ALL_PRESENTATION,
         )
 
@@ -3373,7 +3374,7 @@ class GuiController(QObject):
         return self._navigateCommittedTimeSeriesSelection("reference")
 
     def copyCommittedTimeSeriesSettings(self):
-        """Atomically capture Style, Fit, and Replica from one committed source."""
+        """Atomically capture Style, Fit, Replica, and Legend Entry from one source."""
         panel = self.ui.time_series_point_panel
         selected = panel.selected_committed_ids()
         if len(selected) != 1:
@@ -3392,13 +3393,14 @@ class GuiController(QObject):
                 style=capture_style(record),
                 fit=capture_fit(record),
                 replica=capture_replica(record),
+                legend=capture_legend_entry(record),
             )
         except Exception as error:
             self._reportCopyPasteFailure("copy", error)
             return
         self.time_series_clipboard = clipboard
         self._refreshTimeSeriesClipboardProjection()
-        self.msg_signal.emit("Copied style, Fit and Replica.", STATUS_SUCCESS, 3000)
+        self.msg_signal.emit("Copied Style, Fit, Replica and Legend Entry settings.", STATUS_SUCCESS, 3000)
 
     def pasteCommittedTimeSeriesSettings(self, category):
         """Atomically paste one typed category to selected committed destinations."""
@@ -3436,6 +3438,8 @@ class GuiController(QObject):
                     updated = apply_fit_snapshot(updated, clipboard.fit)
                 if category in (CopyPasteCategory.REPLICA, CopyPasteCategory.ALL_PRESENTATION):
                     updated = apply_replica_snapshot(updated, clipboard.replica)
+                if category in (CopyPasteCategory.LEGEND, CopyPasteCategory.ALL_PRESENTATION):
+                    updated = apply_legend_entry_snapshot(updated, clipboard.legend)
                 replacements.append(updated)
             plotter.rerender_records(replacements, notify=True, draw=True)
         except Exception as error:
@@ -3462,7 +3466,8 @@ class GuiController(QObject):
             CopyPasteCategory.STYLE: "style",
             CopyPasteCategory.FIT: "Fit",
             CopyPasteCategory.REPLICA: "Replica",
-            CopyPasteCategory.ALL_PRESENTATION: "style, Fit and Replica",
+            CopyPasteCategory.LEGEND: "Legend Entry",
+            CopyPasteCategory.ALL_PRESENTATION: "Style, Fit, Replica and Legend Entry",
         }
         count = len(record_ids)
         self.msg_signal.emit(
