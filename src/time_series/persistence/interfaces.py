@@ -7,7 +7,7 @@ from uuid import UUID
 from ...models.time_series import TimeSeriesRecord
 from ..settings.model import (
     AppearanceSettings, EnsembleStyleSettings, ExportSettings, FitAnalysisDefaults,
-    FitStyleSettings, LegendSettings, ReplicaAnalysisDefaults, ReplicaSettings, ResidualStyleSettings,
+    FitStyleSettings, LegendEntryDefaults, LegendSettings, RelatedLegendDefaults, ReplicaAnalysisDefaults, ReplicaSettings, ResidualStyleSettings,
     SeriesStyleSettings,
 )
 
@@ -26,6 +26,8 @@ class TimeSeriesUserPreferences:
     appearance: AppearanceSettings = field(default_factory=AppearanceSettings)
     export: ExportSettings = field(default_factory=ExportSettings)
     legend: LegendSettings = field(default_factory=LegendSettings)
+    legend_entry_defaults: LegendEntryDefaults = field(default_factory=LegendEntryDefaults)
+    related_legend_defaults: RelatedLegendDefaults = field(default_factory=RelatedLegendDefaults)
 
 
 @dataclass(frozen=True)
@@ -75,6 +77,12 @@ class UserPreferencesRepository(Protocol):
         ...
 
     def save_legend(self, settings: LegendSettings) -> None:
+        ...
+
+    def save_legend_entry_defaults(self, settings: LegendEntryDefaults) -> None:
+        ...
+
+    def save_related_legend_defaults(self, settings: RelatedLegendDefaults) -> None:
         ...
 
 

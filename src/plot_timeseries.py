@@ -29,6 +29,8 @@ from .time_series.persistence import NullProjectStateRepository
 from .qt_compat import PALETTE_WINDOW_TEXT
 from .time_series.store import TimeSeriesStore
 from .time_series.pending_session import PendingTimeSeriesSession, resolve_editable_record
+from .time_series.legend_entry import resolve_initial_legend_settings
+from .time_series.settings.model import LegendEntryDefaults, RelatedLegendDefaults
 from .models.time_series import (
     FitConfiguration,
     ReplicaConfiguration,
@@ -37,6 +39,7 @@ from .models.time_series import (
     TimeSeriesGraphics,
     TimeSeriesRecord,
     TimeSeriesSource,
+    PointAttributeSnapshot,
     SpatialSelection,
     SpatialSelectionKind,
     TimeSeriesSnapshot,
@@ -674,6 +677,7 @@ class PlotTs():
         self, *, data: TimeSeriesData, presentation: TimeSeriesPresentation,
         coords=_UNSET, ref_coords=_UNSET, record_id=None, source=None,
         source_provenance=_UNSET, analysis=_UNSET, fit=_UNSET, replica=_UNSET,
+        target_attributes=_UNSET, reference_attributes=_UNSET,
     ) -> TimeSeriesRecord:
         """Build one normalized record with explicit immutable analysis ownership."""
         if source is not None and record_id is not None and source.id != record_id:
@@ -688,6 +692,25 @@ class PlotTs():
             source.source if source is not None and source_provenance is _UNSET
             else None if source_provenance is _UNSET else source_provenance
         )
+        target_attributes = (
+            source.target_attributes if source is not None and target_attributes is _UNSET
+            else PointAttributeSnapshot() if target_attributes is _UNSET else target_attributes
+        )
+        reference_attributes = (
+            source.reference_attributes if source is not None and reference_attributes is _UNSET
+            else PointAttributeSnapshot() if reference_attributes is _UNSET else reference_attributes
+        )
+        if source is None:
+            load_preferences = getattr(self.user_preferences, "load", None)
+            preferences = load_preferences() if callable(load_preferences) else None
+            presentation = replace(
+                presentation,
+                legend=resolve_initial_legend_settings(
+                    PointAttributeSnapshot.from_mapping(target_attributes),
+                    getattr(preferences, "legend_entry_defaults", LegendEntryDefaults()),
+                    getattr(preferences, "related_legend_defaults", RelatedLegendDefaults()),
+                ),
+            )
         if provenance is not None and not isinstance(provenance, TimeSeriesSource):
             raise TypeError("source_provenance must be a TimeSeriesSource")
         if analysis is _UNSET:
@@ -701,6 +724,8 @@ class PlotTs():
         kwargs = {
             "data": data, "presentation": presentation, "analysis": base_analysis,
             "target": target, "reference": reference, "source": provenance,
+            "target_attributes": target_attributes,
+            "reference_attributes": reference_attributes,
         }
         if record_id is not None:
             kwargs["id"] = record_id
@@ -821,6 +846,7 @@ class PlotTs():
 
     def plotTs(self, *, dates=None, ts_values=None, ref_values=_UNSET, plot_multiple=True, coords=_UNSET,
                ref_coords=_UNSET, update=False, analysis=_UNSET, source_provenance=_UNSET,
+               target_attributes=_UNSET, reference_attributes=_UNSET,
                report_statistics=False):
         """Render under the nested-safe axis guard and normalize first-plot state."""
         initial_plot = self.ax is None
@@ -829,6 +855,8 @@ class PlotTs():
                 dates=dates, ts_values=ts_values, ref_values=ref_values,
                 plot_multiple=plot_multiple, coords=coords, ref_coords=ref_coords,
                 update=update, analysis=analysis, source_provenance=source_provenance,
+                target_attributes=target_attributes,
+                reference_attributes=reference_attributes,
                 report_statistics=report_statistics,
             )
         if initial_plot and self.ax is not None:
@@ -846,6 +874,7 @@ class PlotTs():
 
     def _plotTsGuarded(self, *, dates=None, ts_values=None, ref_values=_UNSET, plot_multiple=True, coords=_UNSET,
                        ref_coords=_UNSET, update=False, analysis=_UNSET, source_provenance=_UNSET,
+                       target_attributes=_UNSET, reference_attributes=_UNSET,
                        report_statistics=False):
         # update: flag indicating if the plot should be updated or a new one created
 
@@ -899,7 +928,8 @@ class PlotTs():
             data=series, presentation=presentation, coords=coords, ref_coords=ref_coords,
             record_id=source_snapshot.id if source_snapshot is not None else None,
             source=source_snapshot, source_provenance=source_provenance,
-            analysis=record_analysis,
+            analysis=record_analysis, target_attributes=target_attributes,
+            reference_attributes=reference_attributes,
         )
         fit = record.analysis.fit
         self.plot_residuals_flag = bool(fit.enabled and fit.show_residuals)

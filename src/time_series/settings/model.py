@@ -611,6 +611,31 @@ class LegendSettings:
         return value if value in cls.LOCATIONS else "top_right"
 
 
+@dataclass(frozen=True)
+class LegendEntryDefaults:
+    """Persisted defaults for an individual series' primary legend entry."""
+
+    configured: bool = False
+    field_name: Optional[str] = None
+    prefix: str = ""
+    suffix: str = ""
+
+    def __post_init__(self):
+        object.__setattr__(self, "configured", bool(self.configured))
+        object.__setattr__(self, "field_name", None if self.field_name in (None, "") else str(self.field_name))
+        object.__setattr__(self, "prefix", str(self.prefix or ""))
+        object.__setattr__(self, "suffix", str(self.suffix or ""))
+
+
+@dataclass(frozen=True)
+class RelatedLegendDefaults:
+    """Persisted defaults for related graphics' legend inclusion."""
+
+    include_fit: bool = False
+    include_replica: bool = False
+    include_ensemble: bool = False
+
+
 @dataclass
 class TimeSeriesSettingsModel:
     """Authoritative runtime settings for Time Series plotting."""

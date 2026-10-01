@@ -15,14 +15,14 @@ from ..settings.model import (
     ExportSettings,
     FitAnalysisDefaults,
     FitStyleSettings,
-    LegendSettings,
+    LegendEntryDefaults, LegendSettings, RelatedLegendDefaults,
     ReplicaAnalysisDefaults,
     ReplicaSettings,
     ResidualStyleSettings,
     SeriesStyleSettings,
 )
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 DEFAULT_PREFIX = "insar_explorer/time_series"
 
 
@@ -176,6 +176,13 @@ KEY_SPECS = (
     ("legend", "sync_font_size", "legend/sync_font_size", "bool", None),
     ("legend", "font_size", "legend/font_size", "float", (1, 200)),
     ("legend", "background_opacity", "legend/background_opacity", "float", (0, 1)),
+    ("legend_entry_defaults", "configured", "legend_entry/configured", "bool", None),
+    ("legend_entry_defaults", "field_name", "legend_entry/field_name", "nullable_str", None),
+    ("legend_entry_defaults", "prefix", "legend_entry/prefix", "str", None),
+    ("legend_entry_defaults", "suffix", "legend_entry/suffix", "str", None),
+    ("related_legend_defaults", "include_fit", "legend_entry/related/include_fit", "bool", None),
+    ("related_legend_defaults", "include_replica", "legend_entry/related/include_replica", "bool", None),
+    ("related_legend_defaults", "include_ensemble", "legend_entry/related/include_ensemble", "bool", None),
 )
 
 _SCOPE_TYPES = {
@@ -189,6 +196,8 @@ _SCOPE_TYPES = {
     "appearance": AppearanceSettings,
     "export": ExportSettings,
     "legend": LegendSettings,
+    "legend_entry_defaults": LegendEntryDefaults,
+    "related_legend_defaults": RelatedLegendDefaults,
 }
 
 
@@ -217,6 +226,8 @@ class QSettingsUserPreferencesRepository:
 
     @staticmethod
     def _coerce(raw: Any, default: Any, kind: str, constraints: Any) -> Any:
+        if kind == "nullable_str":
+            return None if raw is None or str(raw) == "" else str(raw)
         if kind == "bool":
             return read_bool(raw, default)
         if kind == "int":
@@ -330,3 +341,9 @@ class QSettingsUserPreferencesRepository:
 
     def save_legend(self, settings: LegendSettings) -> None:
         self.save_scope("legend", settings)
+
+    def save_legend_entry_defaults(self, settings: LegendEntryDefaults) -> None:
+        self.save_scope("legend_entry_defaults", settings)
+
+    def save_related_legend_defaults(self, settings: RelatedLegendDefaults) -> None:
+        self.save_scope("related_legend_defaults", settings)

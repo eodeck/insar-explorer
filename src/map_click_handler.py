@@ -389,12 +389,12 @@ class TSClickHandler(MapClickHandler):
         self.reference_session.set(reference)
 
     def _commitSelectedTarget(
-        self, *, dates, values, selection, source, plot_multiple=False
+        self, *, dates, values, selection, source, plot_multiple=False, attributes=None
     ):
         """Publish the latest successful target extraction for future pending records."""
         self.target_session.set(CanonicalTargetSnapshot.create(
             dates=dates, values=values, selection=selection, source=source,
-            plot_multiple=plot_multiple,
+            plot_multiple=plot_multiple, attributes=attributes,
         ))
 
     def _reconstructPendingFromActiveSelections(self, reference=None):
@@ -427,6 +427,8 @@ class TSClickHandler(MapClickHandler):
                 self._analysisForNewRecord() if pending_before is None else None
             ),
             source_provenance=target.source,
+            target_attributes=target.attributes,
+            reference_attributes=(None if active_reference is None else active_reference.attributes),
             report_statistics=True,
         )
         pending_after = self.plot_ts.pending_record()
@@ -436,9 +438,11 @@ class TSClickHandler(MapClickHandler):
             return pending_after.id != previous_id
         return pending_after.id == previous_id
 
-    def _applySelectedReference(self, *, dates, values, selection):
+    def _applySelectedReference(self, *, dates, values, selection, attributes=None):
         """Reconstruct pending from canonical target data for a new reference."""
-        reference = ActiveReference.create(dates=dates, values=values, selection=selection)
+        reference = ActiveReference.create(
+            dates=dates, values=values, selection=selection, attributes=attributes
+        )
         success = self._reconstructPendingFromActiveSelections(reference)
         if self.target_session.current() is None:
             success = True
@@ -464,8 +468,9 @@ class TSClickHandler(MapClickHandler):
         coords = None
         ref_coords = None
 
-        attributes = vector_layer_utils.getFeatureAttributes(feature)
-        date_values = vector_layer_utils.extractDateValueAttributes(attributes)
+        raw_attributes = vector_layer_utils.getFeatureAttributes(feature)
+        snapshot_attributes = vector_layer_utils.captureFeatureAttributes(feature)
+        date_values = vector_layer_utils.extractDateValueAttributes(raw_attributes)
         if not ref:
             ts_values = date_values[:, 1]
             ref_values, ref_coords = self._referenceInputsForNewTarget()
@@ -474,7 +479,7 @@ class TSClickHandler(MapClickHandler):
             ref_values = date_values[:, 1]
             if self.selected_field_name:
                 self.map_reference_clicked_value = (
-                    vector_layer_utils.getFeatureFieldValue(attributes, self.selected_field_name))
+                    vector_layer_utils.getFeatureFieldValue(raw_attributes, self.selected_field_name))
             ts_values = None
             ref_coords = crds
 
@@ -485,7 +490,7 @@ class TSClickHandler(MapClickHandler):
                 self._warnNoValidTimeSeriesData()
                 return
             if not self._applySelectedReference(
-                dates=dates, values=ref_values, selection=ref_coords
+                dates=dates, values=ref_values, selection=ref_coords, attributes=snapshot_attributes
             ):
                 self._warnNoValidTimeSeriesData()
                 return
@@ -496,13 +501,16 @@ class TSClickHandler(MapClickHandler):
                 dates=dates, ts_values=ts_values, ref_values=ref_values,
                 coords=coords, ref_coords=ref_coords, update=False,
                 analysis=analysis, source_provenance=time_series_source_from_layer(layer),
+                target_attributes=snapshot_attributes,
+                reference_attributes=(None if self.reference_session.current() is None
+                                      else self.reference_session.current().attributes),
                 report_statistics=True,
             )
             pending = self.plot_ts.pending_record()
             if pending is not None and pending.id != previous_id:
                 self._commitSelectedTarget(
                     dates=dates, values=ts_values, selection=pending.target,
-                    source=pending.source, plot_multiple=False,
+                    source=pending.source, plot_multiple=False, attributes=snapshot_attributes,
                 )
             else:
                 self._warnNoValidTimeSeriesData()
