@@ -88,12 +88,14 @@ class LegendEntryPopup(QWidget):
         form.addRow("Preview", self.preview_label)
         layout.addLayout(form)
         layout.addStretch(1)
-        actions = QHBoxLayout(); actions.addStretch(1)
+        actions = QHBoxLayout()
+        actions.addStretch(1)
         self.legend_defaults_button = createDefaultsMenu(
             tab, self.applySavedLegendDefaultRequested.emit, self.saveLegendDefaultRequested.emit,
             self.applyFactoryLegendDefaultRequested.emit, "button_legend_entry_defaults",
         )
-        actions.addWidget(self.legend_defaults_button); layout.addLayout(actions)
+        actions.addWidget(self.legend_defaults_button)
+        layout.addLayout(actions)
         return tab
 
     def _buildRelatedTab(self):
@@ -116,18 +118,21 @@ class LegendEntryPopup(QWidget):
         self.use_label_only_checkbox.setChecked(False)
         layout.addWidget(self.use_label_only_checkbox)
         layout.addStretch(1)
-        actions = QHBoxLayout(); actions.addStretch(1)
+        actions = QHBoxLayout()
+        actions.addStretch(1)
         self.related_defaults_button = createDefaultsMenu(
             tab, self.applySavedRelatedDefaultRequested.emit, self.saveRelatedDefaultRequested.emit,
             self.applyFactoryRelatedDefaultRequested.emit, "button_legend_entry_related_defaults",
         )
-        actions.addWidget(self.related_defaults_button); layout.addLayout(actions)
+        actions.addWidget(self.related_defaults_button)
+        layout.addLayout(actions)
         return tab
 
     def setRecord(self, record):
         """Populate controls from one immutable record without emitting changes."""
         settings = record.presentation.legend
-        fields = () if record.target is None or record.target.kind.value != "point" else record.target_attributes.field_names()
+        fields = () if record.target is None or record.target.kind.value != "point" \
+            else record.target_attributes.field_names()
         self._record = record
         widgets = (
             self.field_combo, self.include_label_checkbox, self.include_field_checkbox,
@@ -142,7 +147,8 @@ class LegendEntryPopup(QWidget):
                 self.field_combo.addItem(name, name)
             index = self.field_combo.findData(settings.field_name)
             self.field_combo.setCurrentIndex(index if index >= 0 else (0 if fields else -1))
-            self.prefix_edit.setText(settings.prefix); self.suffix_edit.setText(settings.suffix)
+            self.prefix_edit.setText(settings.prefix)
+            self.suffix_edit.setText(settings.suffix)
             self.include_label_checkbox.setChecked(settings.include_label)
             self.include_field_checkbox.setChecked(settings.include_field and index >= 0)
             self.fit_checkbox.setChecked(settings.include_fit)
@@ -152,10 +158,13 @@ class LegendEntryPopup(QWidget):
             self.fit_checkbox.setEnabled(True)
             self.fit_checkbox.setToolTip("" if record.analysis.fit.enabled else "Applies when Fit is enabled.")
             self.replica_checkbox.setEnabled(True)
-            self.replica_checkbox.setToolTip("" if record.analysis.replica.enabled else "Applies when Replica is enabled.")
+            self.replica_checkbox.setToolTip(
+                "" if record.analysis.replica.enabled else "Applies when Replica is enabled."
+            )
             self.ensemble_checkbox.setEnabled(bool(record.data.hasEnsembleData()))
         finally:
-            for widget, value in zip(widgets, blocked): widget.blockSignals(value)
+            for widget, value in zip(widgets, blocked):
+                widget.blockSignals(value)
         self._updateLegendControlStates()
         self._updatePreview()
 
@@ -188,7 +197,8 @@ class LegendEntryPopup(QWidget):
             self.include_label_checkbox.setChecked(include_label)
             self.include_field_checkbox.setChecked(include_field)
         finally:
-            for widget, value in zip(widgets, blocked): widget.blockSignals(value)
+            for widget, value in zip(widgets, blocked):
+                widget.blockSignals(value)
         self.include_label_checkbox.setEnabled(is_point and include_field)
         self.include_field_checkbox.setEnabled(is_point and has_field and include_label)
         self.field_container.setEnabled(is_point and include_field)
@@ -202,13 +212,16 @@ class LegendEntryPopup(QWidget):
         if record is None:
             return
         self._updateLegendControlStates()
-        field_name, prefix, suffix, include_label, include_field, include_fit, include_replica, include_ensemble, use_label_only = self.settings()
+        (field_name, prefix, suffix, include_label, include_field, include_fit, include_replica, include_ensemble,
+         use_label_only) = self.settings()
         settings = SeriesLegendSettings(
-            field_name=field_name, prefix=prefix, suffix=suffix, include_label=include_label, include_field=include_field,
-            include_fit=include_fit, include_replica=include_replica, include_ensemble=include_ensemble,
-            use_label_only=use_label_only,
+            field_name=field_name, prefix=prefix, suffix=suffix, include_label=include_label,
+            include_field=include_field, include_fit=include_fit, include_replica=include_replica,
+            include_ensemble=include_ensemble, use_label_only=use_label_only,
         )
-        preview = format_series_legend_label(replace(record, presentation=replace(record.presentation, legend=settings)))
+        preview = format_series_legend_label(
+            replace(record, presentation=replace(record.presentation, legend=settings))
+        )
         self.preview_label.setText(preview or "No main legend entry")
         self.preview_label.updateGeometry()
         if self.isVisible():

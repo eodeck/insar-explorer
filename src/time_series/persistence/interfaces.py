@@ -7,8 +7,8 @@ from uuid import UUID
 from ...models.time_series import TimeSeriesRecord
 from ..settings.model import (
     AppearanceSettings, EnsembleStyleSettings, ExportSettings, FitAnalysisDefaults,
-    FitStyleSettings, LegendEntryDefaults, LegendSettings, RelatedLegendDefaults, ReplicaAnalysisDefaults, ReplicaSettings, ResidualStyleSettings,
-    SeriesStyleSettings,
+    FitStyleSettings, LegendEntryDefaults, LegendSettings, RelatedLegendDefaults, ReplicaAnalysisDefaults,
+    ReplicaSettings, ResidualStyleSettings, SeriesStyleSettings,
 )
 
 

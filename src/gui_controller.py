@@ -93,8 +93,8 @@ from .time_series.style_palette import (
 from .time_series.legend_entry import resolve_initial_legend_settings
 from .time_series.settings.model import (
     AppearanceSettings, AxisManualRange, EnsembleStyleSettings, ExportSettings,
-    FitStyleSettings, LegendEntryDefaults, LegendSettings, RelatedLegendDefaults, ReplicaSettings, ReplicaStyleSettings, ResidualStyleSettings, SeriesStyleSettings,
-    XAxisSettings,
+    FitStyleSettings, LegendEntryDefaults, LegendSettings, RelatedLegendDefaults, ReplicaSettings, ReplicaStyleSettings,
+    ResidualStyleSettings, SeriesStyleSettings, XAxisSettings,
 )
 from .time_series.settings.persistence import build_legacy_plot_params
 from .time_series.persistence import PreferencesPersistenceError
@@ -441,7 +441,6 @@ class GuiController(QObject):
     def resetTimeSeriesWorkspaceForDataset(self):
         """Compatibility alias for active-layer transient cleanup."""
         self.resetTimeSeriesTransientStateForLayer()
-
 
     def _onThemeChanged(self, *args):
         """Refresh all functional icons after QGIS applies a new palette/theme."""
@@ -2964,7 +2963,8 @@ class GuiController(QObject):
         self.legend_entry_popup.move(screen_aware_popup_position(
             anchor_rect, self.legend_entry_popup.sizeHint(), geometry
         ))
-        self.legend_entry_popup.show(); self.legend_entry_popup.raise_()
+        self.legend_entry_popup.show()
+        self.legend_entry_popup.raise_()
 
     def updateLegendEntrySettings(
         self, field_name, prefix, suffix, include_label, include_field, include_fit,
@@ -2975,9 +2975,9 @@ class GuiController(QObject):
         if record is None:
             return
         settings = SeriesLegendSettings(
-            field_name=field_name, prefix=prefix, suffix=suffix, include_label=include_label, include_field=include_field,
-            include_fit=include_fit, include_replica=include_replica, include_ensemble=include_ensemble,
-            use_label_only=use_label_only,
+            field_name=field_name, prefix=prefix, suffix=suffix, include_label=include_label,
+            include_field=include_field, include_fit=include_fit, include_replica=include_replica,
+            include_ensemble=include_ensemble, use_label_only=use_label_only,
         )
         updated = replace(record, presentation=replace(record.presentation, legend=settings))
         self.choose_point_click_handler.plot_ts.rerender_editable_record(updated)
@@ -3040,9 +3040,9 @@ class GuiController(QObject):
             return
         current = record.presentation.legend
         defaults = prefs.related_legend_defaults
-        self.updateLegendEntrySettings(current.field_name, current.prefix, current.suffix, current.include_label, current.include_field,
-                                       defaults.include_fit, defaults.include_replica, defaults.include_ensemble,
-                                       defaults.use_label_only)
+        self.updateLegendEntrySettings(current.field_name, current.prefix, current.suffix, current.include_label,
+                                       current.include_field, defaults.include_fit, defaults.include_replica,
+                                       defaults.include_ensemble, defaults.use_label_only)
 
     def applyFactoryRelatedLegendDefaults(self):
         """Apply factory related-entry inclusion choices to the current record."""

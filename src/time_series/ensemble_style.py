@@ -23,6 +23,7 @@ def _with_ensemble_style(snapshot, params):
         snapshot.presentation, ensemble=EnsembleStyleSettings.fromParams(params)
     ))
 
+
 ENSEMBLE_STYLE_KEYS = (
     ENSEMBLE_MEMBER_LINE_COLOR,
     ENSEMBLE_MEMBER_LINE_WIDTH,

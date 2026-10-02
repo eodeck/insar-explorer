@@ -370,9 +370,13 @@ class TimeSeriesRecord:
         object.__setattr__(self, "target", SpatialSelection.from_legacy(self.target))
         object.__setattr__(self, "reference", SpatialSelection.from_legacy(self.reference))
         if not isinstance(self.target_attributes, PointAttributeSnapshot):
-            object.__setattr__(self, "target_attributes", PointAttributeSnapshot.from_mapping(self.target_attributes))
+            object.__setattr__(
+                self, "target_attributes", PointAttributeSnapshot.from_mapping(self.target_attributes)
+            )
         if not isinstance(self.reference_attributes, PointAttributeSnapshot):
-            object.__setattr__(self, "reference_attributes", PointAttributeSnapshot.from_mapping(self.reference_attributes))
+            object.__setattr__(
+                self, "reference_attributes", PointAttributeSnapshot.from_mapping(self.reference_attributes)
+            )
         self._normalize_legend_settings()
 
     def _normalize_legend_settings(self) -> None:
