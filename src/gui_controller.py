@@ -2852,20 +2852,20 @@ class GuiController(QObject):
         self.appearance_popup.raise_()
 
     def syncLegendPopup(self):
-        """Refresh the Labels popup from authoritative runtime settings."""
+        """Refresh the Plot legend popup from authoritative runtime settings."""
         settings = self.choose_point_click_handler.plot_ts.settings_model.legend
         self.legend_popup.setSettings(settings)
         self.ui.time_series_toolbar.setLegendEnabled(settings.enabled)
 
     def setLegendEnabled(self, enabled):
-        """Immediately apply the Labels split-button state to runtime settings."""
+        """Immediately apply the Plot legend split-button state to runtime settings."""
         plotter = self.choose_point_click_handler.plot_ts
         settings = replace(plotter.settings_model.legend, enabled=bool(enabled))
         plotter.settings_model.replace_domain("legend", settings)
         self.syncLegendPopup()
 
     def updateLegendSettings(self, location, sync_font_size, font_size, background_opacity):
-        """Immediately apply the complete Labels popup state to runtime settings."""
+        """Immediately apply the complete Plot legend popup state to runtime settings."""
         plotter = self.choose_point_click_handler.plot_ts
         settings = replace(plotter.settings_model.legend, location=location,
                            sync_font_size=sync_font_size, font_size=font_size,
@@ -2879,28 +2879,28 @@ class GuiController(QObject):
         return replace(target, **{field: getattr(source, field) for field in fields})
 
     def _applyLegendFields(self, source, fields):
-        """Apply selected legend fields and refresh the Labels popup."""
+        """Apply selected legend fields and refresh the Plot legend popup."""
         plotter = self.choose_point_click_handler.plot_ts
         settings = self._copyLegendFields(plotter.settings_model.legend, source, fields)
         plotter.settings_model.replace_domain("legend", settings)
         self.syncLegendPopup()
 
     def applyLegendGeneralDefaults(self):
-        """Apply saved General Labels defaults without changing entries or enabled state."""
+        """Apply saved Plot legend defaults without changing entries or enabled state."""
         plotter = self.choose_point_click_handler.plot_ts
         self._applyLegendFields(plotter.user_preferences.load().legend, GENERAL_FIELDS)
 
     def applyLegendEntriesDefaults(self):
-        """Apply saved Labels entry defaults without changing General values or enabled state."""
+        """Apply saved legacy legend entry defaults without changing general values or enabled state."""
         plotter = self.choose_point_click_handler.plot_ts
         self._applyLegendFields(plotter.user_preferences.load().legend, ENTRIES_FIELDS)
 
     def applyFactoryLegendGeneralDefaults(self):
-        """Apply built-in General Labels defaults without changing entries or enabled state."""
+        """Apply built-in Plot legend defaults without changing entries or enabled state."""
         self._applyLegendFields(LegendSettings(), GENERAL_FIELDS)
 
     def applyFactoryLegendEntriesDefaults(self):
-        """Apply built-in Labels entry defaults without changing General values or enabled state."""
+        """Apply built-in legacy legend entry defaults without changing general values or enabled state."""
         self._applyLegendFields(LegendSettings(), ENTRIES_FIELDS)
 
     def _saveLegendFieldsAsDefault(self, fields, message):
@@ -2913,19 +2913,19 @@ class GuiController(QObject):
         )
 
     def setCurrentLegendGeneralAsDefault(self):
-        """Save only the current General Labels settings as defaults."""
+        """Save only the current Plot legend settings as defaults."""
         self._saveLegendFieldsAsDefault(
-            GENERAL_FIELDS, "Labels general settings saved as default."
+            GENERAL_FIELDS, "Plot legend settings saved as default."
         )
 
     def setCurrentLegendEntriesAsDefault(self):
-        """Save only the current Labels entry settings as defaults."""
+        """Save only the current legacy legend entry settings as defaults."""
         self._saveLegendFieldsAsDefault(
-            ENTRIES_FIELDS, "Labels entry settings saved as default."
+            ENTRIES_FIELDS, "Legend entry settings saved as default."
         )
 
     def showLegendPopup(self):
-        """Open the Labels editor anchored beneath the split-button arrow."""
+        """Open the Plot legend editor anchored beneath the split-button arrow."""
         self.syncLegendPopup()
         anchor = self.ui.time_series_toolbar.legend_button.secondary_button
         self.legend_popup.adjustSize()
@@ -3374,7 +3374,7 @@ class GuiController(QObject):
         return self._navigateCommittedTimeSeriesSelection("reference")
 
     def copyCommittedTimeSeriesSettings(self):
-        """Atomically capture Style, Fit, Replica, and Legend Entry from one source."""
+        """Atomically capture Style, Fit, Replica, and Legend entry from one source."""
         panel = self.ui.time_series_point_panel
         selected = panel.selected_committed_ids()
         if len(selected) != 1:
@@ -3400,7 +3400,7 @@ class GuiController(QObject):
             return
         self.time_series_clipboard = clipboard
         self._refreshTimeSeriesClipboardProjection()
-        self.msg_signal.emit("Copied Style, Fit, Replica and Legend Entry settings.", STATUS_SUCCESS, 3000)
+        self.msg_signal.emit("Copied Style, Fit, Replica and Legend entry settings.", STATUS_SUCCESS, 3000)
 
     def pasteCommittedTimeSeriesSettings(self, category):
         """Atomically paste one typed category to selected committed destinations."""
@@ -3466,8 +3466,8 @@ class GuiController(QObject):
             CopyPasteCategory.STYLE: "style",
             CopyPasteCategory.FIT: "Fit",
             CopyPasteCategory.REPLICA: "Replica",
-            CopyPasteCategory.LEGEND: "Legend Entry",
-            CopyPasteCategory.ALL_PRESENTATION: "Style, Fit, Replica and Legend Entry",
+            CopyPasteCategory.LEGEND: "Legend entry",
+            CopyPasteCategory.ALL_PRESENTATION: "All settings",
         }
         count = len(record_ids)
         self.msg_signal.emit(

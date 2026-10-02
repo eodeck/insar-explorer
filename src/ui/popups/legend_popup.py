@@ -1,9 +1,9 @@
-"""Tabbed editor for plot-wide time-series legend settings."""
+"""Compact editor for plot-wide time-series legend settings."""
 
 from qgis.PyQt.QtCore import pyqtSignal
 from qgis.PyQt.QtWidgets import (
-    QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout, QHBoxLayout, QLineEdit,
-    QGroupBox, QSpinBox, QTabWidget, QVBoxLayout, QWidget,
+    QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout, QHBoxLayout, QGroupBox,
+    QSpinBox, QVBoxLayout, QWidget,
 )
 
 from ...qt_compat import POPUP_WINDOW_FLAG
@@ -11,7 +11,7 @@ from .defaults_menu import createDefaultsMenu
 
 
 class LegendPopup(QWidget):
-    """Edit General and Entries legend settings with immediate runtime updates."""
+    """Edit plot-wide legend settings with immediate runtime updates."""
 
     settingsChanged = pyqtSignal(str, bool, float, float)
     applySavedGeneralDefaultRequested = pyqtSignal()
@@ -30,14 +30,10 @@ class LegendPopup(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent, POPUP_WINDOW_FLAG)
         self.setObjectName("legendPopup")
-        self.setWindowTitle("Plot Legend")
+        self.setWindowTitle("Plot legend")
 
         layout = QVBoxLayout(self)
-        self.tabs = QTabWidget(self)
-        self.tabs.setObjectName("tabs_legend_settings")
-        self.general_tab = self._buildGeneralTab()
-        self.tabs.addTab(self.general_tab, "General")
-        layout.addWidget(self.tabs)
+        self._buildSettings(layout)
 
         self.sync_font_size_checkbox.setChecked(True)
         self.font_size_spin.setValue(9.0)
@@ -50,11 +46,9 @@ class LegendPopup(QWidget):
         self.font_size_spin.valueChanged.connect(self._emit_settings)
         self.background_opacity_spin.valueChanged.connect(self._emit_settings)
 
-    def _buildGeneralTab(self):
-        tab = QWidget(self)
-        layout = QVBoxLayout(tab)
-
-        legend_group = QGroupBox("Legend", tab)
+    def _buildSettings(self, layout):
+        """Add the compact plot-wide layout, text, and defaults controls."""
+        legend_group = QGroupBox("Layout", self)
         legend_form = QFormLayout(legend_group)
         self.location_combo = QComboBox(legend_group)
         self.location_combo.setObjectName("combo_legend_location")
@@ -73,9 +67,9 @@ class LegendPopup(QWidget):
         legend_form.addRow("Background opacity", self.background_opacity_spin)
         layout.addWidget(legend_group)
 
-        text_group = QGroupBox("Text", tab)
+        text_group = QGroupBox("Text", self)
         text_form = QFormLayout(text_group)
-        self.sync_font_size_checkbox = QCheckBox("Match Appearance text size", text_group)
+        self.sync_font_size_checkbox = QCheckBox("Match plot text size", text_group)
         self.sync_font_size_checkbox.setObjectName("check_legend_sync_font_size")
         self.font_size_spin = QDoubleSpinBox(text_group)
         self.font_size_spin.setObjectName("spin_legend_font_size")
@@ -91,90 +85,13 @@ class LegendPopup(QWidget):
         actions = QHBoxLayout()
         actions.addStretch(1)
         self.general_defaults_button = createDefaultsMenu(
-            tab, self.applySavedGeneralDefaultRequested.emit,
+            self, self.applySavedGeneralDefaultRequested.emit,
             self.saveCurrentGeneralAsDefaultRequested.emit,
             self.applyFactoryGeneralDefaultRequested.emit,
             "button_legend_general_defaults",
         )
         actions.addWidget(self.general_defaults_button)
         layout.addLayout(actions)
-        return tab
-
-    def _buildEntriesTab(self):
-        tab = QWidget(self)
-        layout = QVBoxLayout(tab)
-
-        fit_group = QGroupBox("Fit", tab)
-        fit_form = QFormLayout(fit_group)
-        self.include_fit_checkbox = QCheckBox("Include fit", fit_group)
-        self.include_fit_checkbox.setObjectName("check_legend_include_fit")
-        self.fit_prefix_edit = self._line_edit(
-            fit_group, "edit_legend_fit_prefix", "Fit label prefix"
-        )
-        self.fit_suffix_edit = self._line_edit(
-            fit_group, "edit_legend_fit_suffix", "Fit label suffix"
-        )
-        fit_form.addRow(self.include_fit_checkbox)
-        fit_form.addRow("Prefix", self.fit_prefix_edit)
-        fit_form.addRow("Suffix", self.fit_suffix_edit)
-        layout.addWidget(fit_group)
-
-        replica_group = QGroupBox("Replica", tab)
-        replica_form = QFormLayout(replica_group)
-        self.include_replica_checkbox = QCheckBox("Include replica", replica_group)
-        self.include_replica_checkbox.setObjectName("check_legend_include_replica")
-        self.replica_prefix_edit = self._line_edit(
-            replica_group, "edit_legend_replica_prefix", "Replica label prefix"
-        )
-        self.replica_suffix_edit = self._line_edit(
-            replica_group, "edit_legend_replica_suffix", "Replica label suffix"
-        )
-        replica_form.addRow(self.include_replica_checkbox)
-        replica_form.addRow("Prefix", self.replica_prefix_edit)
-        replica_form.addRow("Suffix", self.replica_suffix_edit)
-        layout.addWidget(replica_group)
-
-        ensemble_group = QGroupBox("Ensemble", tab)
-        ensemble_form = QFormLayout(ensemble_group)
-        self.include_ensemble_checkbox = QCheckBox("Include ensemble", ensemble_group)
-        self.include_ensemble_checkbox.setObjectName("check_legend_include_ensemble")
-        self.ensemble_prefix_edit = self._line_edit(
-            ensemble_group, "edit_legend_ensemble_prefix", "Ensemble label prefix"
-        )
-        self.ensemble_suffix_edit = self._line_edit(
-            ensemble_group, "edit_legend_ensemble_suffix", "Ensemble label suffix"
-        )
-        ensemble_form.addRow(self.include_ensemble_checkbox)
-        ensemble_form.addRow("Prefix", self.ensemble_prefix_edit)
-        ensemble_form.addRow("Suffix", self.ensemble_suffix_edit)
-        layout.addWidget(ensemble_group)
-        layout.addStretch(1)
-        actions = QHBoxLayout()
-        actions.addStretch(1)
-        self.entries_defaults_button = createDefaultsMenu(
-            tab, self.applySavedEntriesDefaultRequested.emit,
-            self.saveCurrentEntriesAsDefaultRequested.emit,
-            self.applyFactoryEntriesAsDefaultRequested.emit,
-            "button_legend_entries_defaults",
-        )
-        actions.addWidget(self.entries_defaults_button)
-        layout.addLayout(actions)
-        return tab
-
-    @staticmethod
-    def _line_edit(parent, object_name, accessible_name):
-        editor = QLineEdit(parent)
-        editor.setObjectName(object_name)
-        editor.setAccessibleName(accessible_name)
-        editor.setMaximumWidth(160)
-        return editor
-
-    def _text_editors(self):
-        return (
-            self.fit_prefix_edit, self.fit_suffix_edit,
-            self.replica_prefix_edit, self.replica_suffix_edit,
-            self.ensemble_prefix_edit, self.ensemble_suffix_edit,
-        )
 
     def _syncFontSizeEnabled(self, checked):
         self.font_size_spin.setEnabled(not checked)

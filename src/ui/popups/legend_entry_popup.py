@@ -8,7 +8,7 @@ from qgis.PyQt.QtWidgets import (
     QLineEdit, QTabWidget, QVBoxLayout, QWidget,
 )
 
-from ...qt_compat import POPUP_WINDOW_FLAG
+from ...qt_compat import POPUP_WINDOW_FLAG, SIZE_POLICY_EXPANDING, SIZE_POLICY_MINIMUM
 from .defaults_menu import createDefaultsMenu
 from ...models.time_series import SeriesLegendSettings
 from ...time_series.legend_formatting import format_series_legend_label
@@ -28,11 +28,11 @@ class LegendEntryPopup(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent, POPUP_WINDOW_FLAG)
         self.setObjectName("legendEntryPopup")
-        self.setWindowTitle("Legend Entry")
+        self.setWindowTitle("Legend entry")
         layout = QVBoxLayout(self)
         self.tabs = QTabWidget(self)
         self.tabs.setObjectName("tabs_legend_entry")
-        self.tabs.addTab(self._buildLegendTab(), "Legend")
+        self.tabs.addTab(self._buildLegendTab(), "Main")
         self.tabs.addTab(self._buildRelatedTab(), "Related")
         layout.addWidget(self.tabs)
         self.field_combo.currentIndexChanged.connect(self._emitSettings)
@@ -51,34 +51,36 @@ class LegendEntryPopup(QWidget):
     def _buildLegendTab(self):
         tab = QWidget(self)
         layout = QVBoxLayout(tab)
-        group = QGroupBox("Current time series", tab)
-        form = QFormLayout(group)
-        self.target_label = QLabel(group)
+        form = QFormLayout()
+        self.target_label = QLabel(tab)
         self.target_label.setObjectName("label_legend_entry_target")
-        self.include_label_checkbox = QCheckBox("Include label", group)
+        self.include_label_checkbox = QCheckBox("Include label", tab)
         self.include_label_checkbox.setObjectName("check_legend_entry_include_label")
-        self.include_field_checkbox = QCheckBox("Include additional field", group)
+        self.include_field_checkbox = QCheckBox("Include field", tab)
         self.include_field_checkbox.setObjectName("check_legend_entry_include_field")
-        self.field_combo = QComboBox(group)
+        self.field_combo = QComboBox(tab)
         self.field_combo.setObjectName("combo_legend_entry_field")
-        self.field_combo.setAccessibleName("Additional legend field")
-        self.prefix_edit = QLineEdit(group)
+        self.field_combo.setAccessibleName("Legend field")
+        self.prefix_edit = QLineEdit(tab)
         self.prefix_edit.setObjectName("edit_legend_entry_prefix")
         self.prefix_edit.setAccessibleName("Legend field prefix")
-        self.suffix_edit = QLineEdit(group)
+        self.prefix_edit.setMaxLength(32)
+        self.suffix_edit = QLineEdit(tab)
         self.suffix_edit.setObjectName("edit_legend_entry_suffix")
         self.suffix_edit.setAccessibleName("Legend field suffix")
-        self.preview_label = QLabel(group)
+        self.suffix_edit.setMaxLength(32)
+        self.preview_label = QLabel(tab)
         self.preview_label.setObjectName("label_legend_entry_preview")
         self.preview_label.setWordWrap(True)
+        self.preview_label.setSizePolicy(SIZE_POLICY_EXPANDING, SIZE_POLICY_MINIMUM)
         form.addRow("Editing", self.target_label)
         form.addRow(self.include_label_checkbox)
         form.addRow(self.include_field_checkbox)
-        form.addRow("Additional field", self.field_combo)
+        form.addRow("Field", self.field_combo)
         form.addRow("Prefix", self.prefix_edit)
         form.addRow("Suffix", self.suffix_edit)
         form.addRow("Preview", self.preview_label)
-        layout.addWidget(group)
+        layout.addLayout(form)
         layout.addStretch(1)
         actions = QHBoxLayout(); actions.addStretch(1)
         self.legend_defaults_button = createDefaultsMenu(
@@ -91,17 +93,17 @@ class LegendEntryPopup(QWidget):
     def _buildRelatedTab(self):
         tab = QWidget(self)
         layout = QVBoxLayout(tab)
-        group = QGroupBox("Related entries", tab)
-        form = QFormLayout(group)
-        self.fit_checkbox = QCheckBox("Show in legend", group)
+        group = QGroupBox("Show in legend", tab)
+        related_layout = QVBoxLayout(group)
+        self.fit_checkbox = QCheckBox("Fit", group)
         self.fit_checkbox.setObjectName("check_legend_entry_fit")
-        self.replica_checkbox = QCheckBox("Show in legend", group)
+        self.replica_checkbox = QCheckBox("Replica", group)
         self.replica_checkbox.setObjectName("check_legend_entry_replica")
-        self.ensemble_checkbox = QCheckBox("Show in legend", group)
+        self.ensemble_checkbox = QCheckBox("Ensemble", group)
         self.ensemble_checkbox.setObjectName("check_legend_entry_ensemble")
-        form.addRow("Fit", self.fit_checkbox)
-        form.addRow("Replica", self.replica_checkbox)
-        form.addRow("Ensemble", self.ensemble_checkbox)
+        related_layout.addWidget(self.fit_checkbox)
+        related_layout.addWidget(self.replica_checkbox)
+        related_layout.addWidget(self.ensemble_checkbox)
         layout.addWidget(group); layout.addStretch(1)
         actions = QHBoxLayout(); actions.addStretch(1)
         self.related_defaults_button = createDefaultsMenu(
@@ -131,8 +133,10 @@ class LegendEntryPopup(QWidget):
             self.fit_checkbox.setChecked(settings.include_fit)
             self.replica_checkbox.setChecked(settings.include_replica)
             self.ensemble_checkbox.setChecked(settings.include_ensemble)
-            self.fit_checkbox.setEnabled(bool(record.analysis.fit.enabled))
-            self.replica_checkbox.setEnabled(bool(record.analysis.replica.enabled))
+            self.fit_checkbox.setEnabled(True)
+            self.fit_checkbox.setToolTip("" if record.analysis.fit.enabled else "Applies when Fit is enabled.")
+            self.replica_checkbox.setEnabled(True)
+            self.replica_checkbox.setToolTip("" if record.analysis.replica.enabled else "Applies when Replica is enabled.")
             self.ensemble_checkbox.setEnabled(bool(record.data.hasEnsembleData()))
         finally:
             for widget, value in zip(widgets, blocked): widget.blockSignals(value)
@@ -172,7 +176,7 @@ class LegendEntryPopup(QWidget):
         self.suffix_edit.setEnabled(is_point and include_field)
         if not is_point:
             self.include_label_checkbox.setToolTip("Polygon legend entries use the series label in this version.")
-            self.field_combo.setToolTip("Additional fields are available for point-vector selections only.")
+            self.field_combo.setToolTip("Fields are available for point-vector selections only.")
 
     def _updatePreview(self, *_args):
         """Render a non-mutating preview through the shared record formatter."""
@@ -187,6 +191,12 @@ class LegendEntryPopup(QWidget):
         )
         preview = format_series_legend_label(replace(record, presentation=replace(record.presentation, legend=settings)))
         self.preview_label.setText(preview or "No main legend entry")
+        self.preview_label.updateGeometry()
+        if self.isVisible():
+            width = self.width()
+            self.adjustSize()
+            if width > 0:
+                self.resize(width, self.height())
 
     def _emitSettings(self, *_args):
         self._updateLegendControlStates()

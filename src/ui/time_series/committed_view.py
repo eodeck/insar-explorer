@@ -91,10 +91,10 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
         )
         self.copy_settings_action.setObjectName("action_copy_time_series_settings")
         self.copy_settings_action.setToolTip(
-            "Copy Style, Fit, Replica and Legend Entry settings"
+            "Copy Style, Fit, Replica and Legend entry settings"
         )
         self.copy_settings_action.setStatusTip(
-            "Copy Style, Fit, Replica and Legend Entry settings"
+            "Copy Style, Fit, Replica and Legend entry settings"
         )
         set_copy_accessible_name = getattr(self.copy_settings_action, "setAccessibleName", None)
         if callable(set_copy_accessible_name):
@@ -108,8 +108,8 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
             (CopyPasteCategory.STYLE, "Style", STYLE_ACTION_ICON),
             (CopyPasteCategory.FIT, "Fit", FIT_ACTION_ICON),
             (CopyPasteCategory.REPLICA, "Replica", REPLICA_ACTION_ICON),
-            (CopyPasteCategory.LEGEND, "Legend Entry", LEGEND_ACTION_ICON),
-            (CopyPasteCategory.ALL_PRESENTATION, "Style, Fit, Replica and Legend Entry", None),
+            (CopyPasteCategory.LEGEND, "Legend entry", LEGEND_ACTION_ICON),
+            (CopyPasteCategory.ALL_PRESENTATION, "All", None),
         )
         for category, label, icon_path in labels:
             paste_action = (
@@ -117,7 +117,10 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
                 if icon_path else QAction(label, self)
             )
             paste_action.setObjectName("action_paste_time_series_" + category.value)
-            paste_tip = "Paste {} settings".format(label)
+            paste_tip = (
+                "Paste Style, Fit, Replica and Legend entry settings"
+                if category == CopyPasteCategory.ALL_PRESENTATION else "Paste {} settings".format(label)
+            )
             paste_action.setToolTip(paste_tip)
             paste_action.setStatusTip(paste_tip)
             set_paste_accessible_name = getattr(paste_action, "setAccessibleName", None)
@@ -205,7 +208,7 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
         """Create a Paste container that reuses the shared leaf actions."""
         menu = QtWidgets.QMenu("Paste settings", parent)
         menu.setIcon(themed_icon("clipboard"))
-        paste_tip = "Apply copied Style, Fit, Replica and Legend Entry settings"
+        paste_tip = "Apply copied Style, Fit, Replica and Legend entry settings"
         menu.menuAction().setToolTip(paste_tip)
         menu.menuAction().setStatusTip(paste_tip)
         for action in self.paste_actions.values():

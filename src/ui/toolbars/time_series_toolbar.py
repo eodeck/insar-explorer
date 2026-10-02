@@ -212,7 +212,7 @@ class TimeSeriesToolbar(QToolBar):
             "action_ts_plot_style",
         )
         self.legend_entry_action = self._createAction(
-            "label", "Legend Entry", "Edit the current time-series legend entry",
+            "label", "Legend entry", "Edit the current time-series legend entry",
             "action_ts_legend_entry",
         )
         self.appearance_action = self._createAction(
@@ -230,12 +230,12 @@ class TimeSeriesToolbar(QToolBar):
             arrow_side=SplitToolButton.Left,
         )
         self.legend_button.setIconSize(self.iconSize())
-        self.legend_button.setPrimaryAccessibleName("Labels")
+        self.legend_button.setPrimaryAccessibleName("Plot legend")
         self.legend_button.setPrimaryAccessibleDescription(
-            "Show or hide plot legends. Use the arrow for label settings."
+            "Show or hide plot legends. Use the arrow for plot legend settings."
         )
-        self.legend_button.setSecondaryToolTip("Label settings")
-        self.legend_button.setSecondaryAccessibleName("Label settings")
+        self.legend_button.setSecondaryToolTip("Plot legend settings")
+        self.legend_button.setSecondaryAccessibleName("Plot legend settings")
         self.legend_button.setSecondaryAccessibleDescription("Open plot legend settings.")
         self.legend_button.setPrimaryToolTip("Show plot legends")
         self.legend_button.setStatusTip("Show or hide plot legends; use the arrow for settings.")
