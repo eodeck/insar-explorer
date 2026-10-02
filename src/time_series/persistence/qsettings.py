@@ -22,7 +22,7 @@ from ..settings.model import (
     SeriesStyleSettings,
 )
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 10
 DEFAULT_PREFIX = "insar_explorer/time_series"
 
 
@@ -101,7 +101,8 @@ def read_float(value: Any, default: float, minimum=None, maximum=None) -> float:
 
 def read_choice(value: Any, default: str, allowed: Iterable[str]) -> str:
     """Return a stable string choice when allowed, otherwise the default."""
-    normalized = str(value) if value is not None else default
+    default = getattr(default, "value", default)
+    normalized = str(getattr(value, "value", value)) if value is not None else default
     return normalized if normalized in allowed else default
 
 
@@ -185,6 +186,7 @@ KEY_SPECS = (
     ("related_legend_defaults", "include_fit", "legend_entry/related/include_fit", "bool", None),
     ("related_legend_defaults", "include_replica", "legend_entry/related/include_replica", "bool", None),
     ("related_legend_defaults", "include_ensemble", "legend_entry/related/include_ensemble", "bool", None),
+    ("related_legend_defaults", "use_label_only", "legend_entry/related/use_label_only", "bool", None),
 )
 
 _SCOPE_TYPES = {
@@ -309,6 +311,7 @@ class QSettingsUserPreferencesRepository:
         for spec_scope, field, suffix, _kind, _constraints in KEY_SPECS:
             if spec_scope == scope:
                 value = getattr(settings, field)
+                value = getattr(value, "value", value)
                 self._write(suffix, value)
         self._write("schema_version", SCHEMA_VERSION)
         if sync:

@@ -638,6 +638,12 @@ class RelatedLegendDefaults:
     include_fit: bool = True
     include_replica: bool = True
     include_ensemble: bool = True
+    use_label_only: bool = False
+
+    def __post_init__(self):
+        for name in ("include_fit", "include_replica", "include_ensemble"):
+            object.__setattr__(self, name, bool(getattr(self, name)))
+        object.__setattr__(self, "use_label_only", bool(self.use_label_only))
 
 
 @dataclass

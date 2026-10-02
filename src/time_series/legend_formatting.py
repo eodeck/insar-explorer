@@ -58,3 +58,10 @@ def format_series_legend_label(record):
         field_text = _format_field_block(settings.prefix, settings.suffix, ("R: " + reference,))
         return LEGEND_SEPARATOR.join(part for part in (label, field_text) if part)
     return label
+
+
+def related_series_legend_label(record):
+    """Resolve the text prefix used by Fit, Replica, and Ensemble entries."""
+    main_label = format_series_legend_label(record)
+    base_label = base_series_legend_label(record)
+    return base_label if record.presentation.legend.use_label_only else (main_label or base_label)

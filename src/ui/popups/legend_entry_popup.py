@@ -17,7 +17,7 @@ from ...time_series.legend_formatting import format_series_legend_label
 class LegendEntryPopup(QWidget):
     """Edit only the current record's legend entry choices."""
 
-    settingsChanged = pyqtSignal(object, str, str, bool, bool, bool, bool, bool)
+    settingsChanged = pyqtSignal(object, str, str, bool, bool, bool, bool, bool, bool)
     applySavedLegendDefaultRequested = pyqtSignal()
     saveLegendDefaultRequested = pyqtSignal()
     applyFactoryLegendDefaultRequested = pyqtSignal()
@@ -47,6 +47,7 @@ class LegendEntryPopup(QWidget):
         self.include_field_checkbox.toggled.connect(self._updatePreview)
         for checkbox in (self.fit_checkbox, self.replica_checkbox, self.ensemble_checkbox):
             checkbox.toggled.connect(self._emitSettings)
+        self.use_label_only_checkbox.toggled.connect(self._emitSettings)
 
     def _buildLegendTab(self):
         tab = QWidget(self)
@@ -109,7 +110,12 @@ class LegendEntryPopup(QWidget):
         related_layout.addWidget(self.fit_checkbox)
         related_layout.addWidget(self.replica_checkbox)
         related_layout.addWidget(self.ensemble_checkbox)
-        layout.addWidget(group); layout.addStretch(1)
+        layout.addWidget(group)
+        self.use_label_only_checkbox = QCheckBox("Use label only", tab)
+        self.use_label_only_checkbox.setObjectName("check_legend_entry_use_label_only")
+        self.use_label_only_checkbox.setChecked(False)
+        layout.addWidget(self.use_label_only_checkbox)
+        layout.addStretch(1)
         actions = QHBoxLayout(); actions.addStretch(1)
         self.related_defaults_button = createDefaultsMenu(
             tab, self.applySavedRelatedDefaultRequested.emit, self.saveRelatedDefaultRequested.emit,
@@ -123,7 +129,11 @@ class LegendEntryPopup(QWidget):
         settings = record.presentation.legend
         fields = () if record.target is None or record.target.kind.value != "point" else record.target_attributes.field_names()
         self._record = record
-        widgets = (self.field_combo, self.include_label_checkbox, self.include_field_checkbox, self.prefix_edit, self.suffix_edit, self.fit_checkbox, self.replica_checkbox, self.ensemble_checkbox)
+        widgets = (
+            self.field_combo, self.include_label_checkbox, self.include_field_checkbox,
+            self.prefix_edit, self.suffix_edit, self.fit_checkbox, self.replica_checkbox,
+            self.ensemble_checkbox, self.use_label_only_checkbox,
+        )
         blocked = [widget.blockSignals(True) for widget in widgets]
         try:
             self.target_label.setText(str(record.presentation.label or "Unnamed"))
@@ -138,6 +148,7 @@ class LegendEntryPopup(QWidget):
             self.fit_checkbox.setChecked(settings.include_fit)
             self.replica_checkbox.setChecked(settings.include_replica)
             self.ensemble_checkbox.setChecked(settings.include_ensemble)
+            self.use_label_only_checkbox.setChecked(settings.use_label_only)
             self.fit_checkbox.setEnabled(True)
             self.fit_checkbox.setToolTip("" if record.analysis.fit.enabled else "Applies when Fit is enabled.")
             self.replica_checkbox.setEnabled(True)
@@ -150,8 +161,12 @@ class LegendEntryPopup(QWidget):
 
     def settings(self):
         """Return the complete per-record entry configuration represented by the controls."""
-        return (self.field_combo.currentData(), self.prefix_edit.text(), self.suffix_edit.text(), self.include_label_checkbox.isChecked(), self.include_field_checkbox.isChecked(),
-                self.fit_checkbox.isChecked(), self.replica_checkbox.isChecked(), self.ensemble_checkbox.isChecked())
+        return (
+            self.field_combo.currentData(), self.prefix_edit.text(), self.suffix_edit.text(),
+            self.include_label_checkbox.isChecked(), self.include_field_checkbox.isChecked(),
+            self.fit_checkbox.isChecked(), self.replica_checkbox.isChecked(),
+            self.ensemble_checkbox.isChecked(), self.use_label_only_checkbox.isChecked(),
+        )
 
     def _updateLegendControlStates(self):
         """Keep point and polygon controls in a valid non-empty configuration."""
@@ -187,10 +202,11 @@ class LegendEntryPopup(QWidget):
         if record is None:
             return
         self._updateLegendControlStates()
-        field_name, prefix, suffix, include_label, include_field, include_fit, include_replica, include_ensemble = self.settings()
+        field_name, prefix, suffix, include_label, include_field, include_fit, include_replica, include_ensemble, use_label_only = self.settings()
         settings = SeriesLegendSettings(
             field_name=field_name, prefix=prefix, suffix=suffix, include_label=include_label, include_field=include_field,
             include_fit=include_fit, include_replica=include_replica, include_ensemble=include_ensemble,
+            use_label_only=use_label_only,
         )
         preview = format_series_legend_label(replace(record, presentation=replace(record.presentation, legend=settings)))
         self.preview_label.setText(preview or "No main legend entry")

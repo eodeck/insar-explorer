@@ -92,6 +92,7 @@ class SeriesLegendSettings:
     include_ensemble: bool = True
     include_label: bool = True
     include_field: bool = False
+    use_label_only: bool = False
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "field_name", None if self.field_name in (None, "") else str(self.field_name))
@@ -101,6 +102,7 @@ class SeriesLegendSettings:
             object.__setattr__(self, name, bool(getattr(self, name)))
         object.__setattr__(self, "include_label", bool(self.include_label))
         object.__setattr__(self, "include_field", bool(self.include_field))
+        object.__setattr__(self, "use_label_only", bool(self.use_label_only))
 
 
 @dataclass(frozen=True)

@@ -30,8 +30,10 @@ from .qt_compat import PALETTE_WINDOW_TEXT
 from .time_series.store import TimeSeriesStore
 from .time_series.pending_session import PendingTimeSeriesSession, resolve_editable_record
 from .time_series.legend_entry import resolve_initial_legend_settings
-from .time_series.legend_formatting import base_series_legend_label, format_series_legend_label
-from .time_series.settings.model import LegendEntryDefaults, RelatedLegendDefaults
+from .time_series.legend_formatting import format_series_legend_label, related_series_legend_label
+from .time_series.settings.model import (
+    LegendEntryDefaults, RelatedLegendDefaults,
+)
 from .models.time_series import (
     FitConfiguration,
     ReplicaConfiguration,
@@ -1733,7 +1735,7 @@ class PlotTs():
             if graphics is None:
                 continue
             label = self._legend_label(record)
-            related_label = base_series_legend_label(record)
+            related_label = related_series_legend_label(record)
             base_sample = CompositeSeriesLegendSample(graphics.scatter, graphics.line)
             if label and (base_sample.scatter is not None or base_sample.line is not None):
                 main_entries.append((

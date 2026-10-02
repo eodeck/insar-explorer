@@ -2966,7 +2966,10 @@ class GuiController(QObject):
         ))
         self.legend_entry_popup.show(); self.legend_entry_popup.raise_()
 
-    def updateLegendEntrySettings(self, field_name, prefix, suffix, include_label, include_field, include_fit, include_replica, include_ensemble):
+    def updateLegendEntrySettings(
+        self, field_name, prefix, suffix, include_label, include_field, include_fit,
+        include_replica, include_ensemble, use_label_only,
+    ):
         """Replace current-record legend choices without changing plot-wide settings."""
         record = self._legendEntryRecord()
         if record is None:
@@ -2974,6 +2977,7 @@ class GuiController(QObject):
         settings = SeriesLegendSettings(
             field_name=field_name, prefix=prefix, suffix=suffix, include_label=include_label, include_field=include_field,
             include_fit=include_fit, include_replica=include_replica, include_ensemble=include_ensemble,
+            use_label_only=use_label_only,
         )
         updated = replace(record, presentation=replace(record.presentation, legend=settings))
         self.choose_point_click_handler.plot_ts.rerender_editable_record(updated)
@@ -2986,7 +2990,7 @@ class GuiController(QObject):
         resolved = resolve_initial_legend_settings(record.target_attributes, entry_defaults, related_defaults)
         self.updateLegendEntrySettings(
             resolved.field_name, resolved.prefix, resolved.suffix, resolved.include_label, resolved.include_field,
-            resolved.include_fit, resolved.include_replica, resolved.include_ensemble,
+            resolved.include_fit, resolved.include_replica, resolved.include_ensemble, resolved.use_label_only,
         )
 
     def applyLegendEntryDefaults(self):
@@ -2996,7 +3000,10 @@ class GuiController(QObject):
         related = record.presentation.legend if record is not None else SeriesLegendSettings()
         self._applyLegendEntryDefaults(
             preferences.legend_entry_defaults,
-            RelatedLegendDefaults(related.include_fit, related.include_replica, related.include_ensemble),
+            RelatedLegendDefaults(
+                related.include_fit, related.include_replica, related.include_ensemble,
+                related.use_label_only,
+            ),
         )
 
     def applyFactoryLegendEntryDefaults(self):
@@ -3004,7 +3011,10 @@ class GuiController(QObject):
         record = self._legendEntryRecord()
         related = record.presentation.legend if record is not None else SeriesLegendSettings()
         self._applyLegendEntryDefaults(
-            LegendEntryDefaults(), RelatedLegendDefaults(related.include_fit, related.include_replica, related.include_ensemble)
+            LegendEntryDefaults(), RelatedLegendDefaults(
+                related.include_fit, related.include_replica, related.include_ensemble,
+                related.use_label_only,
+            )
         )
 
     def saveLegendEntryDefaults(self):
@@ -3031,7 +3041,8 @@ class GuiController(QObject):
         current = record.presentation.legend
         defaults = prefs.related_legend_defaults
         self.updateLegendEntrySettings(current.field_name, current.prefix, current.suffix, current.include_label, current.include_field,
-                                       defaults.include_fit, defaults.include_replica, defaults.include_ensemble)
+                                       defaults.include_fit, defaults.include_replica, defaults.include_ensemble,
+                                       defaults.use_label_only)
 
     def applyFactoryRelatedLegendDefaults(self):
         """Apply factory related-entry inclusion choices to the current record."""
@@ -3042,6 +3053,7 @@ class GuiController(QObject):
             self.updateLegendEntrySettings(
                 current.field_name, current.prefix, current.suffix, current.include_label, current.include_field,
                 defaults.include_fit, defaults.include_replica, defaults.include_ensemble,
+                defaults.use_label_only,
             )
 
     def saveRelatedLegendDefaults(self):
@@ -3050,7 +3062,10 @@ class GuiController(QObject):
         if record is None:
             return
         value = record.presentation.legend
-        defaults = RelatedLegendDefaults(value.include_fit, value.include_replica, value.include_ensemble)
+        defaults = RelatedLegendDefaults(
+            value.include_fit, value.include_replica, value.include_ensemble,
+            value.use_label_only,
+        )
         self._saveUserPreferences(
             lambda: self.choose_point_click_handler.plot_ts.user_preferences.save_related_legend_defaults(defaults),
             "Related legend settings saved as default.",

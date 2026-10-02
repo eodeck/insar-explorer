@@ -37,4 +37,5 @@ def resolve_initial_legend_settings(
         include_fit=related_defaults.include_fit,
         include_replica=related_defaults.include_replica,
         include_ensemble=related_defaults.include_ensemble,
+        use_label_only=related_defaults.use_label_only,
     )

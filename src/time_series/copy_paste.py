@@ -144,6 +144,7 @@ def apply_legend_entry_snapshot(record: TimeSeriesRecord, snapshot: LegendEntryS
             include_fit=copied.include_fit,
             include_replica=copied.include_replica,
             include_ensemble=copied.include_ensemble,
+            use_label_only=copied.use_label_only,
         )
     elif copied.field_name and _legend_field_is_available(record, copied.field_name):
         settings = copied
@@ -155,5 +156,6 @@ def apply_legend_entry_snapshot(record: TimeSeriesRecord, snapshot: LegendEntryS
             include_fit=copied.include_fit,
             include_replica=copied.include_replica,
             include_ensemble=copied.include_ensemble,
+            use_label_only=copied.use_label_only,
         )
     return replace(record, presentation=replace(record.presentation, legend=settings))
