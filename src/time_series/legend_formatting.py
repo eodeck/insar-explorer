@@ -23,6 +23,14 @@ def _display_value(value):
     return text or None
 
 
+def _format_field_block(prefix, suffix, values):
+    """Apply normalized field affixes once around one or more value parts."""
+    prefix = str(prefix or "").strip()
+    suffix = str(suffix or "").strip()
+    value_block = LEGEND_SEPARATOR.join(values)
+    return " ".join(part for part in (prefix, value_block, suffix) if part)
+
+
 def format_series_legend_label(record):
     """Format one base label using immutable record snapshots only.
 
@@ -36,13 +44,17 @@ def format_series_legend_label(record):
     if (not settings.include_field or not settings.field_name or record.target is None
             or record.target.kind.value != "point"):
         return label
-    decorate = lambda value: settings.prefix + value + settings.suffix
     target = _display_value(record.target_attributes.value(settings.field_name))
     reference = _display_value(record.reference_attributes.value(settings.field_name))
     if target is not None and reference is not None:
-        return LEGEND_SEPARATOR.join(part for part in (label, "T: " + decorate(target), "R: " + decorate(reference)) if part)
+        field_text = _format_field_block(
+            settings.prefix, settings.suffix, ("T: " + target, "R: " + reference)
+        )
+        return LEGEND_SEPARATOR.join(part for part in (label, field_text) if part)
     if target is not None:
-        return LEGEND_SEPARATOR.join(part for part in (label, decorate(target)) if part)
+        field_text = _format_field_block(settings.prefix, settings.suffix, (target,))
+        return LEGEND_SEPARATOR.join(part for part in (label, field_text) if part)
     if reference is not None:
-        return LEGEND_SEPARATOR.join(part for part in (label, "R: " + decorate(reference)) if part)
+        field_text = _format_field_block(settings.prefix, settings.suffix, ("R: " + reference,))
+        return LEGEND_SEPARATOR.join(part for part in (label, field_text) if part)
     return label
