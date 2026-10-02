@@ -53,8 +53,8 @@ Rename, remove, and copy settings
 ---------------------------------
 
 Use the selection list controls or context menu to rename or remove stored time
-series. Settings can be copied from one time series and pasted as Style, Fit,
-Replica, or all presentation settings.
+series. Settings can be copied from one time series and pasted as **Style**,
+**Fit**, **Replica**, **Legend entry**, or **All** presentation settings.
 
 Configure the plot
 ==================
@@ -62,33 +62,53 @@ Configure the plot
 Appearance
 ----------
 
-Use **Plot style** for the current time-series style and **Appearance** for
-plot-level presentation. The time-series toolbar also provides X- and Y-range
-controls for fitting the displayed range or using configured manual ranges.
+The time-series toolbar separates per-series controls from plot-level controls.
+Use **Style**, **Fit**, **Replica**, and **Legend entry** for the selected or
+pending time series. Use **Plot legend**, **X range**, **Y range**,
+**Appearance**, and **Export** for the plot as a whole.
 
-Labels
-------
+Style
+-----
 
-Use the **Labels** split button to show or hide plot legends. Its arrow opens
-the Labels popup, which has **General** and **Entries** tabs. **General**
-controls legend placement, background opacity, and legend text size.
-**Match Appearance text size** is enabled by default; when it is disabled, you
-can choose a custom legend text size. **Entries** controls Fit, Replica, and
-Ensemble legend inclusion, together with their prefixes and suffixes. Base
-time-series and residual samples show both their marker and line when both are
-enabled. Ensemble entries show their rendered member line and/or spread band.
-Legends show only currently visible time series. Residual labels appear in the
-residual plot when it is displayed. Main and residual legends use the configured
-text size and opacity in the plot and in exported SVG and PNG figures.
+Use **Style** to configure the appearance of the selected or pending time
+series.
 
-Labels defaults
-~~~~~~~~~~~~~~~
+Legend entry
+------------
 
-Labels edits apply to the current plot immediately. Each tab has its own
-**Defaults** menu. **Default**, **Factory default**, and **Set as default**
-apply only to settings in that tab; editing a setting alone does not change the
-saved default. The Labels toolbar enable/disable button is independent and is
-not changed by Defaults actions in either tab.
+Use **Legend entry** to edit the text and related legend entries for the
+selected or pending time series.
+
+Main
+~~~~
+
+The **Main** tab controls the text used for the primary series legend entry.
+Use **Include label** to include the series label. Point series can also use
+**Include field** and select a **Field** value to include in the legend, then
+use **Prefix** and **Suffix** to format it. Polygon and raster-like series
+without usable fields use the series label only. When relevant, target/reference
+series can include both target and reference field values. **Preview** shows the
+text that will appear in the legend. Use **Defaults** to manage the saved Main
+settings for future series.
+
+Related
+~~~~~~~
+
+The **Related** tab controls whether associated **Fit**, **Replica**, and
+**Ensemble** graphics contribute their own legend entries. When **Use label
+only** is unchecked, related entries use the fully formatted Main legend text
+where applicable, such as ``Point 2 · vel: -4.6 mm/yr fit``. When it is
+checked, they use only the base series label, such as ``Point 2 fit``. Use
+**Defaults** to manage the saved Related settings for future series.
+
+Plot legend
+-----------
+
+Use **Plot legend** for the global presentation of plot legends. It controls
+whether a legend is shown, its location, text size, whether it matches the plot
+text size, and its background opacity. Use **Defaults** to manage these
+plot-level settings. **Legend entry** controls per-series legend content;
+**Plot legend** controls the presentation and layout of the overall legend.
 
 Fit
 ---
