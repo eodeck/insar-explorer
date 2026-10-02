@@ -7,7 +7,7 @@ from typing import Any, Optional, Tuple
 
 import numpy as np
 
-from ..models.time_series import SpatialSelection
+from ..models.time_series import PointAttributeSnapshot, SpatialSelection
 
 
 @dataclass(frozen=True)
@@ -22,9 +22,10 @@ class ActiveReference:
     dates: Tuple[Any, ...]
     values: Tuple[Tuple[float, ...], ...]
     selection: SpatialSelection
+    attributes: PointAttributeSnapshot = PointAttributeSnapshot()
 
     @classmethod
-    def create(cls, *, dates: Any, values: Any, selection: Any) -> "ActiveReference":
+    def create(cls, *, dates: Any, values: Any, selection: Any, attributes=None) -> "ActiveReference":
         """Normalize extracted reference input into an immutable snapshot."""
         normalized_selection = SpatialSelection.from_legacy(selection)
         if normalized_selection is None:
@@ -43,6 +44,7 @@ class ActiveReference:
             dates=tuple(date_array.tolist()),
             values=tuple(tuple(float(value) for value in row) for row in value_array),
             selection=normalized_selection,
+            attributes=PointAttributeSnapshot.from_mapping(attributes),
         )
 
     def values_array(self) -> np.ndarray:

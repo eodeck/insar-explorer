@@ -15,13 +15,14 @@ from ..settings.model import (
     ExportSettings,
     FitAnalysisDefaults,
     FitStyleSettings,
+    LegendEntryDefaults, LegendSettings, RelatedLegendDefaults,
     ReplicaAnalysisDefaults,
     ReplicaSettings,
     ResidualStyleSettings,
     SeriesStyleSettings,
 )
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 10
 DEFAULT_PREFIX = "insar_explorer/time_series"
 
 
@@ -100,7 +101,8 @@ def read_float(value: Any, default: float, minimum=None, maximum=None) -> float:
 
 def read_choice(value: Any, default: str, allowed: Iterable[str]) -> str:
     """Return a stable string choice when allowed, otherwise the default."""
-    normalized = str(value) if value is not None else default
+    default = getattr(default, "value", default)
+    normalized = str(getattr(value, "value", value)) if value is not None else default
     return normalized if normalized in allowed else default
 
 
@@ -161,6 +163,21 @@ KEY_SPECS = (
     ("export", "dpi", "export/dpi", "choice", ExportSettings.DPI_OPTIONS),
     ("export", "aspect_ratio", "export/aspect_ratio", "float", (1, 10)),
     ("export", "include_attribution", "export/include_attribution", "bool", None),
+    ("legend", "enabled", "legend/enabled", "bool", None),
+    ("legend", "location", "legend/location", "choice", LegendSettings.LOCATIONS),
+    ("legend", "sync_font_size", "legend/sync_font_size", "bool", None),
+    ("legend", "font_size", "legend/font_size", "float", (1, 200)),
+    ("legend", "background_opacity", "legend/background_opacity", "float", (0, 1)),
+    ("legend_entry_defaults", "configured", "legend_entry/configured", "bool", None),
+    ("legend_entry_defaults", "field_name", "legend_entry/field_name", "nullable_str", None),
+    ("legend_entry_defaults", "prefix", "legend_entry/prefix", "str", None),
+    ("legend_entry_defaults", "suffix", "legend_entry/suffix", "str", None),
+    ("legend_entry_defaults", "include_label", "legend_entry/include_label", "bool", None),
+    ("legend_entry_defaults", "include_field", "legend_entry/include_field", "bool", None),
+    ("related_legend_defaults", "include_fit", "legend_entry/related/include_fit", "bool", None),
+    ("related_legend_defaults", "include_replica", "legend_entry/related/include_replica", "bool", None),
+    ("related_legend_defaults", "include_ensemble", "legend_entry/related/include_ensemble", "bool", None),
+    ("related_legend_defaults", "use_label_only", "legend_entry/related/use_label_only", "bool", None),
 )
 
 _SCOPE_TYPES = {
@@ -173,6 +190,9 @@ _SCOPE_TYPES = {
     "replica_analysis_defaults": ReplicaAnalysisDefaults,
     "appearance": AppearanceSettings,
     "export": ExportSettings,
+    "legend": LegendSettings,
+    "legend_entry_defaults": LegendEntryDefaults,
+    "related_legend_defaults": RelatedLegendDefaults,
 }
 
 
@@ -201,6 +221,8 @@ class QSettingsUserPreferencesRepository:
 
     @staticmethod
     def _coerce(raw: Any, default: Any, kind: str, constraints: Any) -> Any:
+        if kind == "nullable_str":
+            return None if raw is None or str(raw) == "" else str(raw)
         if kind == "bool":
             return read_bool(raw, default)
         if kind == "int":
@@ -280,6 +302,7 @@ class QSettingsUserPreferencesRepository:
         for spec_scope, field, suffix, _kind, _constraints in KEY_SPECS:
             if spec_scope == scope:
                 value = getattr(settings, field)
+                value = getattr(value, "value", value)
                 self._write(suffix, value)
         self._write("schema_version", SCHEMA_VERSION)
         if sync:
@@ -311,3 +334,12 @@ class QSettingsUserPreferencesRepository:
 
     def save_export(self, settings: ExportSettings) -> None:
         self.save_scope("export", settings)
+
+    def save_legend(self, settings: LegendSettings) -> None:
+        self.save_scope("legend", settings)
+
+    def save_legend_entry_defaults(self, settings: LegendEntryDefaults) -> None:
+        self.save_scope("legend_entry_defaults", settings)
+
+    def save_related_legend_defaults(self, settings: RelatedLegendDefaults) -> None:
+        self.save_scope("related_legend_defaults", settings)

@@ -8,10 +8,19 @@ from .fit_style_controller import FIT_STYLE_KEYS
 from .style_schema import PERSISTED_STYLE_KEYS
 from ..models.time_series import (
     TimeSeriesSnapshot,
-    TimeSeriesStyle,
-    presentation_from_legacy_params,
     randomTimeSeriesColor,
 )
+from .settings.model import SeriesStyleSettings
+
+
+def _with_series_style(snapshot, params):
+    """Replace only one record's primary-series presentation domain."""
+    return replace(
+        snapshot,
+        presentation=replace(
+            snapshot.presentation, series=SeriesStyleSettings.from_params(params)
+        ),
+    )
 
 
 class TimeSeriesStyleController:
@@ -51,16 +60,7 @@ class TimeSeriesStyleController:
         for snapshot in snapshots:
             params = deepcopy(snapshot.style.params)
             params.setdefault("time series plot", {})[key] = value
-            updated_style = TimeSeriesStyle.fromParams(
-                params,
-                label=snapshot.style.label,
-                visible=snapshot.style.visible,
-                z_order=snapshot.style.z_order,
-            )
-            changed.append(replace(snapshot, presentation=presentation_from_legacy_params(
-                updated_style.params, label=updated_style.label,
-                visible=updated_style.visible, z_order=updated_style.z_order,
-            )))
+            changed.append(_with_series_style(snapshot, params))
         return changed
 
     @staticmethod
@@ -104,16 +104,7 @@ class TimeSeriesStyleController:
                 plot = params.setdefault(section, {})
                 for key, value in section_values.items():
                     plot[key] = deepcopy(value)
-            updated_style = TimeSeriesStyle.fromParams(
-                params,
-                label=snapshot.style.label,
-                visible=snapshot.style.visible,
-                z_order=snapshot.style.z_order,
-            )
-            changed.append(replace(snapshot, presentation=presentation_from_legacy_params(
-                updated_style.params, label=updated_style.label,
-                visible=updated_style.visible, z_order=updated_style.z_order,
-            )))
+            changed.append(_with_series_style(snapshot, params))
         return changed
 
     def applyStyleValues(self, snapshots, changed_style_values):
@@ -124,16 +115,7 @@ class TimeSeriesStyleController:
             plot = params.setdefault("time series plot", {})
             for key, value in changed_style_values.items():
                 plot[key] = deepcopy(value)
-            updated_style = TimeSeriesStyle.fromParams(
-                params,
-                label=snapshot.style.label,
-                visible=snapshot.style.visible,
-                z_order=snapshot.style.z_order,
-            )
-            changed.append(replace(snapshot, presentation=presentation_from_legacy_params(
-                updated_style.params, label=updated_style.label,
-                visible=updated_style.visible, z_order=updated_style.z_order,
-            )))
+            changed.append(_with_series_style(snapshot, params))
         return changed
 
     def applySettingsChanges(self, snapshots, runtime_params, changed_style_values):
@@ -157,16 +139,7 @@ class TimeSeriesStyleController:
                         plot[key] = deepcopy(value)
                 for key, value in changed_style_values.items():
                     plot[key] = deepcopy(value)
-            updated_style = TimeSeriesStyle.fromParams(
-                params,
-                label=snapshot.style.label,
-                visible=snapshot.style.visible,
-                z_order=snapshot.style.z_order,
-            )
-            changed.append(replace(snapshot, presentation=presentation_from_legacy_params(
-                updated_style.params, label=updated_style.label,
-                visible=updated_style.visible, z_order=updated_style.z_order,
-            )))
+            changed.append(_with_series_style(snapshot, params))
         return changed
 
     def randomizeColor(self, snapshots: Iterable[TimeSeriesSnapshot]):
@@ -178,14 +151,5 @@ class TimeSeriesStyleController:
             plot = params.setdefault("time series plot", {})
             plot["marker color"] = color
             plot["line color"] = color
-            updated_style = TimeSeriesStyle.fromParams(
-                params,
-                label=snapshot.style.label,
-                visible=snapshot.style.visible,
-                z_order=snapshot.style.z_order,
-            )
-            changed.append(replace(snapshot, presentation=presentation_from_legacy_params(
-                updated_style.params, label=updated_style.label,
-                visible=updated_style.visible, z_order=updated_style.z_order,
-            )))
+            changed.append(_with_series_style(snapshot, params))
         return changed

@@ -5,7 +5,7 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from enum import Enum
-from typing import TYPE_CHECKING, Any, List, Mapping, Optional
+from typing import TYPE_CHECKING, Any, List, Mapping, Optional, Tuple
 from uuid import UUID, uuid4
 
 if TYPE_CHECKING:
@@ -49,6 +49,60 @@ class SpatialSelectionKind(str, Enum):
 
     POINT = "point"
     POLYGON = "polygon"
+
+
+@dataclass(frozen=True)
+class PointAttributeSnapshot:
+    """Immutable, renderer-independent copy of one selected point's attributes."""
+
+    values: Tuple[Tuple[str, Any], ...] = ()
+
+    @classmethod
+    def from_mapping(cls, values: Optional[Mapping[str, Any]]) -> "PointAttributeSnapshot":
+        """Copy field values without retaining a live QGIS feature or layer."""
+        if isinstance(values, cls):
+            return cls(tuple((name, deepcopy(value)) for name, value in values.values))
+        if not values:
+            return cls()
+        return cls(tuple((str(name), deepcopy(value)) for name, value in values.items()))
+
+    def field_names(self) -> Tuple[str, ...]:
+        """Return captured field names in source order."""
+        return tuple(name for name, _value in self.values)
+
+    def value(self, field_name: Optional[str], default=None):
+        """Look up one field by its exact captured name."""
+        if field_name is None:
+            return default
+        for name, value in self.values:
+            if name == field_name:
+                return deepcopy(value)
+        return default
+
+
+@dataclass(frozen=True)
+class SeriesLegendSettings:
+    """Per-series legend-entry choices; rendering remains unchanged in Phase 1."""
+
+    field_name: Optional[str] = None
+    prefix: str = ""
+    suffix: str = ""
+    include_fit: bool = True
+    include_replica: bool = True
+    include_ensemble: bool = True
+    include_label: bool = True
+    include_field: bool = False
+    use_label_only: bool = False
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "field_name", None if self.field_name in (None, "") else str(self.field_name))
+        for name in ("prefix", "suffix"):
+            object.__setattr__(self, name, str(getattr(self, name) or ""))
+        for name in ("include_fit", "include_replica", "include_ensemble"):
+            object.__setattr__(self, name, bool(getattr(self, name)))
+        object.__setattr__(self, "include_label", bool(self.include_label))
+        object.__setattr__(self, "include_field", bool(self.include_field))
+        object.__setattr__(self, "use_label_only", bool(self.use_label_only))
 
 
 @dataclass(frozen=True)
@@ -189,6 +243,7 @@ class TimeSeriesPresentation:
     fit: FitStyleSettings = field(default_factory=FitStyleSettings)
     residual: ResidualStyleSettings = field(default_factory=ResidualStyleSettings)
     replica: ReplicaStyleSettings = field(default_factory=ReplicaStyleSettings)
+    legend: SeriesLegendSettings = field(default_factory=SeriesLegendSettings)
     label: Optional[str] = None
     visible: bool = True
     # Reserved metadata for a later layering feature; the Phase 6 renderer
@@ -307,11 +362,43 @@ class TimeSeriesRecord:
     target: Optional[SpatialSelection] = None
     reference: Optional[SpatialSelection] = None
     source: Optional[TimeSeriesSource] = None
+    target_attributes: PointAttributeSnapshot = field(default_factory=PointAttributeSnapshot)
+    reference_attributes: PointAttributeSnapshot = field(default_factory=PointAttributeSnapshot)
 
     def __post_init__(self) -> None:
         """Normalize compatibility selection values while preserving immutable ownership."""
         object.__setattr__(self, "target", SpatialSelection.from_legacy(self.target))
         object.__setattr__(self, "reference", SpatialSelection.from_legacy(self.reference))
+        if not isinstance(self.target_attributes, PointAttributeSnapshot):
+            object.__setattr__(
+                self, "target_attributes", PointAttributeSnapshot.from_mapping(self.target_attributes)
+            )
+        if not isinstance(self.reference_attributes, PointAttributeSnapshot):
+            object.__setattr__(
+                self, "reference_attributes", PointAttributeSnapshot.from_mapping(self.reference_attributes)
+            )
+        self._normalize_legend_settings()
+
+    def _normalize_legend_settings(self) -> None:
+        """Enforce valid main-entry choices for the record's selection context."""
+        settings = self.presentation.legend
+        target = self.target
+        if target is not None and target.kind == SpatialSelectionKind.POLYGON:
+            settings = replace(settings, include_label=True, include_field=False, field_name=None)
+        elif target is not None and target.kind == SpatialSelectionKind.POINT:
+            has_field = bool(
+                settings.field_name and (
+                    settings.field_name in self.target_attributes.field_names()
+                    or settings.field_name in self.reference_attributes.field_names()
+                )
+            )
+            include_field = bool(settings.include_field and has_field)
+            include_label = bool(settings.include_label)
+            if not include_label and not include_field:
+                include_label = True
+            settings = replace(settings, include_label=include_label, include_field=include_field)
+        if settings != self.presentation.legend:
+            object.__setattr__(self, "presentation", replace(self.presentation, legend=settings))
 
     @property
     def style(self) -> TimeSeriesStyle:

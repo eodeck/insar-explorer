@@ -4,7 +4,7 @@ from dataclasses import dataclass, replace
 from enum import Enum
 from uuid import UUID
 
-from ..models.time_series import TimeSeriesRecord
+from ..models.time_series import SeriesLegendSettings, SpatialSelectionKind, TimeSeriesRecord
 from .settings.model import (
     EnsembleStyleSettings, FitStyleSettings, ReplicaStyleSettings,
     ResidualStyleSettings, SeriesStyleSettings,
@@ -18,6 +18,7 @@ class CopyPasteCategory(str, Enum):
     STYLE = "style"
     FIT = "fit"
     REPLICA = "replica"
+    LEGEND = "legend"
     ALL_PRESENTATION = "all_presentation"
 
 
@@ -47,6 +48,13 @@ class ReplicaSnapshot:
 
 
 @dataclass(frozen=True)
+class LegendEntrySnapshot:
+    """Per-series legend-entry configuration without record identity or attributes."""
+
+    settings: SeriesLegendSettings
+
+
+@dataclass(frozen=True)
 class TimeSeriesSettingsClipboard:
     """One coherent, immutable settings capture from a committed source."""
 
@@ -54,6 +62,7 @@ class TimeSeriesSettingsClipboard:
     style: StyleSnapshot
     fit: FitSnapshot
     replica: ReplicaSnapshot
+    legend: LegendEntrySnapshot
 
     def has(self, category: CopyPasteCategory) -> bool:
         """Return whether a supported paste category is available."""
@@ -61,6 +70,7 @@ class TimeSeriesSettingsClipboard:
             CopyPasteCategory.STYLE,
             CopyPasteCategory.FIT,
             CopyPasteCategory.REPLICA,
+            CopyPasteCategory.LEGEND,
             CopyPasteCategory.ALL_PRESENTATION,
         )
 
@@ -78,6 +88,11 @@ def capture_fit(record: TimeSeriesRecord) -> FitSnapshot:
 def capture_replica(record: TimeSeriesRecord) -> ReplicaSnapshot:
     """Capture immutable Replica settings from one record."""
     return ReplicaSnapshot(record.analysis.replica, record.presentation.replica)
+
+
+def capture_legend_entry(record: TimeSeriesRecord) -> LegendEntrySnapshot:
+    """Capture only the current per-series legend-entry configuration."""
+    return LegendEntrySnapshot(record.presentation.legend)
 
 
 def apply_style_snapshot(record: TimeSeriesRecord, snapshot: StyleSnapshot) -> TimeSeriesRecord:
@@ -106,3 +121,41 @@ def apply_replica_snapshot(record: TimeSeriesRecord, snapshot: ReplicaSnapshot) 
         analysis=replace(record.analysis, replica=snapshot.configuration),
         presentation=replace(record.presentation, replica=snapshot.style),
     )
+
+
+def _legend_field_is_available(record: TimeSeriesRecord, field_name: str) -> bool:
+    """Return whether a copied field is present in the record-owned snapshots."""
+    return (
+        field_name in record.target_attributes.field_names()
+        or field_name in record.reference_attributes.field_names()
+    )
+
+
+def apply_legend_entry_snapshot(record: TimeSeriesRecord, snapshot: LegendEntrySnapshot) -> TimeSeriesRecord:
+    """Replace compatible legend settings while keeping destination identity intact."""
+    copied = snapshot.settings
+    current = record.presentation.legend
+    if record.target is not None and record.target.kind == SpatialSelectionKind.POLYGON:
+        settings = replace(
+            current,
+            field_name=None,
+            include_label=True,
+            include_field=False,
+            include_fit=copied.include_fit,
+            include_replica=copied.include_replica,
+            include_ensemble=copied.include_ensemble,
+            use_label_only=copied.use_label_only,
+        )
+    elif copied.field_name and _legend_field_is_available(record, copied.field_name):
+        settings = copied
+    else:
+        settings = replace(
+            current,
+            include_label=True,
+            include_field=False,
+            include_fit=copied.include_fit,
+            include_replica=copied.include_replica,
+            include_ensemble=copied.include_ensemble,
+            use_label_only=copied.use_label_only,
+        )
+    return replace(record, presentation=replace(record.presentation, legend=settings))

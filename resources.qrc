@@ -28,7 +28,9 @@
     <file alias="fit_poly3.svg">icons/light/fit_poly3.svg</file>
     <file alias="item_add.svg">icons/light/item_add.svg</file>
     <file alias="item_discard.svg">icons/light/item_discard.svg</file>
+    <file alias="label.svg">icons/light/label.svg</file>
     <file alias="layers.svg">icons/light/layers.svg</file>
+    <file alias="legend.svg">icons/light/legend.svg</file>
     <file alias="plot_random_color.svg">icons/light/plot_random_color.svg</file>
     <file alias="plot_settings.svg">icons/light/plot_settings.svg</file>
     <file alias="polygon_reference_selection.svg">icons/light/polygon_reference_selection.svg</file>
@@ -75,7 +77,9 @@
     <file alias="fit_poly3.svg">icons/dark/fit_poly3.svg</file>
     <file alias="item_add.svg">icons/dark/item_add.svg</file>
     <file alias="item_discard.svg">icons/dark/item_discard.svg</file>
+    <file alias="label.svg">icons/dark/label.svg</file>
     <file alias="layers.svg">icons/dark/layers.svg</file>
+    <file alias="legend.svg">icons/dark/legend.svg</file>
     <file alias="plot_random_color.svg">icons/dark/plot_random_color.svg</file>
     <file alias="plot_settings.svg">icons/dark/plot_settings.svg</file>
     <file alias="polygon_reference_selection.svg">icons/dark/polygon_reference_selection.svg</file>

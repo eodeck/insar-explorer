@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 from ..external.pyqtgraph import exporters
 from qgis.PyQt.QtGui import QColor, QFont, QImage, QPainter
-from qgis.PyQt.QtWidgets import QApplication
+from qgis.PyQt.QtWidgets import QApplication, QGraphicsItem
 
 from .qt_compat import ALIGN_RIGHT_VCENTER
 
@@ -72,10 +72,11 @@ class TimeSeriesPlotExporter:
                         filename, logical_width, logical_height, attribution_text
                     )
                 else:
-                    exporter = exporters.ImageExporter(export_item)
-                    self._setExporterParameter(exporter, 'width', export_width)
-                    self._setExporterParameter(exporter, 'height', export_height)
-                    exporter.export(filename)
+                    with self._scaledLegendsForRasterExport():
+                        exporter = exporters.ImageExporter(export_item)
+                        self._setExporterParameter(exporter, 'width', export_width)
+                        self._setExporterParameter(exporter, 'height', export_height)
+                        exporter.export(filename)
                     error = self._addCreditToRaster(filename, dpi, attribution_text)
         except Exception as exc:
             return ExportResult(False, filename, f"Plot export failed: {exc}")
@@ -121,6 +122,52 @@ class TimeSeriesPlotExporter:
         logical_width = max(1, widget_width, self.DEFAULT_MIN_LOGICAL_WIDTH)
         logical_height = max(1, int(round(logical_width / aspect_ratio)))
         return logical_width, logical_height
+
+    @contextmanager
+    def _scaledLegendsForRasterExport(self):
+        """Temporarily let native legends scale with high-DPI raster exports."""
+        plot_widget = self.plotter.ui.plot_widget
+        graphics_item_flags = getattr(
+            QGraphicsItem, "GraphicsItemFlag", QGraphicsItem
+        )
+        ignore_transformations = graphics_item_flags.ItemIgnoresTransformations
+        candidates = [
+            getattr(self.plotter, "_main_legend", None),
+            getattr(self.plotter, "_residual_legend", None),
+        ]
+        for axis_name in ("ax", "ax_residuals"):
+            axis = getattr(self.plotter, axis_name, None)
+            candidates.append(getattr(axis, "legend", None) if axis is not None else None)
+
+        legends = []
+        seen = set()
+        for legend in candidates:
+            if legend is None or id(legend) in seen:
+                continue
+            seen.add(id(legend))
+            try:
+                was_ignored = bool(legend.flags() & ignore_transformations)
+                legends.append((legend, was_ignored))
+                legend.setFlag(ignore_transformations, False)
+            except RuntimeError:
+                continue
+
+        self._updateAfterLegendTransformChange(plot_widget)
+        try:
+            yield
+        finally:
+            for legend, was_ignored in legends:
+                try:
+                    legend.setFlag(ignore_transformations, was_ignored)
+                except RuntimeError:
+                    continue
+            self._updateAfterLegendTransformChange(plot_widget)
+
+    @staticmethod
+    def _updateAfterLegendTransformChange(plot_widget):
+        """Flush one legend flag change before or after an image export."""
+        plot_widget.update()
+        QApplication.processEvents()
 
     @contextmanager
     def _temporaryExportGeometry(self, plot_widget, width, height):

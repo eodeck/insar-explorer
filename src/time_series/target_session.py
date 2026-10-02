@@ -7,7 +7,7 @@ from typing import Any, Optional, Tuple
 
 import numpy as np
 
-from ..models.time_series import SpatialSelection, TimeSeriesSource
+from ..models.time_series import PointAttributeSnapshot, SpatialSelection, TimeSeriesSource
 
 
 @dataclass(frozen=True)
@@ -22,12 +22,13 @@ class CanonicalTargetSnapshot:
     values: Tuple[Tuple[float, ...], ...]
     selection: SpatialSelection
     source: TimeSeriesSource
+    attributes: PointAttributeSnapshot = PointAttributeSnapshot()
     plot_multiple: bool = False
 
     @classmethod
     def create(
         cls, *, dates: Any, values: Any, selection: Any, source: TimeSeriesSource,
-        plot_multiple=False,
+        plot_multiple=False, attributes=None,
     ):
         """Normalize extracted target input into a renderer-independent snapshot."""
         normalized_selection = SpatialSelection.from_legacy(selection)
@@ -48,6 +49,7 @@ class CanonicalTargetSnapshot:
             values=tuple(tuple(float(value) for value in row) for row in value_array),
             selection=normalized_selection,
             source=source,
+            attributes=PointAttributeSnapshot.from_mapping(attributes),
             plot_multiple=bool(plot_multiple),
         )
 

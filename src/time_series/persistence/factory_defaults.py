@@ -29,4 +29,5 @@ def build_runtime_settings(preferences):
         replica_analysis_defaults=deepcopy(preferences.replica_analysis_defaults),
         appearance=deepcopy(preferences.appearance),
         export=deepcopy(preferences.export),
+        legend=deepcopy(preferences.legend),
     )

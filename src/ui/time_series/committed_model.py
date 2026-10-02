@@ -25,7 +25,7 @@ class CommittedTimeSeriesModel(QAbstractTableModel):
 
     _HEADERS = {
         CommittedTimeSeriesColumn.VISIBLE: "",
-        CommittedTimeSeriesColumn.SEQUENCE: "No",
+        CommittedTimeSeriesColumn.SEQUENCE: "#",
         CommittedTimeSeriesColumn.LABEL: "Label",
         CommittedTimeSeriesColumn.TARGET: "T",
         CommittedTimeSeriesColumn.REFERENCE: "R",

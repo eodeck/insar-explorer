@@ -3,3 +3,4 @@
 STYLE_ACTION_ICON = "plot_settings"
 FIT_ACTION_ICON = "fit_curve"
 REPLICA_ACTION_ICON = "replica"
+LEGEND_ACTION_ICON = "legend"

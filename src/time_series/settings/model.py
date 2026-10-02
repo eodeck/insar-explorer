@@ -561,6 +561,74 @@ class ExportSettings:
         )
 
 
+@dataclass(frozen=True)
+class LegendSettings:
+    """Persistent, plot-wide settings for time-series plot legends."""
+
+    enabled: bool = True
+    location: str = "top_right"
+    sync_font_size: bool = True
+    font_size: float = 9.0
+    background_opacity: float = 0.80
+
+    LOCATIONS: ClassVar[tuple] = (
+        "top_right", "top_left", "bottom_right", "bottom_left", "right", "left",
+    )
+
+    def __post_init__(self):
+        object.__setattr__(self, "enabled", bool(self.enabled))
+        object.__setattr__(self, "location", self.normalize_location(self.location))
+        object.__setattr__(self, "sync_font_size", bool(self.sync_font_size))
+        object.__setattr__(
+            self, "font_size", normalize_number(self.font_size, (1.0, 200.0), 9.0)
+        )
+        try:
+            opacity = float(self.background_opacity)
+        except (TypeError, ValueError, OverflowError):
+            opacity = 0.80
+        object.__setattr__(self, "background_opacity", max(0.0, min(1.0, opacity)))
+
+    @classmethod
+    def normalize_location(cls, value):
+        """Return a supported placement preset, defaulting to top-right."""
+        return value if value in cls.LOCATIONS else "top_right"
+
+
+@dataclass(frozen=True)
+class LegendEntryDefaults:
+    """Persisted defaults for an individual series' primary legend entry."""
+
+    configured: bool = False
+    field_name: Optional[str] = None
+    prefix: str = ""
+    suffix: str = ""
+    include_label: bool = True
+    include_field: bool = False
+
+    def __post_init__(self):
+        object.__setattr__(self, "configured", bool(self.configured))
+        object.__setattr__(self, "field_name", None if self.field_name in (None, "") else str(self.field_name))
+        object.__setattr__(self, "prefix", str(self.prefix or ""))
+        object.__setattr__(self, "suffix", str(self.suffix or ""))
+        object.__setattr__(self, "include_label", bool(self.include_label))
+        object.__setattr__(self, "include_field", bool(self.include_field))
+
+
+@dataclass(frozen=True)
+class RelatedLegendDefaults:
+    """Persisted defaults for related graphics' legend inclusion."""
+
+    include_fit: bool = True
+    include_replica: bool = True
+    include_ensemble: bool = True
+    use_label_only: bool = False
+
+    def __post_init__(self):
+        for name in ("include_fit", "include_replica", "include_ensemble"):
+            object.__setattr__(self, name, bool(getattr(self, name)))
+        object.__setattr__(self, "use_label_only", bool(self.use_label_only))
+
+
 @dataclass
 class TimeSeriesSettingsModel:
     """Authoritative runtime settings for Time Series plotting."""
@@ -578,6 +646,7 @@ class TimeSeriesSettingsModel:
     x_axis: XAxisSettings = field(default_factory=XAxisSettings)
     appearance: AppearanceSettings = field(default_factory=AppearanceSettings)
     export: ExportSettings = field(default_factory=ExportSettings)
+    legend: LegendSettings = field(default_factory=LegendSettings)
     _listeners: List[Callable[[SettingsChangeSet], None]] = field(default_factory=list, init=False, repr=False)
     _batch_depth: int = field(default=0, init=False, repr=False)
     _batched_changes: SettingsChangeSet = field(default_factory=SettingsChangeSet, init=False, repr=False)
@@ -648,6 +717,7 @@ class TimeSeriesSettingsModel:
             "replica_analysis_defaults": asdict(self.replica_analysis_defaults),
             "appearance": asdict(self.appearance),
             "export": asdict(self.export),
+            "legend": asdict(self.legend),
         }
 
     def copy(self):
@@ -655,4 +725,4 @@ class TimeSeriesSettingsModel:
         return TimeSeriesSettingsModel(**{name: deepcopy(getattr(self, name)) for name in (
             "series_defaults", "fit_defaults", "residual_defaults", "fit_current",
             "residual_current", "ensemble_defaults", "replica", "fit_analysis_defaults",
-            "replica_analysis_defaults", "y_axis", "x_axis", "appearance", "export")})
+            "replica_analysis_defaults", "y_axis", "x_axis", "appearance", "export", "legend")})

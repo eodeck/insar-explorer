@@ -9,9 +9,12 @@ from uuid import UUID
 
 import numpy as np
 from ..external import pyqtgraph as pg
-from qgis.PyQt.QtCore import QPointF
+from qgis.PyQt.QtCore import QPointF, QRectF
 from qgis.PyQt.QtGui import QColor, QFont
-from qgis.PyQt.QtWidgets import QApplication
+from qgis.PyQt.QtWidgets import QApplication, QGraphicsWidget
+from ..external.pyqtgraph.graphicsItems.LegendItem import (
+    ItemSample, LegendItem, drawSymbol,
+)
 
 from .model_fitting import calculateFitStatistics, FittingModels, ModelFitError
 from .export_plot import TimeSeriesPlotExporter
@@ -23,9 +26,14 @@ from .time_series.hover import (
 )
 from .time_series.settings.persistence import build_legacy_plot_params
 from .time_series.persistence import NullProjectStateRepository
-from .qt_compat import PALETTE_WINDOW_TEXT
+from .qt_compat import NO_MOUSE_BUTTON, PALETTE_WINDOW_TEXT
 from .time_series.store import TimeSeriesStore
 from .time_series.pending_session import PendingTimeSeriesSession, resolve_editable_record
+from .time_series.legend_entry import resolve_initial_legend_settings
+from .time_series.legend_formatting import format_series_legend_label, related_series_legend_label
+from .time_series.settings.model import (
+    LegendEntryDefaults, RelatedLegendDefaults,
+)
 from .models.time_series import (
     FitConfiguration,
     ReplicaConfiguration,
@@ -34,6 +42,7 @@ from .models.time_series import (
     TimeSeriesGraphics,
     TimeSeriesRecord,
     TimeSeriesSource,
+    PointAttributeSnapshot,
     SpatialSelection,
     SpatialSelectionKind,
     TimeSeriesSnapshot,
@@ -51,6 +60,140 @@ _MARKER_EDGE_LIGHT = "#f2f2f2"
 _MARKER_EDGE_LIGHT_BACKGROUND_THRESHOLD = 0.5
 _PLOT_GRID_ALPHA = 0.25
 _INTERACTIVE_ANTIALIAS = True
+_LEGEND_OVERLAY_Z_VALUE = 1.0
+
+
+class LegendOverlay(QGraphicsWidget):
+    """Transparent plot-area overlay that stacks legends above axis-rendered grids."""
+
+    def __init__(self, axis):
+        super().__init__(axis)
+        self._view_box = axis.getViewBox()
+        self.setZValue(_LEGEND_OVERLAY_Z_VALUE)
+        self.setAcceptedMouseButtons(NO_MOUSE_BUTTON)
+        self.setAcceptHoverEvents(False)
+        self._view_box.geometryChanged.connect(self.syncGeometry)
+        self.syncGeometry()
+
+    def syncGeometry(self):
+        """Mirror the ViewBox plot-area geometry used by legend anchoring."""
+        if self._view_box is not None:
+            self.setGeometry(self._view_box.geometry())
+
+    def dispose(self):
+        """Disconnect geometry tracking and detach this overlay from the scene."""
+        view_box = self._view_box
+        self._view_box = None
+        if view_box is not None:
+            try:
+                view_box.geometryChanged.disconnect(self.syncGeometry)
+            except (RuntimeError, TypeError):
+                pass
+        scene = self.scene()
+        self.setParentItem(None)
+        if scene is not None:
+            scene.removeItem(self)
+        self.deleteLater()
+
+
+class PassiveLegendSample(ItemSample):
+    """Native legend sample which never changes renderer-owned item visibility."""
+
+    def mouseClickEvent(self, event):
+        event.accept()
+
+
+class ReplicaLegendSample(PassiveLegendSample):
+    """One native legend sample that shows the first positive and negative replicas."""
+
+    def __init__(self, items):
+        super().__init__(items[0])
+        self._items = tuple(items)
+
+    def boundingRect(self):
+        return QRectF(0, 0, 20, 20)
+
+    @staticmethod
+    def _marker_positions():
+        """Return upper then lower marker positions within the compact sample box."""
+        return ((10, 6), (10, 14))
+
+    def paint(self, painter, *args):
+        for (x, y), item in zip(self._marker_positions(), self._items):
+            opts = item.opts
+            if opts.get("antialias"):
+                painter.setRenderHint(painter.RenderHint.Antialiasing)
+            painter.save()
+            painter.translate(x, y)
+            drawSymbol(
+                painter, opts.get("symbol", "o"), opts.get("size", 5),
+                pg.mkPen(opts.get("pen")), pg.mkBrush(opts.get("brush")),
+            )
+            painter.restore()
+
+
+class CompositeSeriesLegendSample(PassiveLegendSample):
+    """Passive sample showing the rendered line and marker for one series."""
+
+    def __init__(self, scatter=None, line=None):
+        self.scatter = scatter if self._is_visible(scatter) else None
+        self.line = line if self._is_visible(line) else None
+        super().__init__(self.scatter if self.scatter is not None else self.line)
+
+    @staticmethod
+    def _is_visible(item):
+        return item is not None and (not hasattr(item, "isVisible") or item.isVisible())
+
+    def boundingRect(self):
+        return QRectF(0, 0, 20, 20)
+
+    def paint(self, painter, *args):
+        if self.line is not None:
+            painter.setPen(pg.mkPen(self.line.opts.get("pen")))
+            painter.drawLine(0, 10, 20, 10)
+        if self.scatter is not None:
+            opts = self.scatter.opts
+            if opts.get("antialias"):
+                painter.setRenderHint(painter.RenderHint.Antialiasing)
+            painter.save()
+            painter.translate(10, 10)
+            drawSymbol(
+                painter, opts.get("symbol", "o"), opts.get("size", 5),
+                pg.mkPen(opts.get("pen")), pg.mkBrush(opts.get("brush")),
+            )
+            painter.restore()
+
+
+class EnsembleLegendSample(PassiveLegendSample):
+    """Passive sample showing a rendered ensemble spread and member line."""
+
+    def __init__(self, fill=None, member_line=None):
+        self.fill = fill if self._is_visible(fill) else None
+        self.member_line = member_line if self._is_visible(member_line) else None
+        super().__init__(self.member_line if self.member_line is not None else self.fill)
+
+    @staticmethod
+    def _is_visible(item):
+        return item is not None and (not hasattr(item, "isVisible") or item.isVisible())
+
+    def boundingRect(self):
+        return QRectF(0, 0, 20, 20)
+
+    def paint(self, painter, *args):
+        if self.fill is not None:
+            painter.setPen(self.fill.pen())
+            painter.setBrush(self.fill.brush())
+            painter.drawRect(QRectF(1, 6, 18, 8))
+        if self.member_line is not None:
+            painter.setPen(pg.mkPen(self.member_line.opts.get("pen")))
+            painter.drawLine(0, 10, 20, 10)
+
+
+class StableLegendItem(LegendItem):
+    """A native pyqtgraph legend with preset-only placement."""
+
+    def mouseDragEvent(self, event):
+        event.accept()
 
 
 @dataclass(frozen=True)
@@ -254,12 +397,17 @@ class PlotTs():
         self._graphics_by_series_id: Dict[UUID, TimeSeriesGraphics] = {}
         self._pending_graphics_by_series_id: Dict[UUID, TimeSeriesGraphics] = {}
         self.pending_changed_callback = None
+        self.next_factory_sequence_number = None
         self.committed_changed_callback = None
         self._hidden_committed_ids = set()
         self.default_style = None
         self.fit_models = []
         self.fit_seasonal_flag = False
         self.ax_residuals = None
+        self._main_legend = None
+        self._residual_legend = None
+        self._main_legend_overlay = None
+        self._residual_legend_overlay = None
         self.plot_residuals_flag = False
         self.random_marker_color_flag = False
         self.parms = {}
@@ -437,6 +585,8 @@ class PlotTs():
             self.refreshCompatibilityViews()
         if "appearance" in change_set.domains:
             self.applyAppearanceSettings(change_set.properties.get("appearance", frozenset()))
+        if "legend" in change_set.domains:
+            self.refreshLegends()
 
     def refreshCompatibilityViews(self):
         """Rebuild all temporary compatibility views from the runtime model.
@@ -572,6 +722,7 @@ class PlotTs():
         self, *, data: TimeSeriesData, presentation: TimeSeriesPresentation,
         coords=_UNSET, ref_coords=_UNSET, record_id=None, source=None,
         source_provenance=_UNSET, analysis=_UNSET, fit=_UNSET, replica=_UNSET,
+        target_attributes=_UNSET, reference_attributes=_UNSET,
     ) -> TimeSeriesRecord:
         """Build one normalized record with explicit immutable analysis ownership."""
         if source is not None and record_id is not None and source.id != record_id:
@@ -586,6 +737,25 @@ class PlotTs():
             source.source if source is not None and source_provenance is _UNSET
             else None if source_provenance is _UNSET else source_provenance
         )
+        target_attributes = (
+            source.target_attributes if source is not None and target_attributes is _UNSET
+            else PointAttributeSnapshot() if target_attributes is _UNSET else target_attributes
+        )
+        reference_attributes = (
+            source.reference_attributes if source is not None and reference_attributes is _UNSET
+            else PointAttributeSnapshot() if reference_attributes is _UNSET else reference_attributes
+        )
+        if source is None:
+            load_preferences = getattr(self.user_preferences, "load", None)
+            preferences = load_preferences() if callable(load_preferences) else None
+            presentation = replace(
+                presentation,
+                legend=resolve_initial_legend_settings(
+                    PointAttributeSnapshot.from_mapping(target_attributes),
+                    getattr(preferences, "legend_entry_defaults", LegendEntryDefaults()),
+                    getattr(preferences, "related_legend_defaults", RelatedLegendDefaults()),
+                ),
+            )
         if provenance is not None and not isinstance(provenance, TimeSeriesSource):
             raise TypeError("source_provenance must be a TimeSeriesSource")
         if analysis is _UNSET:
@@ -599,6 +769,8 @@ class PlotTs():
         kwargs = {
             "data": data, "presentation": presentation, "analysis": base_analysis,
             "target": target, "reference": reference, "source": provenance,
+            "target_attributes": target_attributes,
+            "reference_attributes": reference_attributes,
         }
         if record_id is not None:
             kwargs["id"] = record_id
@@ -715,9 +887,11 @@ class PlotTs():
         self._rebuildYDataRanges()
         self.restoreViewport(viewport)
         self.refreshAutomaticAxisRanges(draw=False)
+        self.refreshLegends()
 
     def plotTs(self, *, dates=None, ts_values=None, ref_values=_UNSET, plot_multiple=True, coords=_UNSET,
                ref_coords=_UNSET, update=False, analysis=_UNSET, source_provenance=_UNSET,
+               target_attributes=_UNSET, reference_attributes=_UNSET,
                report_statistics=False):
         """Render under the nested-safe axis guard and normalize first-plot state."""
         initial_plot = self.ax is None
@@ -726,6 +900,8 @@ class PlotTs():
                 dates=dates, ts_values=ts_values, ref_values=ref_values,
                 plot_multiple=plot_multiple, coords=coords, ref_coords=ref_coords,
                 update=update, analysis=analysis, source_provenance=source_provenance,
+                target_attributes=target_attributes,
+                reference_attributes=reference_attributes,
                 report_statistics=report_statistics,
             )
         if initial_plot and self.ax is not None:
@@ -743,6 +919,7 @@ class PlotTs():
 
     def _plotTsGuarded(self, *, dates=None, ts_values=None, ref_values=_UNSET, plot_multiple=True, coords=_UNSET,
                        ref_coords=_UNSET, update=False, analysis=_UNSET, source_provenance=_UNSET,
+                       target_attributes=_UNSET, reference_attributes=_UNSET,
                        report_statistics=False):
         # update: flag indicating if the plot should be updated or a new one created
 
@@ -796,7 +973,8 @@ class PlotTs():
             data=series, presentation=presentation, coords=coords, ref_coords=ref_coords,
             record_id=source_snapshot.id if source_snapshot is not None else None,
             source=source_snapshot, source_provenance=source_provenance,
-            analysis=record_analysis,
+            analysis=record_analysis, target_attributes=target_attributes,
+            reference_attributes=reference_attributes,
         )
         fit = record.analysis.fit
         self.plot_residuals_flag = bool(fit.enabled and fit.show_residuals)
@@ -811,7 +989,10 @@ class PlotTs():
                 record = replace(
                     record,
                     presentation=replace(
-                        record.presentation, label=self._default_pending_label(record)
+                        record.presentation,
+                        label=self._default_pending_label(
+                            record, self._nextFactorySequenceNumber()
+                        ),
                     ),
                 )
             self.set_pending_record(
@@ -935,6 +1116,7 @@ class PlotTs():
         transaction.commit()
         self._rebuildYDataRanges()
         self.refreshAutomaticAxisRanges(draw=False)
+        self.refreshLegends()
         return graphics
 
     def rerender_record(
@@ -971,6 +1153,7 @@ class PlotTs():
         self._set_current_series(active)
         self._rebuildYDataRanges()
         self.refreshAutomaticAxisRanges(draw=False)
+        self.refreshLegends()
         return new_graphics
 
     def replace_and_rerender_records(self, records, *, notify=True, draw=True):
@@ -1059,6 +1242,7 @@ class PlotTs():
         self._set_current_series(active)
         self._rebuildYDataRanges()
         self.refreshAutomaticAxisRanges(draw=False)
+        self.refreshLegends()
         if draw:
             self._draw()
         if notify:
@@ -1151,6 +1335,7 @@ class PlotTs():
 
         if self._series_store.active_id() == record_id:
             self._set_current_series(record)
+        self.refreshLegends()
         return True
 
     @staticmethod
@@ -1500,12 +1685,148 @@ class PlotTs():
         """Return visible committed records plus the visible pending record."""
         records = [
             record for record in self._series_store.records()
-            if record.id not in self._hidden_committed_ids
+            if record.id not in self._hidden_committed_ids and record.presentation.visible
         ]
         pending = self.pending_record()
         if pending is not None and pending.presentation.visible:
             records.append(pending)
         return tuple(records)
+
+    @staticmethod
+    def _legend_label(record):
+        """Return the user-facing label for one rendered time series."""
+        return format_series_legend_label(record)
+
+    @staticmethod
+    def _first_graphics_item(*items):
+        """Return the first successfully rendered graphics item."""
+        return next((item for item in items if item is not None), None)
+
+    def _removeLegend(self, axis, legend, overlay):
+        """Remove one native legend while preserving overlay ownership through teardown."""
+        if axis is not None and getattr(axis, "legend", None) is legend:
+            axis.legend = None
+        if legend is not None:
+            try:
+                legend.clear()
+            except RuntimeError:
+                pass
+        if overlay is not None:
+            try:
+                overlay.dispose()
+            except RuntimeError:
+                pass
+
+    def _legendPlacement(self, legend):
+        """Apply the selected preset with a small inset from the plot edge."""
+        placements = {
+            "top_right": ((1, 0), (1, 0), (-10, 10)),
+            "top_left": ((0, 0), (0, 0), (10, 10)),
+            "bottom_right": ((1, 1), (1, 1), (-10, -10)),
+            "bottom_left": ((0, 1), (0, 1), (10, -10)),
+            "right": ((1, .5), (1, .5), (-10, 0)),
+            "left": ((0, .5), (0, .5), (10, 0)),
+        }
+        item_pos, parent_pos, offset = placements[self.settings_model.legend.location]
+        legend.anchor(itemPos=item_pos, parentPos=parent_pos, offset=offset)
+
+    def _newLegend(self, axis):
+        """Create one styled, passive native pyqtgraph legend for an axis."""
+        appearance = self.settings_model.appearance
+        legend_settings = self.settings_model.legend
+        if legend_settings.sync_font_size:
+            text_size = appearance.font_size
+        else:
+            text_size = legend_settings.font_size
+        text = self._plotAreaContrastColor(appearance.plot_background)
+        border = self._plotAreaContrastColor(appearance.plot_background)
+        background = self._color(
+            appearance.plot_background, legend_settings.background_opacity
+        )
+        legend = StableLegendItem(
+            offset=None, pen=pg.mkPen(border), brush=pg.mkBrush(background),
+            labelTextColor=text, labelTextSize=f"{text_size:g}pt",
+            sampleType=PassiveLegendSample,
+        )
+        overlay = LegendOverlay(axis)
+        legend.setParentItem(overlay)
+        axis.legend = legend
+        self._legendPlacement(legend)
+        return legend, overlay
+
+    def refreshLegends(self):
+        """Rebuild native legends from visible records and committed graphics only."""
+        self._removeLegend(
+            self.ax, self._main_legend or getattr(self.ax, "legend", None),
+            self._main_legend_overlay,
+        )
+        self._removeLegend(
+            self.ax_residuals,
+            self._residual_legend or getattr(self.ax_residuals, "legend", None),
+            self._residual_legend_overlay,
+        )
+        self._main_legend = None
+        self._residual_legend = None
+        self._main_legend_overlay = None
+        self._residual_legend_overlay = None
+        if not self.settings_model.legend.enabled or self.ax is None:
+            return
+
+        main_entries = []
+        residual_entries = []
+        for record in self.visibleTimeSeriesRecords():
+            graphics = self._graphics_for_series(record)
+            if graphics is None:
+                continue
+            label = self._legend_label(record)
+            related_label = related_series_legend_label(record)
+            base_sample = CompositeSeriesLegendSample(graphics.scatter, graphics.line)
+            if label and (base_sample.scatter is not None or base_sample.line is not None):
+                main_entries.append((
+                    base_sample, label,
+                ))
+            ensemble_fill = (
+                graphics.plot_multiple_fill[-1] if graphics.plot_multiple_fill else None
+            )
+            ensemble_line = self._first_graphics_item(*(graphics.plot_multiple_lines or ()))
+            ensemble_sample = EnsembleLegendSample(ensemble_fill, ensemble_line)
+            if record.presentation.legend.include_ensemble and (
+                ensemble_sample.fill is not None or ensemble_sample.member_line is not None
+            ):
+                main_entries.append((
+                    ensemble_sample,
+                    related_label + " ensemble",
+                ))
+            if record.presentation.legend.include_fit and graphics.fit_plot is not None:
+                main_entries.append((
+                    graphics.fit_plot, related_label + " fit",
+                ))
+            replica_up = self._first_graphics_item(*(graphics.replicate_up or ()))
+            replica_down = self._first_graphics_item(*(graphics.replicate_dn or ()))
+            if record.presentation.legend.include_replica and replica_up is not None and replica_down is not None:
+                main_entries.append((
+                    ReplicaLegendSample((replica_up, replica_down)),
+                    related_label + " replica",
+                ))
+            residual_sample = CompositeSeriesLegendSample(
+                graphics.residual_scatter, graphics.residual_line
+            )
+            if label and (residual_sample.scatter is not None or residual_sample.line is not None):
+                residual_entries.append((
+                    residual_sample,
+                    label,
+                ))
+
+        if main_entries:
+            self._main_legend, self._main_legend_overlay = self._newLegend(self.ax)
+            for item, label in main_entries:
+                self._main_legend.addItem(item, label)
+        if residual_entries and self.ax_residuals is not None:
+            self._residual_legend, self._residual_legend_overlay = self._newLegend(
+                self.ax_residuals
+            )
+            for item, label in residual_entries:
+                self._residual_legend.addItem(item, label)
 
     def hasPlottedTimeSeriesData(self):
         """Return whether visible record-owned observations can define a plot range."""
@@ -1882,6 +2203,7 @@ class PlotTs():
                 self._refreshAutomaticMarkerEdges()
         finally:
             self.restoreViewport(viewport)
+        self.refreshLegends()
         self._draw()
 
     def savePlotAsImage(self, filename):
@@ -2213,6 +2535,19 @@ class PlotTs():
         """Destroy plot axes and canvas items without deciding record lifetime."""
         self._clearHoverReadout()
         self._discardHoverMarker()
+        self._removeLegend(
+            self.ax, self._main_legend or getattr(self.ax, "legend", None),
+            self._main_legend_overlay,
+        )
+        self._removeLegend(
+            self.ax_residuals,
+            self._residual_legend or getattr(self.ax_residuals, "legend", None),
+            self._residual_legend_overlay,
+        )
+        self._main_legend = None
+        self._residual_legend = None
+        self._main_legend_overlay = None
+        self._residual_legend_overlay = None
         self.ui.plot_widget.clear()
         self.ui.plot_widget.plot_items = []
         self.ax = None
@@ -2517,6 +2852,7 @@ class PlotTs():
         self._series_store.replace_many(records)
         current = self.current_series()
         self._set_current_series(current)
+        self.refreshLegends()
 
     def rerenderTimeSeriesSnapshots(
         self, snapshots: List[TimeSeriesSnapshot], *, draw: bool = True
@@ -2627,6 +2963,7 @@ class PlotTs():
         self._rebuildYDataRanges()
         self.refreshAutomaticAxisRanges(draw=False)
         self._notify_pending_changed()
+        self.refreshLegends()
         return rendered_record
 
     def rerender_editable_record(self, record, *, plot_multiple=True, report_statistics=False):
@@ -2657,12 +2994,14 @@ class PlotTs():
             self._set_current_series(rendered_record)
             self._rebuildYDataRanges()
             self.refreshAutomaticAxisRanges(draw=False)
+            self.refreshLegends()
             self._notify_pending_changed()
             return graphics
         if record.id in self._hidden_committed_ids:
             if not self._series_store.replace(record):
                 raise KeyError(f"time-series record not found: {record.id}")
             self._set_current_series(record)
+            self.refreshLegends()
             self._notify_committed_changed()
             return None
         result = self.rerender_record(
@@ -2680,16 +3019,20 @@ class PlotTs():
         updated = replace(record, presentation=replace(record.presentation, label=normalized))
         self._pending_session.set(updated)
         self._set_current_series(updated)
+        self.refreshLegends()
         self._notify_pending_changed()
         return True
 
+    def _nextFactorySequenceNumber(self):
+        """Read the controller-owned next committed-list number when available."""
+        provider = self.next_factory_sequence_number
+        return provider() if callable(provider) else None
+
     @staticmethod
-    def _default_pending_label(record):
+    def _default_pending_label(record, sequence_number=None):
+        """Return the concise factory label for a genuinely new pending record."""
         kind = record.target.kind.value.title() if record.target is not None else "Time series"
-        source_name = record.source.layer_name.strip() if record.source is not None else ""
-        if len(source_name) > 32:
-            source_name = f"{source_name[:31]}…"
-        return f"{source_name} · {kind}" if source_name else kind
+        return f"{kind} {int(sequence_number)}" if sequence_number is not None else kind
 
     def commit_pending(self) -> Optional[TimeSeriesRecord]:
         """Transfer the exact pending record and graphics into committed ownership."""
@@ -2712,6 +3055,7 @@ class PlotTs():
             raise
         self._hidden_committed_ids.discard(record.id)
         self._set_current_series(record)
+        self.refreshLegends()
         self._notify_pending_changed()
         self._notify_committed_changed()
         return record
@@ -2727,6 +3071,7 @@ class PlotTs():
         self._set_current_series(self.current_series())
         self._rebuildYDataRanges()
         self.refreshAutomaticAxisRanges(draw=False)
+        self.refreshLegends()
         self._draw()
         self._notify_pending_changed()
         return record
@@ -2776,6 +3121,7 @@ class PlotTs():
         self._set_current_series(self.pending_record() or self.current_series())
         self._rebuildYDataRanges()
         self.refreshAutomaticAxisRanges(draw=False)
+        self.refreshLegends()
         self._draw()
         if notify:
             self._notify_committed_changed()
@@ -2928,6 +3274,10 @@ class PlotTs():
                 operation()
             except Exception as error:
                 errors.append(error)
+        try:
+            self.refreshLegends()
+        except Exception as error:
+            errors.append(error)
         return tuple(errors)
 
     def is_committed_visible(self, series_id: UUID) -> bool:

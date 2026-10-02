@@ -27,6 +27,8 @@ from .ui.popups.manual_x_axis_popup import ManualXAxisPopup
 from .ui.popups.export_settings_popup import ExportSettingsPopup
 from .ui.popups.appearance_popup import AppearancePopup
 from .ui.popups.replica_popup import ReplicaPopup
+from .ui.popups.legend_popup import LegendPopup
+from .ui.popups.legend_entry_popup import LegendEntryPopup
 from .ui.popups.map_indicator_settings_popup import MapIndicatorSettingsPopup
 from .ui.map_settings.range_state import (
     LayerRangeWorkingState, RangeSource, STD_RANGE_SOURCES, StdCalculationMode,
@@ -77,7 +79,7 @@ from .time_series.map_navigation import (
 )
 from .time_series.analysis_defaults import StickyAnalysisDefaultsCoordinator
 from .models.time_series import (
-    FitConfiguration, ReplicaConfiguration, SpatialSelectionKind,
+    FitConfiguration, ReplicaConfiguration, SeriesLegendSettings, SpatialSelectionKind,
 )
 from .time_series.fit_style_controller import FitStyleController
 from .time_series.ensemble_style import EnsembleStyleController
@@ -88,17 +90,26 @@ from .time_series.style_schema import percent_to_alpha
 from .time_series.style_palette import (
     DISTINCT_TIME_SERIES_COLORS, with_primary_series_color,
 )
+from .time_series.legend_entry import resolve_initial_legend_settings
 from .time_series.settings.model import (
     AppearanceSettings, AxisManualRange, EnsembleStyleSettings, ExportSettings,
-    FitStyleSettings, ReplicaSettings, ReplicaStyleSettings, ResidualStyleSettings, SeriesStyleSettings,
-    XAxisSettings,
+    FitStyleSettings, LegendEntryDefaults, LegendSettings, RelatedLegendDefaults, ReplicaSettings, ReplicaStyleSettings,
+    ResidualStyleSettings, SeriesStyleSettings, XAxisSettings,
 )
 from .time_series.settings.persistence import build_legacy_plot_params
 from .time_series.persistence import PreferencesPersistenceError
 from .time_series.copy_paste import (
     CopyPasteCategory, TimeSeriesSettingsClipboard,
-    apply_fit_snapshot, apply_replica_snapshot, apply_style_snapshot,
-    capture_fit, capture_replica, capture_style,
+    apply_fit_snapshot, apply_legend_entry_snapshot, apply_replica_snapshot, apply_style_snapshot,
+    capture_fit, capture_legend_entry, capture_replica, capture_style,
+)
+
+
+GENERAL_FIELDS = (
+    "location",
+    "sync_font_size",
+    "font_size",
+    "background_opacity",
 )
 
 
@@ -230,6 +241,7 @@ class GuiController(QObject):
         plotter.pending_changed_callback = self._syncPendingTimeSeriesPanel
         plotter.committed_changed_callback = self._syncCommittedTimeSeriesList
         self.time_series_list_state = TimeSeriesListState()
+        plotter.next_factory_sequence_number = self.time_series_list_state.next_sequence_number
 
         def settings_provider():
             return self.map_indicator_settings.active
@@ -293,6 +305,8 @@ class GuiController(QObject):
         self.export_settings_popup = ExportSettingsPopup(self.ui)
         self.appearance_popup = AppearancePopup(self.ui)
         self.replica_popup = ReplicaPopup(self.ui)
+        self.legend_popup = LegendPopup(self.ui)
+        self.legend_entry_popup = LegendEntryPopup(self.ui)
         self.map_indicator_settings_popup = MapIndicatorSettingsPopup(self.ui)
         self._installSplitButtonPopupHoverReconciliation()
         self._manual_y_axis_session = None
@@ -340,6 +354,7 @@ class GuiController(QObject):
             (self.fit_popup, toolbar.fit_button),
             (self.replica_popup, toolbar.replica_button),
             (self.export_settings_popup, toolbar.plot_export_button),
+            (self.legend_popup, toolbar.legend_button),
         )
         self._split_button_popup_hover_reconcilers = []
         for popup, split_button in mappings:
@@ -414,7 +429,6 @@ class GuiController(QObject):
     def resetTimeSeriesWorkspaceForDataset(self):
         """Compatibility alias for active-layer transient cleanup."""
         self.resetTimeSeriesTransientStateForLayer()
-
 
     def _onThemeChanged(self, *args):
         """Refresh all functional icons after QGIS applies a new palette/theme."""
@@ -1565,6 +1579,9 @@ class GuiController(QObject):
             self.setTimeSeriesReplicaEnabled
         )
         self.ui.time_series_toolbar.replicaSettingsRequested.connect(self.showReplicaPopup)
+        self.ui.time_series_toolbar.legendEnabledChanged.connect(self.setLegendEnabled)
+        self.ui.time_series_toolbar.legendSettingsRequested.connect(self.showLegendPopup)
+        self.ui.time_series_toolbar.legendEntryRequested.connect(self.showLegendEntryPopup)
         self.ui.time_series_toolbar.plotStyleRequested.connect(self.showTimeSeriesStylePopup)
         fit_popup = self.fit_popup
         toolbar = self.ui.time_series_toolbar
@@ -1677,6 +1694,23 @@ class GuiController(QObject):
         self.replica_popup.applySavedDefaultRequested.connect(self.restoreReplicaDefaults)
         self.replica_popup.applyFactoryDefaultRequested.connect(self.applyFactoryReplicaDefaults)
         self.replica_popup.saveCurrentAsDefaultRequested.connect(self.setCurrentReplicaAsDefault)
+        self.legend_popup.settingsChanged.connect(self.updateLegendSettings)
+        self.legend_popup.applySavedGeneralDefaultRequested.connect(
+            self.applyLegendGeneralDefaults
+        )
+        self.legend_popup.saveCurrentGeneralAsDefaultRequested.connect(
+            self.setCurrentLegendGeneralAsDefault
+        )
+        self.legend_popup.applyFactoryGeneralDefaultRequested.connect(
+            self.applyFactoryLegendGeneralDefaults
+        )
+        self.legend_entry_popup.settingsChanged.connect(self.updateLegendEntrySettings)
+        self.legend_entry_popup.applySavedLegendDefaultRequested.connect(self.applyLegendEntryDefaults)
+        self.legend_entry_popup.saveLegendDefaultRequested.connect(self.saveLegendEntryDefaults)
+        self.legend_entry_popup.applyFactoryLegendDefaultRequested.connect(self.applyFactoryLegendEntryDefaults)
+        self.legend_entry_popup.applySavedRelatedDefaultRequested.connect(self.applyRelatedLegendDefaults)
+        self.legend_entry_popup.saveRelatedDefaultRequested.connect(self.saveRelatedLegendDefaults)
+        self.legend_entry_popup.applyFactoryRelatedDefaultRequested.connect(self.applyFactoryRelatedLegendDefaults)
         indicator_popup = self.map_indicator_settings_popup
         indicator_popup.settingsChanged.connect(self.updateMapIndicatorSettings)
         indicator_popup.applySavedDefaultRequested.connect(
@@ -2804,6 +2838,212 @@ class GuiController(QObject):
         self.appearance_popup.show()
         self.appearance_popup.raise_()
 
+    def syncLegendPopup(self):
+        """Refresh the Plot legend popup from authoritative runtime settings."""
+        settings = self.choose_point_click_handler.plot_ts.settings_model.legend
+        self.legend_popup.setSettings(settings)
+        self.ui.time_series_toolbar.setLegendEnabled(settings.enabled)
+
+    def setLegendEnabled(self, enabled):
+        """Immediately apply the Plot legend split-button state to runtime settings."""
+        plotter = self.choose_point_click_handler.plot_ts
+        settings = replace(plotter.settings_model.legend, enabled=bool(enabled))
+        plotter.settings_model.replace_domain("legend", settings)
+        self.syncLegendPopup()
+
+    def updateLegendSettings(self, location, sync_font_size, font_size, background_opacity):
+        """Immediately apply the complete Plot legend popup state to runtime settings."""
+        plotter = self.choose_point_click_handler.plot_ts
+        settings = replace(plotter.settings_model.legend, location=location,
+                           sync_font_size=sync_font_size, font_size=font_size,
+                           background_opacity=background_opacity)
+        plotter.settings_model.replace_domain("legend", settings)
+        self.syncLegendPopup()
+
+    @staticmethod
+    def _copyLegendFields(target, source, fields):
+        """Copy only selected LegendSettings fields, preserving every other value."""
+        return replace(target, **{field: getattr(source, field) for field in fields})
+
+    def _applyLegendFields(self, source, fields):
+        """Apply selected legend fields and refresh the Plot legend popup."""
+        plotter = self.choose_point_click_handler.plot_ts
+        settings = self._copyLegendFields(plotter.settings_model.legend, source, fields)
+        plotter.settings_model.replace_domain("legend", settings)
+        self.syncLegendPopup()
+
+    def applyLegendGeneralDefaults(self):
+        """Apply saved Plot legend defaults without changing enabled state."""
+        plotter = self.choose_point_click_handler.plot_ts
+        self._applyLegendFields(plotter.user_preferences.load().legend, GENERAL_FIELDS)
+
+    def applyFactoryLegendGeneralDefaults(self):
+        """Apply built-in Plot legend defaults without changing enabled state."""
+        self._applyLegendFields(LegendSettings(), GENERAL_FIELDS)
+
+    def _saveLegendFieldsAsDefault(self, fields, message):
+        """Persist selected runtime legend fields while retaining the other saved defaults."""
+        plotter = self.choose_point_click_handler.plot_ts
+        saved = plotter.user_preferences.load().legend
+        merged = self._copyLegendFields(saved, plotter.settings_model.legend, fields)
+        self._saveUserPreferences(
+            lambda: plotter.user_preferences.save_legend(merged), message
+        )
+
+    def setCurrentLegendGeneralAsDefault(self):
+        """Save only the current Plot legend settings as defaults."""
+        self._saveLegendFieldsAsDefault(
+            GENERAL_FIELDS, "Plot legend settings saved as default."
+        )
+
+    def showLegendPopup(self):
+        """Open the Plot legend editor anchored beneath the split-button arrow."""
+        self.syncLegendPopup()
+        anchor = self.ui.time_series_toolbar.legend_button.secondary_button
+        self.legend_popup.adjustSize()
+        anchor_top_left = anchor.mapToGlobal(QPoint(0, 0))
+        anchor_rect = QRect(anchor_top_left, anchor.size())
+        geometry = available_screen_geometry(anchor_rect.center(), anchor)
+        self.legend_popup.move(screen_aware_popup_position(
+            anchor_rect, self.legend_popup.sizeHint(), geometry
+        ))
+        self.legend_popup.show()
+        self.legend_popup.raise_()
+
+    def _legendEntryRecord(self):
+        """Return the same selected-or-pending record targeted by other series tools."""
+        return self.choose_point_click_handler.plot_ts.editable_time_series_record()
+
+    def syncLegendEntryPopup(self):
+        """Synchronize the per-series popup from the current immutable record."""
+        record = self._legendEntryRecord()
+        if record is not None:
+            self.legend_entry_popup.setRecord(record)
+
+    def showLegendEntryPopup(self):
+        """Open the current time-series legend-entry editor from the left toolbar."""
+        record = self._legendEntryRecord()
+        if record is None:
+            return
+        self.legend_entry_popup.setRecord(record)
+        anchor = self.ui.time_series_toolbar.widgetForAction(
+            self.ui.time_series_toolbar.legend_entry_action
+        )
+        self.legend_entry_popup.adjustSize()
+        anchor_top_left = anchor.mapToGlobal(QPoint(0, 0))
+        anchor_rect = QRect(anchor_top_left, anchor.size())
+        geometry = available_screen_geometry(anchor_rect.center(), anchor)
+        self.legend_entry_popup.move(screen_aware_popup_position(
+            anchor_rect, self.legend_entry_popup.sizeHint(), geometry
+        ))
+        self.legend_entry_popup.show()
+        self.legend_entry_popup.raise_()
+
+    def updateLegendEntrySettings(
+        self, field_name, prefix, suffix, include_label, include_field, include_fit,
+        include_replica, include_ensemble, use_label_only,
+    ):
+        """Replace current-record legend choices without changing plot-wide settings."""
+        record = self._legendEntryRecord()
+        if record is None:
+            return
+        settings = SeriesLegendSettings(
+            field_name=field_name, prefix=prefix, suffix=suffix, include_label=include_label,
+            include_field=include_field, include_fit=include_fit, include_replica=include_replica,
+            include_ensemble=include_ensemble, use_label_only=use_label_only,
+        )
+        updated = replace(record, presentation=replace(record.presentation, legend=settings))
+        self.choose_point_click_handler.plot_ts.rerender_editable_record(updated)
+        self.syncLegendEntryPopup()
+
+    def _applyLegendEntryDefaults(self, entry_defaults, related_defaults):
+        record = self._legendEntryRecord()
+        if record is None:
+            return
+        resolved = resolve_initial_legend_settings(record.target_attributes, entry_defaults, related_defaults)
+        self.updateLegendEntrySettings(
+            resolved.field_name, resolved.prefix, resolved.suffix, resolved.include_label, resolved.include_field,
+            resolved.include_fit, resolved.include_replica, resolved.include_ensemble, resolved.use_label_only,
+        )
+
+    def applyLegendEntryDefaults(self):
+        """Apply the saved additional-field defaults to the current record."""
+        preferences = self.choose_point_click_handler.plot_ts.user_preferences.load()
+        record = self._legendEntryRecord()
+        related = record.presentation.legend if record is not None else SeriesLegendSettings()
+        self._applyLegendEntryDefaults(
+            preferences.legend_entry_defaults,
+            RelatedLegendDefaults(
+                related.include_fit, related.include_replica, related.include_ensemble,
+                related.use_label_only,
+            ),
+        )
+
+    def applyFactoryLegendEntryDefaults(self):
+        """Apply factory field detection without changing persisted defaults."""
+        record = self._legendEntryRecord()
+        related = record.presentation.legend if record is not None else SeriesLegendSettings()
+        self._applyLegendEntryDefaults(
+            LegendEntryDefaults(), RelatedLegendDefaults(
+                related.include_fit, related.include_replica, related.include_ensemble,
+                related.use_label_only,
+            )
+        )
+
+    def saveLegendEntryDefaults(self):
+        """Persist the current field, prefix and suffix as an explicit user default."""
+        record = self._legendEntryRecord()
+        if record is None or record.target is None or record.target.kind != SpatialSelectionKind.POINT:
+            return
+        settings = record.presentation.legend
+        defaults = LegendEntryDefaults(
+            configured=True, field_name=settings.field_name, prefix=settings.prefix,
+            suffix=settings.suffix, include_label=settings.include_label, include_field=settings.include_field,
+        )
+        self._saveUserPreferences(
+            lambda: self.choose_point_click_handler.plot_ts.user_preferences.save_legend_entry_defaults(defaults),
+            "Legend entry settings saved as default.",
+        )
+
+    def applyRelatedLegendDefaults(self):
+        """Apply saved related-entry inclusion defaults to the current record."""
+        prefs = self.choose_point_click_handler.plot_ts.user_preferences.load()
+        record = self._legendEntryRecord()
+        if record is None:
+            return
+        current = record.presentation.legend
+        defaults = prefs.related_legend_defaults
+        self.updateLegendEntrySettings(current.field_name, current.prefix, current.suffix, current.include_label,
+                                       current.include_field, defaults.include_fit, defaults.include_replica,
+                                       defaults.include_ensemble, defaults.use_label_only)
+
+    def applyFactoryRelatedLegendDefaults(self):
+        """Apply factory related-entry inclusion choices to the current record."""
+        record = self._legendEntryRecord()
+        if record is not None:
+            current = record.presentation.legend
+            defaults = RelatedLegendDefaults()
+            self.updateLegendEntrySettings(
+                current.field_name, current.prefix, current.suffix, current.include_label, current.include_field,
+                defaults.include_fit, defaults.include_replica, defaults.include_ensemble,
+                defaults.use_label_only,
+            )
+
+    def saveRelatedLegendDefaults(self):
+        """Persist related-entry inclusion independently of field defaults."""
+        record = self._legendEntryRecord()
+        if record is None:
+            return
+        value = record.presentation.legend
+        defaults = RelatedLegendDefaults(
+            value.include_fit, value.include_replica, value.include_ensemble,
+            value.use_label_only,
+        )
+        self._saveUserPreferences(
+            lambda: self.choose_point_click_handler.plot_ts.user_preferences.save_related_legend_defaults(defaults),
+            "Related legend settings saved as default.",
+        )
+
     def syncExportSettingsPopup(self):
         """Refresh the export popup from the authoritative runtime model."""
         self.export_settings_popup.setSettings(
@@ -2912,6 +3152,7 @@ class GuiController(QObject):
         self.clear_all_pending_drawing_feedback()
         self.time_series_map_overlays.set_pending_active(True)
         self.ui.time_series_toolbar.setSeriesControlsEnabled(True)
+        self.syncLegendEntryPopup()
         self._refreshTimeSeriesPlotActionState()
 
     def addPendingTimeSeries(self):
@@ -2956,6 +3197,7 @@ class GuiController(QObject):
             CopyPasteCategory.STYLE,
             CopyPasteCategory.FIT,
             CopyPasteCategory.REPLICA,
+            CopyPasteCategory.LEGEND,
             CopyPasteCategory.ALL_PRESENTATION,
         )
 
@@ -3120,7 +3362,7 @@ class GuiController(QObject):
         return self._navigateCommittedTimeSeriesSelection("reference")
 
     def copyCommittedTimeSeriesSettings(self):
-        """Atomically capture Style, Fit, and Replica from one committed source."""
+        """Atomically capture Style, Fit, Replica, and Legend entry from one source."""
         panel = self.ui.time_series_point_panel
         selected = panel.selected_committed_ids()
         if len(selected) != 1:
@@ -3139,13 +3381,14 @@ class GuiController(QObject):
                 style=capture_style(record),
                 fit=capture_fit(record),
                 replica=capture_replica(record),
+                legend=capture_legend_entry(record),
             )
         except Exception as error:
             self._reportCopyPasteFailure("copy", error)
             return
         self.time_series_clipboard = clipboard
         self._refreshTimeSeriesClipboardProjection()
-        self.msg_signal.emit("Copied style, Fit and Replica.", STATUS_SUCCESS, 3000)
+        self.msg_signal.emit("Copied Style, Fit, Replica and Legend entry settings.", STATUS_SUCCESS, 3000)
 
     def pasteCommittedTimeSeriesSettings(self, category):
         """Atomically paste one typed category to selected committed destinations."""
@@ -3183,6 +3426,8 @@ class GuiController(QObject):
                     updated = apply_fit_snapshot(updated, clipboard.fit)
                 if category in (CopyPasteCategory.REPLICA, CopyPasteCategory.ALL_PRESENTATION):
                     updated = apply_replica_snapshot(updated, clipboard.replica)
+                if category in (CopyPasteCategory.LEGEND, CopyPasteCategory.ALL_PRESENTATION):
+                    updated = apply_legend_entry_snapshot(updated, clipboard.legend)
                 replacements.append(updated)
             plotter.rerender_records(replacements, notify=True, draw=True)
         except Exception as error:
@@ -3209,7 +3454,8 @@ class GuiController(QObject):
             CopyPasteCategory.STYLE: "style",
             CopyPasteCategory.FIT: "Fit",
             CopyPasteCategory.REPLICA: "Replica",
-            CopyPasteCategory.ALL_PRESENTATION: "style, Fit and Replica",
+            CopyPasteCategory.LEGEND: "Legend entry",
+            CopyPasteCategory.ALL_PRESENTATION: "All settings",
         }
         count = len(record_ids)
         self.msg_signal.emit(
@@ -3492,11 +3738,13 @@ class GuiController(QObject):
         toolbar = self.ui.time_series_toolbar
         if plotter.pending_record() is not None:
             toolbar.setSeriesControlsEnabled(True)
+            self.syncLegendEntryPopup()
             self._refreshTimeSeriesPlotActionState()
             return
         if len(record_ids) == 1:
             plotter.setActiveSeries(record_ids[0])
             toolbar.setSeriesControlsEnabled(True)
+            self.syncLegendEntryPopup()
             self._syncActiveAnalysisControls(plotter.current_series())
             self._refreshTimeSeriesPlotActionState()
             return
@@ -3511,6 +3759,8 @@ class GuiController(QObject):
         has_plot = plotter.has_exportable_plot()
         toolbar = self.ui.time_series_toolbar
         toolbar.appearance_action.setEnabled(has_plot)
+        toolbar.setLegendAvailable(has_plot)
+        toolbar.setLegendEnabled(plotter.settings_model.legend.enabled)
         toolbar.plot_export_button.setPrimaryEnabled(has_plot)
         toolbar.setRangeControlsEnabled(plotter.hasPlottedTimeSeriesData())
 

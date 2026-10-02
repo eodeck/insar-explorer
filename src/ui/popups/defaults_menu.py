@@ -40,6 +40,7 @@ def createDefaultsMenu(parent, apply_saved, save_current, apply_factory, object_
     )
     set_default_action.setToolTip("Save the current values as the default.")
     set_default_action.triggered.connect(save_current)
+    button.save_default_action = set_default_action
 
     button.setMenu(menu)
     return button

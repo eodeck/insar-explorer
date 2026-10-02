@@ -4,6 +4,7 @@ import numpy as np
 from qgis.core import QgsFeature
 from ..qt_compat import VECTOR_LAYER
 from qgis.PyQt.QtCore import QVariant
+from ..time_series.velocity_fields import VELOCITY_FIELD_NAME_OPTIONS, get_velocity_field_name
 
 
 def checkVectorLayer(layer):
@@ -25,19 +26,19 @@ def checkVectorLayer(layer):
         return True, ""
 
 
-def getVectorVelocityFieldName(layer):
-    """ check layer is a valid vector with velocity """
+def getVelocityFieldName(field_names):
+    """Return the first canonical velocity field from a sequence of names."""
+    return get_velocity_field_name(field_names)
 
-    velocity_field_name_options = ['velocity', 'VEL', 'mean_velocity']
-    field_name = None
+
+def getVectorVelocityFieldName(layer):
+    """Check a vector layer for one canonical velocity attribute."""
+
+    field_name = getVelocityFieldName(field.name() for field in layer.fields())
     message = ""
-    for velocity_field in velocity_field_name_options:
-        if layer.fields().lookupField(velocity_field) != -1:
-            field_name = velocity_field
-            break
 
     if field_name is None:
-        joined_names = ', '.join(velocity_field_name_options)
+        joined_names = ', '.join(VELOCITY_FIELD_NAME_OPTIONS)
         message = (f'Invalid Layer: Please select a vector layer with valid velocity field.'
                    f'. Supported field names: [{joined_names}].')
 
@@ -78,6 +79,36 @@ def getFeatureAttributes(feature: QgsFeature) -> dict:
     :return: Dictionary of feature attributes
     """
     return {field.name(): feature[field.name()] for field in feature.fields()}
+
+
+def _normalize_snapshot_value(value):
+    """Return a plain, immutable-record-safe representation of one field value."""
+    if isinstance(value, QVariant):
+        if value.isNull():
+            return None
+        unwrap = getattr(value, "value", None)
+        value = unwrap() if callable(unwrap) else value
+    item = getattr(value, "item", None)
+    if callable(item):
+        try:
+            value = item()
+        except (TypeError, ValueError):
+            pass
+    if isinstance(value, dict):
+        return {str(key): _normalize_snapshot_value(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_normalize_snapshot_value(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_normalize_snapshot_value(item) for item in value)
+    return value
+
+
+def captureFeatureAttributes(feature: QgsFeature) -> dict:
+    """Capture feature attributes as plain values suitable for immutable state."""
+    return {
+        name: _normalize_snapshot_value(value)
+        for name, value in getFeatureAttributes(feature).items()
+    }
 
 
 def extractDateValueAttributes(attributes: dict) -> list:
