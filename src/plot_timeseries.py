@@ -11,7 +11,7 @@ import numpy as np
 from ..external import pyqtgraph as pg
 from qgis.PyQt.QtCore import QPointF, QRectF
 from qgis.PyQt.QtGui import QColor, QFont
-from qgis.PyQt.QtWidgets import QApplication
+from qgis.PyQt.QtWidgets import QApplication, QGraphicsWidget
 from ..external.pyqtgraph.graphicsItems.LegendItem import (
     ItemSample, LegendItem, drawSymbol,
 )
@@ -26,7 +26,7 @@ from .time_series.hover import (
 )
 from .time_series.settings.persistence import build_legacy_plot_params
 from .time_series.persistence import NullProjectStateRepository
-from .qt_compat import PALETTE_WINDOW_TEXT
+from .qt_compat import NO_MOUSE_BUTTON, PALETTE_WINDOW_TEXT
 from .time_series.store import TimeSeriesStore
 from .time_series.pending_session import PendingTimeSeriesSession, resolve_editable_record
 from .time_series.legend_entry import resolve_initial_legend_settings
@@ -60,6 +60,40 @@ _MARKER_EDGE_LIGHT = "#f2f2f2"
 _MARKER_EDGE_LIGHT_BACKGROUND_THRESHOLD = 0.5
 _PLOT_GRID_ALPHA = 0.25
 _INTERACTIVE_ANTIALIAS = True
+_LEGEND_OVERLAY_Z_VALUE = 1.0
+
+
+class LegendOverlay(QGraphicsWidget):
+    """Transparent plot-area overlay that stacks legends above axis-rendered grids."""
+
+    def __init__(self, axis):
+        super().__init__(axis)
+        self._view_box = axis.getViewBox()
+        self.setZValue(_LEGEND_OVERLAY_Z_VALUE)
+        self.setAcceptedMouseButtons(NO_MOUSE_BUTTON)
+        self.setAcceptHoverEvents(False)
+        self._view_box.geometryChanged.connect(self.syncGeometry)
+        self.syncGeometry()
+
+    def syncGeometry(self):
+        """Mirror the ViewBox plot-area geometry used by legend anchoring."""
+        if self._view_box is not None:
+            self.setGeometry(self._view_box.geometry())
+
+    def dispose(self):
+        """Disconnect geometry tracking and detach this overlay from the scene."""
+        view_box = self._view_box
+        self._view_box = None
+        if view_box is not None:
+            try:
+                view_box.geometryChanged.disconnect(self.syncGeometry)
+            except (RuntimeError, TypeError):
+                pass
+        scene = self.scene()
+        self.setParentItem(None)
+        if scene is not None:
+            scene.removeItem(self)
+        self.deleteLater()
 
 
 class PassiveLegendSample(ItemSample):
@@ -372,6 +406,8 @@ class PlotTs():
         self.ax_residuals = None
         self._main_legend = None
         self._residual_legend = None
+        self._main_legend_overlay = None
+        self._residual_legend_overlay = None
         self.plot_residuals_flag = False
         self.random_marker_color_flag = False
         self.parms = {}
@@ -1666,17 +1702,20 @@ class PlotTs():
         """Return the first successfully rendered graphics item."""
         return next((item for item in items if item is not None), None)
 
-    def _removeLegend(self, axis, legend):
-        """Detach one native legend safely before rebuilding or clearing an axis."""
-        if legend is None:
-            return
-        try:
-            legend.clear()
-            legend.setParentItem(None)
-            if axis is not None and getattr(axis, "legend", None) is legend:
-                axis.legend = None
-        except RuntimeError:
-            pass
+    def _removeLegend(self, axis, legend, overlay):
+        """Remove one native legend while preserving overlay ownership through teardown."""
+        if axis is not None and getattr(axis, "legend", None) is legend:
+            axis.legend = None
+        if legend is not None:
+            try:
+                legend.clear()
+            except RuntimeError:
+                pass
+        if overlay is not None:
+            try:
+                overlay.dispose()
+            except RuntimeError:
+                pass
 
     def _legendPlacement(self, legend):
         """Apply the selected preset with a small inset from the plot edge."""
@@ -1709,22 +1748,27 @@ class PlotTs():
             labelTextColor=text, labelTextSize=f"{text_size:g}pt",
             sampleType=PassiveLegendSample,
         )
-        legend.setParentItem(axis.getViewBox())
+        overlay = LegendOverlay(axis)
+        legend.setParentItem(overlay)
         axis.legend = legend
         self._legendPlacement(legend)
-        return legend
+        return legend, overlay
 
     def refreshLegends(self):
         """Rebuild native legends from visible records and committed graphics only."""
         self._removeLegend(
-            self.ax, self._main_legend or getattr(self.ax, "legend", None)
+            self.ax, self._main_legend or getattr(self.ax, "legend", None),
+            self._main_legend_overlay,
         )
         self._removeLegend(
             self.ax_residuals,
             self._residual_legend or getattr(self.ax_residuals, "legend", None),
+            self._residual_legend_overlay,
         )
         self._main_legend = None
         self._residual_legend = None
+        self._main_legend_overlay = None
+        self._residual_legend_overlay = None
         if not self.settings_model.legend.enabled or self.ax is None:
             return
 
@@ -1774,11 +1818,13 @@ class PlotTs():
                 ))
 
         if main_entries:
-            self._main_legend = self._newLegend(self.ax)
+            self._main_legend, self._main_legend_overlay = self._newLegend(self.ax)
             for item, label in main_entries:
                 self._main_legend.addItem(item, label)
         if residual_entries and self.ax_residuals is not None:
-            self._residual_legend = self._newLegend(self.ax_residuals)
+            self._residual_legend, self._residual_legend_overlay = self._newLegend(
+                self.ax_residuals
+            )
             for item, label in residual_entries:
                 self._residual_legend.addItem(item, label)
 
@@ -2489,8 +2535,19 @@ class PlotTs():
         """Destroy plot axes and canvas items without deciding record lifetime."""
         self._clearHoverReadout()
         self._discardHoverMarker()
+        self._removeLegend(
+            self.ax, self._main_legend or getattr(self.ax, "legend", None),
+            self._main_legend_overlay,
+        )
+        self._removeLegend(
+            self.ax_residuals,
+            self._residual_legend or getattr(self.ax_residuals, "legend", None),
+            self._residual_legend_overlay,
+        )
         self._main_legend = None
         self._residual_legend = None
+        self._main_legend_overlay = None
+        self._residual_legend_overlay = None
         self.ui.plot_widget.clear()
         self.ui.plot_widget.plot_items = []
         self.ax = None
