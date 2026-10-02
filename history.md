@@ -2,10 +2,12 @@
 
 v2.11.0
 
-- Move x-axis and y-axis controls to the right side of the time-series toolbar.
-- Removed layer name from selection label.
-- Added a button to modify legend entries per series.
-- Added configurable legends to time-series and residual plots.
+- Removed layer name from selection label and added sequential labels.
+- Improved toolbar terminology and UI cleanup.
+- Reorganized the time-series toolbar into per-series and plot-level controls.
+- Moved X range and Y range controls to the plot-level side of the toolbar.
+- Added a button to control legend entries per series.
+- Added configurable legends control.
 - Support light and dark themes.
 
 v2.10.1
