@@ -202,6 +202,7 @@ class LegendEntryPopup(QWidget):
         self.include_label_checkbox.setEnabled(is_point and include_field)
         self.include_field_checkbox.setEnabled(is_point and has_field and include_label)
         self.field_container.setEnabled(is_point and include_field)
+        self.use_label_only_checkbox.setEnabled(is_point and has_field and include_field)
         if not is_point:
             self.include_label_checkbox.setToolTip("Polygon legend entries use the series label in this version.")
             self.field_combo.setToolTip("Fields are available for point-vector selections only.")
