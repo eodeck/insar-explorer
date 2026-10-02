@@ -176,7 +176,7 @@ class TimeSeriesToolbar(QToolBar):
             self.y_axis_actions[mode] = action
         self.y_axis_actions["from_data"].setChecked(True)
         self.y_axis_menu.addSeparator()
-        self.edit_manual_y_axis_action = QAction("Edit Manual ranges…", self.y_axis_menu)
+        self.edit_manual_y_axis_action = QAction("Edit ranges…", self.y_axis_menu)
         self.edit_manual_y_axis_action.setObjectName("action_ts_y_edit_manual")
         self.edit_manual_y_axis_action.setToolTip("Edit stored manual Y-axis ranges")
         self.y_axis_menu.addAction(self.edit_manual_y_axis_action)
@@ -207,7 +207,7 @@ class TimeSeriesToolbar(QToolBar):
         )
         self.plot_style_action = self._createAction(
             STYLE_ACTION_ICON,
-            "Plot style",
+            "Style",
             "Edit the style of the current time series",
             "action_ts_plot_style",
         )
