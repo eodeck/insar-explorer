@@ -1,5 +1,9 @@
 ### History
 
+v2.12.0dev
+
+- 
+
 v2.11.0
 
 - Removed layer name from selection label and added sequential labels.
