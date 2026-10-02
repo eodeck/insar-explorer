@@ -1,7 +1,8 @@
 """Compact tabbed editor for time-series Fit settings and styles."""
 
+from ..icon_theme import icon as themed_icon
+
 from qgis.PyQt.QtCore import QSize, pyqtSignal
-from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import (
     QButtonGroup, QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout, QGridLayout,
     QGroupBox, QHBoxLayout, QRadioButton, QSpinBox, QTabWidget,
@@ -26,11 +27,11 @@ from ..spacing import SPACE_XS, SPACE_SM, SPACE_MD, SPACE_LG, SPACE_XL
 
 
 FIT_MODELS = (
-    ("poly-1", "Linear", ":/icons/icons/fit_poly1.svg", "choice_ts_fit_poly_1"),
-    ("poly-2", "Quadratic", ":/icons/icons/fit_poly2.svg", "choice_ts_fit_poly_2"),
-    ("poly-3", "Cubic", ":/icons/icons/fit_poly3.svg", "choice_ts_fit_poly_3"),
-    ("exp", "Exponential", ":/icons/icons/fit_exponential.svg", "choice_ts_fit_exp"),
-    ("log", "Logarithmic", ":/icons/icons/fit_log.svg", "choice_ts_fit_log"),
+    ("poly-1", "Linear", "fit_poly1", "choice_ts_fit_poly_1"),
+    ("poly-2", "Quadratic", "fit_poly2", "choice_ts_fit_poly_2"),
+    ("poly-3", "Cubic", "fit_poly3", "choice_ts_fit_poly_3"),
+    ("exp", "Exponential", "fit_exponential", "choice_ts_fit_exp"),
+    ("log", "Logarithmic", "fit_log", "choice_ts_fit_log"),
 )
 
 
@@ -100,7 +101,7 @@ class FitPopup(QWidget):
         for index, (model_id, label, icon_path, object_name) in enumerate(FIT_MODELS):
             button = QRadioButton(label, models)
             button.setObjectName(object_name)
-            button.setIcon(QIcon(icon_path))
+            button.setIcon(themed_icon(icon_path))
             button.setIconSize(QSize(18, 18))
             button.setCheckable(True)
             button.setAccessibleName(f"{label} fit")
@@ -115,7 +116,7 @@ class FitPopup(QWidget):
         self.seasonal_checkbox = QCheckBox("Seasonal component", models)
         self.seasonal_checkbox.setObjectName("check_ts_fit_seasonal")
         self.seasonal_checkbox.setIcon(
-            QIcon(":/icons/icons/fit__add_seasonal.svg")
+            themed_icon("fit__add_seasonal")
         )
         self.seasonal_checkbox.setIconSize(QSize(18, 18))
         self.seasonal_checkbox.setAccessibleName("Seasonal component")
@@ -132,7 +133,7 @@ class FitPopup(QWidget):
         self.residual_checkbox = QCheckBox("Show residual plot", options)
         self.residual_checkbox.setObjectName("check_ts_fit_residual")
         self.residual_checkbox.setIcon(
-            QIcon(":/icons/icons/residual.svg")
+            themed_icon("residual")
         )
         options_layout.addWidget(self.residual_checkbox)
         layout.addWidget(options)
@@ -290,7 +291,7 @@ class FitPopup(QWidget):
         actions.setContentsMargins(0, 0, 0, 0)
         self.residual_randomize_button = QToolButton(self.residual_style_content)
         self.residual_randomize_button.setIcon(
-            QIcon(":/icons/icons/plot_random_color.svg")
+            themed_icon("plot_random_color")
         )
         configure_compact_command_button(self.residual_randomize_button)
         self.residual_randomize_button.setToolTip("Randomize residual colors")

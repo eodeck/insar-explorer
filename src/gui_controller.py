@@ -44,6 +44,7 @@ from .ui.map_settings.symbology_defaults import (
     normalize_map_symbology_settings,
 )
 from .ui.widgets.split_tool_button import SplitButtonPopupHoverReconciler
+from .ui.icon_theme import refresh_all_themed_icons
 from .ui.status_messages import (
     STATUS_ERROR, STATUS_INFO, STATUS_INSTRUCTION, STATUS_SUCCESS, STATUS_WARNING,
     normalize_status_message_type,
@@ -196,6 +197,12 @@ class GuiController(QObject):
         super().__init__()
         self.iface = plugin.iface
         self.ui = plugin.dockwidget
+        self._theme_signal = getattr(self.iface, "currentThemeChanged", None)
+        if self._theme_signal is not None:
+            try:
+                self._theme_signal.connect(self._onThemeChanged)
+            except (AttributeError, TypeError, RuntimeError):
+                self._theme_signal = None
         self._plugin_diagnostic = getattr(
             plugin, "report_time_series_diagnostic", None
         )
@@ -408,6 +415,19 @@ class GuiController(QObject):
         """Compatibility alias for active-layer transient cleanup."""
         self.resetTimeSeriesTransientStateForLayer()
 
+
+    def _onThemeChanged(self, *args):
+        """Refresh all functional icons after QGIS applies a new palette/theme."""
+        refresh_all_themed_icons()
+        point_panel = getattr(self.ui, "time_series_point_panel", None)
+        if point_panel is not None:
+            pending_model = getattr(point_panel, "pending_model", None)
+            committed_model = getattr(point_panel, "committed_model", None)
+            for model in (pending_model, committed_model):
+                refresh = getattr(model, "refresh_icons", None)
+                if callable(refresh):
+                    refresh()
+
     def clearTimeSeriesWorkspace(self):
         """Explicitly clear transient state and every committed time series."""
         self.time_series_map_overlays.clear_all()
@@ -431,6 +451,12 @@ class GuiController(QObject):
         self.clear_all_pending_drawing_feedback()
 
         # disconnect long-lived QGIS signals before clearing model state
+        if self._theme_signal is not None:
+            try:
+                self._theme_signal.disconnect(self._onThemeChanged)
+            except (TypeError, RuntimeError):
+                pass
+            self._theme_signal = None
         self.disconnectMapToolSync()
         try:
             self.iface.currentLayerChanged.disconnect(self.onLayerChanged)

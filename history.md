@@ -1,5 +1,8 @@
 ### History
 
+v2.11.0dev
+- Support light and dark themes.
+
 v2.10.1
 - Improved QGIS compatibility of the bundled pyqtgraph integration.
 

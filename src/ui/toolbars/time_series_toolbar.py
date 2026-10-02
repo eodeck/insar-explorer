@@ -1,7 +1,8 @@
 """Toolbar actions for the time-series plot panel."""
 
+from ..icon_theme import icon as themed_icon
+
 from qgis.PyQt.QtCore import QSize, pyqtSignal
-from qgis.PyQt.QtGui import QIcon
 from qgis.PyQt.QtWidgets import (
     QLabel,
     QMenu,
@@ -57,17 +58,17 @@ class TimeSeriesToolbar(QToolBar):
         apply_command_toolbar_style(self)
 
         self._fit_models = {
-            "poly-1": ("Linear", ":/icons/icons/fit_poly1.svg"),
-            "poly-2": ("Quadratic", ":/icons/icons/fit_poly2.svg"),
-            "poly-3": ("Cubic", ":/icons/icons/fit_poly3.svg"),
-            "exp": ("Exponential", ":/icons/icons/fit_exponential.svg"),
-            "log": ("Logarithmic", ":/icons/icons/fit_log.svg"),
+            "poly-1": ("Linear", "fit_poly1"),
+            "poly-2": ("Quadratic", "fit_poly2"),
+            "poly-3": ("Cubic", "fit_poly3"),
+            "exp": ("Exponential", "fit_exponential"),
+            "log": ("Logarithmic", "fit_log"),
         }
         self._selected_fit_model = "poly-1"
         self._seasonal_enabled = False
         self._residual_enabled = False
         self.fit_button = SplitToolButton(
-            icon=QIcon(self._fit_models[self._selected_fit_model][1]),
+            icon=themed_icon(self._fit_models[self._selected_fit_model][1]),
             primary_checkable=True,
             parent=self,
             object_name="tool_ts_fit",
@@ -99,18 +100,18 @@ class TimeSeriesToolbar(QToolBar):
                 "from_data",
                 "Data range",
                 "Fit the range to all visible time-series data",
-                ":/icons/icons/x_axis_from_data.svg",
+                "x_axis_from_data",
                 "action_ts_x_from_data",
             ),
             (
                 "manual",
                 "Manual",
                 "Manual time range\n\nNot configured",
-                ":/icons/icons/x_axis_manual.svg",
+                "x_axis_manual",
                 "action_ts_x_manual",
             ),
         ):
-            action = QAction(QIcon(icon_path), text, self.x_axis_group)
+            action = QAction(themed_icon(icon_path), text, self.x_axis_group)
             action.setObjectName(object_name)
             action.setCheckable(True)
             action.setData(mode)
@@ -144,25 +145,25 @@ class TimeSeriesToolbar(QToolBar):
                 "from_data",
                 "Data range",
                 "Fit the range to all visible time-series data",
-                ":/icons/icons/y_axis_from_data.svg",
+                "y_axis_from_data",
                 "action_ts_y_from_data",
             ),
             (
                 "symmetric",
                 "Symmetric",
                 "Use a range symmetric around zero for all visible time-series data",
-                ":/icons/icons/y_axis_symmetric.svg",
+                "y_axis_symmetric",
                 "action_ts_y_symmetric",
             ),
             (
                 "manual",
                 "Manual",
                 "Apply stored manual Y-axis ranges",
-                ":/icons/icons/y_axis_manual.svg",
+                "y_axis_manual",
                 "action_ts_y_manual",
             ),
         ):
-            action = QAction(QIcon(icon_path), text, self.y_axis_group)
+            action = QAction(themed_icon(icon_path), text, self.y_axis_group)
             action.setObjectName(object_name)
             action.setCheckable(True)
             action.setData(mode)
@@ -185,7 +186,7 @@ class TimeSeriesToolbar(QToolBar):
         self._updateYAxisSelector(self.y_axis_actions["from_data"])
 
         self.replica_button = SplitToolButton(
-            icon=QIcon(REPLICA_ACTION_ICON),
+            icon=themed_icon(REPLICA_ACTION_ICON),
             primary_checkable=True,
             parent=self,
             object_name="tool_ts_replica",
@@ -208,14 +209,14 @@ class TimeSeriesToolbar(QToolBar):
             "action_ts_plot_style",
         )
         self.appearance_action = self._createAction(
-            ":/icons/icons/setting.svg",
+            "setting",
             "Appearance",
             "Appearance",
             "action_ts_appearance",
         )
         self.appearance_action.setEnabled(False)
         self.plot_export_button = SplitToolButton(
-            icon=QIcon(":/icons/icons/screenshot.svg"),
+            icon=themed_icon("screenshot"),
             primary_checkable=False,
             parent=self,
             object_name="tool_ts_plot_export",
@@ -320,7 +321,7 @@ class TimeSeriesToolbar(QToolBar):
         if model not in self._fit_models:
             raise KeyError(f"Unknown fit model: {model}")
         self._selected_fit_model = model
-        self.fit_button.setPrimaryIcon(QIcon(self._fit_models[model][1]))
+        self.fit_button.setPrimaryIcon(themed_icon(self._fit_models[model][1]))
         self._updateFitMetadata()
 
     def selectFitModel(self, model):
@@ -390,7 +391,7 @@ class TimeSeriesToolbar(QToolBar):
         if custom_view:
             tooltip = "Current plot view was changed manually"
             state_text = "Custom view"
-            self.x_axis_button.setIcon(QIcon(":/icons/icons/x_axis_custom.svg"))
+            self.x_axis_button.setIcon(themed_icon("x_axis_custom"))
         else:
             tooltip = action.toolTip()
             state_text = action.text()
@@ -446,7 +447,7 @@ class TimeSeriesToolbar(QToolBar):
     def _updateYAxisSelector(self, action, *, custom_view=False):
         """Render the aggregate visible Y-axis presentation for the selected policy."""
         if custom_view:
-            self.y_axis_button.setIcon(QIcon(":/icons/icons/y_axis_custom.svg"))
+            self.y_axis_button.setIcon(themed_icon("y_axis_custom"))
             tooltip = "Current plot view was changed manually"
             state_text = "Custom view"
         else:
@@ -485,7 +486,7 @@ class TimeSeriesToolbar(QToolBar):
 
     def _createAction(self, icon_path, text, tooltip, object_name):
         """Create a non-checkable command action with stable metadata."""
-        action = QAction(QIcon(icon_path), text, self)
+        action = QAction(themed_icon(icon_path), text, self)
         action.setObjectName(object_name)
         action.setToolTip(tooltip)
         action.setCheckable(False)
@@ -493,7 +494,7 @@ class TimeSeriesToolbar(QToolBar):
 
     def _createToggleAction(self, icon_path, text, tooltip, object_name):
         """Create a checkable toolbar action for an independent state toggle."""
-        action = QAction(QIcon(icon_path), text, self)
+        action = QAction(themed_icon(icon_path), text, self)
         action.setObjectName(object_name)
         action.setToolTip(tooltip)
         action.setCheckable(True)

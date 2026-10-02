@@ -27,6 +27,7 @@ from .columns import (
     TIME_SERIES_COLUMN_COUNT,
     TimeSeriesColumn,
 )
+from ..icon_theme import icon as themed_icon
 from .presentation import (
     SOURCE_REFERENCE_KINDS, optional_label_display, placeholder_colour,
     resource_for_selection, selection_kind_value, selection_tooltip,
@@ -95,6 +96,13 @@ class PendingTimeSeriesModel(QAbstractTableModel):
         """Return the fixed Label/Target/Reference schema."""
         return 0 if parent.isValid() else TIME_SERIES_COLUMN_COUNT
 
+    def refresh_icons(self):
+        """Notify the pending view that themed decoration icons changed."""
+        if self._record is not None:
+            first = self.index(0, 0)
+            last = self.index(0, self.columnCount() - 1)
+            self.dataChanged.emit(first, last, [DECORATION_ROLE])
+
     def set_record(self, record):
         """Replace the projected snapshot without emitting edit intent."""
         self.beginResetModel()
@@ -146,7 +154,7 @@ class PendingTimeSeriesModel(QAbstractTableModel):
                 target=column == TimeSeriesColumn.TARGET, kind=kind
             )
             if resource is not None:
-                return QtGui.QIcon(resource)
+                return themed_icon(resource)
             return None
         if role == DISPLAY_ROLE and column == TimeSeriesColumn.REFERENCE:
             return "Data" if kind in SOURCE_REFERENCE_KINDS else None

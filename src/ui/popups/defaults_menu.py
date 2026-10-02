@@ -1,6 +1,7 @@
 """Shared compact Defaults menu for settings popups."""
 
-from qgis.PyQt.QtGui import QIcon
+from ..icon_theme import icon as themed_icon
+
 from qgis.PyQt.QtWidgets import QMenu, QToolButton
 
 from ...qt_compat import configure_compact_command_button
@@ -11,7 +12,7 @@ def createDefaultsMenu(parent, apply_saved, save_current, apply_factory, object_
     button = QToolButton(parent)
     button.setObjectName(object_name)
     button.setText("")
-    button.setIcon(QIcon(":/icons/icons/bookmark.svg"))
+    button.setIcon(themed_icon("bookmark"))
     configure_compact_command_button(button)
     popup_mode = getattr(QToolButton, "ToolButtonPopupMode", QToolButton)
     button.setPopupMode(popup_mode.InstantPopup)
@@ -21,13 +22,13 @@ def createDefaultsMenu(parent, apply_saved, save_current, apply_factory, object_
 
     menu = QMenu(button)
     default_action = menu.addAction(
-        QIcon(":/icons/icons/bookmark_star.svg"), "Default"
+        themed_icon("bookmark_star"), "Default"
     )
     default_action.setToolTip("Apply the saved default.")
     default_action.triggered.connect(apply_saved)
 
     factory_action = menu.addAction(
-        QIcon(":/icons/icons/bookmark_reset.svg"), "Factory default"
+        themed_icon("bookmark_reset"), "Factory default"
     )
     factory_action.setToolTip("Apply the original plugin defaults.")
     factory_action.triggered.connect(apply_factory)
@@ -35,7 +36,7 @@ def createDefaultsMenu(parent, apply_saved, save_current, apply_factory, object_
     menu.addSeparator()
 
     set_default_action = menu.addAction(
-        QIcon(":/icons/icons/bookmark_set.svg"), "Set as default"
+        themed_icon("bookmark_set"), "Set as default"
     )
     set_default_action.setToolTip("Save the current values as the default.")
     set_default_action.triggered.connect(save_current)

@@ -1,5 +1,7 @@
 """Reusable joined split-button control for compact toolbars."""
 
+from ..icon_theme import icon as themed_icon
+
 from qgis.PyQt.QtCore import QObject, QSize, QTimer, pyqtSignal
 from qgis.PyQt.QtGui import QCursor, QIcon
 from qgis.PyQt.QtWidgets import QApplication, QHBoxLayout, QToolButton, QWidget
@@ -155,7 +157,7 @@ class SplitToolButton(QWidget):
         self.primary_button.setAutoRaise(visual_role == self.Flat)
         self.primary_button.setFixedSize(self.PRIMARY_WIDTH, self.HEIGHT)
         if icon is not None:
-            self.primary_button.setIcon(icon if isinstance(icon, QIcon) else QIcon(icon))
+            self.primary_button.setIcon(icon if isinstance(icon, QIcon) else themed_icon(icon))
 
         self.secondary_button = QToolButton(self)
         self.secondary_button.setObjectName(f"{object_name}_secondary")
