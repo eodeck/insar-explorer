@@ -1,6 +1,6 @@
 ### History
 
-v2.11.0dev
+v2.11.0
 
 - Move x-axis and y-axis controls to the right side of the time-series toolbar.
 - Removed layer name from selection label.
