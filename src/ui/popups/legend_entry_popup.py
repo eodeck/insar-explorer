@@ -53,8 +53,6 @@ class LegendEntryPopup(QWidget):
         tab = QWidget(self)
         layout = QVBoxLayout(tab)
         form = QFormLayout()
-        self.target_label = QLabel(tab)
-        self.target_label.setObjectName("label_legend_entry_target")
         self.include_label_checkbox = QCheckBox("Include label", tab)
         self.include_label_checkbox.setObjectName("check_legend_entry_include_label")
         self.include_field_checkbox = QCheckBox("Include field", tab)
@@ -78,7 +76,6 @@ class LegendEntryPopup(QWidget):
         self.preview_label.setObjectName("label_legend_entry_preview")
         self.preview_label.setWordWrap(True)
         self.preview_label.setSizePolicy(SIZE_POLICY_EXPANDING, SIZE_POLICY_MINIMUM)
-        form.addRow("Editing", self.target_label)
         form.addRow(self.include_label_checkbox)
         form.addRow(self.include_field_checkbox)
         field_form.addRow("Field", self.field_combo)
@@ -141,7 +138,6 @@ class LegendEntryPopup(QWidget):
         )
         blocked = [widget.blockSignals(True) for widget in widgets]
         try:
-            self.target_label.setText(str(record.presentation.label or "Unnamed"))
             self.field_combo.clear()
             for name in fields:
                 self.field_combo.addItem(name, name)
