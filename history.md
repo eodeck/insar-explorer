@@ -1,7 +1,7 @@
 ### History
 
 v2.11.0dev
-- 
+
 - Move x-axis and y-axis controls to the right side of the time-series toolbar.
 - Removed layer name from selection label.
 - Added a button to modify legend entries per series.
