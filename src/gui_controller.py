@@ -112,18 +112,6 @@ GENERAL_FIELDS = (
     "background_opacity",
 )
 
-ENTRIES_FIELDS = (
-    "include_fit",
-    "include_replica",
-    "include_ensemble",
-    "fit_prefix",
-    "fit_suffix",
-    "replica_prefix",
-    "replica_suffix",
-    "ensemble_prefix",
-    "ensemble_suffix",
-)
-
 
 @dataclass(frozen=True)
 class TimeSeriesSelectionCapability:
@@ -2885,22 +2873,13 @@ class GuiController(QObject):
         self.syncLegendPopup()
 
     def applyLegendGeneralDefaults(self):
-        """Apply saved Plot legend defaults without changing entries or enabled state."""
+        """Apply saved Plot legend defaults without changing enabled state."""
         plotter = self.choose_point_click_handler.plot_ts
         self._applyLegendFields(plotter.user_preferences.load().legend, GENERAL_FIELDS)
 
-    def applyLegendEntriesDefaults(self):
-        """Apply saved legacy legend entry defaults without changing general values or enabled state."""
-        plotter = self.choose_point_click_handler.plot_ts
-        self._applyLegendFields(plotter.user_preferences.load().legend, ENTRIES_FIELDS)
-
     def applyFactoryLegendGeneralDefaults(self):
-        """Apply built-in Plot legend defaults without changing entries or enabled state."""
+        """Apply built-in Plot legend defaults without changing enabled state."""
         self._applyLegendFields(LegendSettings(), GENERAL_FIELDS)
-
-    def applyFactoryLegendEntriesDefaults(self):
-        """Apply built-in legacy legend entry defaults without changing general values or enabled state."""
-        self._applyLegendFields(LegendSettings(), ENTRIES_FIELDS)
 
     def _saveLegendFieldsAsDefault(self, fields, message):
         """Persist selected runtime legend fields while retaining the other saved defaults."""
@@ -2915,12 +2894,6 @@ class GuiController(QObject):
         """Save only the current Plot legend settings as defaults."""
         self._saveLegendFieldsAsDefault(
             GENERAL_FIELDS, "Plot legend settings saved as default."
-        )
-
-    def setCurrentLegendEntriesAsDefault(self):
-        """Save only the current legacy legend entry settings as defaults."""
-        self._saveLegendFieldsAsDefault(
-            ENTRIES_FIELDS, "Legend entry settings saved as default."
         )
 
     def showLegendPopup(self):

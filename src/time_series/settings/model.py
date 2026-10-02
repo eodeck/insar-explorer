@@ -567,15 +567,6 @@ class LegendSettings:
 
     enabled: bool = True
     location: str = "top_right"
-    include_fit: bool = False
-    include_replica: bool = False
-    include_ensemble: bool = False
-    fit_prefix: str = ""
-    fit_suffix: str = " fit"
-    replica_prefix: str = ""
-    replica_suffix: str = " replica"
-    ensemble_prefix: str = ""
-    ensemble_suffix: str = " ensemble"
     sync_font_size: bool = True
     font_size: float = 9.0
     background_opacity: float = 0.80
@@ -587,9 +578,6 @@ class LegendSettings:
     def __post_init__(self):
         object.__setattr__(self, "enabled", bool(self.enabled))
         object.__setattr__(self, "location", self.normalize_location(self.location))
-        object.__setattr__(self, "include_fit", bool(self.include_fit))
-        object.__setattr__(self, "include_replica", bool(self.include_replica))
-        object.__setattr__(self, "include_ensemble", bool(self.include_ensemble))
         object.__setattr__(self, "sync_font_size", bool(self.sync_font_size))
         object.__setattr__(
             self, "font_size", normalize_number(self.font_size, (1.0, 200.0), 9.0)
@@ -599,11 +587,6 @@ class LegendSettings:
         except (TypeError, ValueError, OverflowError):
             opacity = 0.80
         object.__setattr__(self, "background_opacity", max(0.0, min(1.0, opacity)))
-        for name in (
-            "fit_prefix", "fit_suffix", "replica_prefix", "replica_suffix",
-            "ensemble_prefix", "ensemble_suffix",
-        ):
-            object.__setattr__(self, name, str(getattr(self, name) or ""))
 
     @classmethod
     def normalize_location(cls, value):
