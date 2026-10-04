@@ -63,6 +63,65 @@ _INTERACTIVE_ANTIALIAS = True
 _LEGEND_OVERLAY_Z_VALUE = 1.0
 
 
+class PassiveSecondaryViewBox(pg.ViewBox):
+    """A rendering-only ViewBox that lets the primary ViewBox own interaction."""
+
+    def __init__(self, primary_view_box, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._primary_view_box = primary_view_box
+        self._resize_signal_connected = False
+        self._interaction_signal_callback = None
+        self.setAcceptedMouseButtons(NO_MOUSE_BUTTON)
+        self.setAcceptHoverEvents(False)
+
+    def syncGeometry(self):
+        """Mirror primary geometry when its zero-argument Qt signal fires."""
+        primary = self._primary_view_box
+        if primary is None:
+            return
+        self.setGeometry(primary.geometry())
+        self.updateMatrix()
+
+    def disposeInteractionLinks(self):
+        """Disconnect non-owning links before the PlotItem tears this child down."""
+        primary = self._primary_view_box
+        callback = self._interaction_signal_callback
+        if primary is not None and callback is not None:
+            try:
+                primary.sigYRangeChanged.disconnect(callback)
+            except (RuntimeError, TypeError):
+                pass
+        if primary is not None and self._resize_signal_connected:
+            try:
+                primary.sigResized.disconnect(self.syncGeometry)
+            except (RuntimeError, TypeError):
+                pass
+        self._resize_signal_connected = False
+        self._interaction_signal_callback = None
+        self._primary_view_box = None
+
+    @staticmethod
+    def _ignore(event):
+        ignore = getattr(event, "ignore", None)
+        if callable(ignore):
+            ignore()
+
+    def mouseClickEvent(self, event):
+        self._ignore(event)
+
+    def mouseDragEvent(self, event, axis=None):
+        self._ignore(event)
+
+    def wheelEvent(self, event, axis=None):
+        primary = self._primary_view_box
+        if primary is None:
+            self._ignore(event)
+            return
+        # Both sibling ViewBoxes have the same geometry, so bundled pyqtgraph's
+        # event-local ``pos()`` remains the correct primary cursor coordinate.
+        primary.wheelEvent(event, axis=axis)
+
+
 class LegendOverlay(QGraphicsWidget):
     """Transparent plot-area overlay that stacks legends above axis-rendered grids."""
 
@@ -404,6 +463,8 @@ class PlotTs():
         self.fit_models = []
         self.fit_seasonal_flag = False
         self.ax_residuals = None
+        self.ax_right_view_box = None
+        self.ax_residuals_right_view_box = None
         self._main_legend = None
         self._residual_legend = None
         self._main_legend_overlay = None
@@ -435,11 +496,13 @@ class PlotTs():
         self.fit_success_callback = None
         self.analysis_state_sync_callback = None
         self._last_axis_ranges = {}
+        self._primary_y_ranges = {}
         self._new_record_analysis = self._snapshotAnalysisDefaults()
         self._hover_scene = None
         self._hover_widget = None
         self._hover_marker = None
         self._hover_marker_plot = None
+        self._hover_marker_owner = None
         self._hover_tolerance_px = 10.0
 
     @contextmanager
@@ -835,12 +898,108 @@ class PlotTs():
         """Create axes matching the current residual-layout flag."""
         self._connectHoverSignals()
         self.ax = self._addPlot(row=0)
+        self.ax_right_view_box = self._addSecondaryViewBox(self.ax, residual=False)
         self._ensureHoverMarker()
         if self.plot_residuals_flag:
             self.ax_residuals = self._addPlot(row=1)
             self.ax_residuals.setXLink(self.ax)
+            self.ax_residuals_right_view_box = self._addSecondaryViewBox(
+                self.ax_residuals, residual=True
+            )
         else:
             self.ax_residuals = None
+            self.ax_residuals_right_view_box = None
+
+    def _addSecondaryViewBox(self, plot_item, *, residual):
+        """Create the one secondary Y ViewBox owned by a PlotItem lifecycle."""
+        primary = plot_item.getViewBox()
+        secondary = PassiveSecondaryViewBox(primary, enableMenu=False)
+        secondary.setParentItem(plot_item)
+        secondary.setZValue(primary.zValue() + 0.5)
+        secondary.syncGeometry()
+        secondary.setXLink(primary)
+        plot_item.getAxis("right").linkToView(secondary)
+        primary.sigResized.connect(secondary.syncGeometry)
+        secondary._resize_signal_connected = True
+        def sync_y_interaction(*args):
+            self._syncSecondaryYInteraction(primary, secondary, residual=residual)
+
+        secondary._interaction_signal_callback = sync_y_interaction
+        primary.sigYRangeChanged.connect(sync_y_interaction)
+        self._primary_y_ranges[id(primary)] = tuple(primary.viewRange()[1])
+        return secondary
+
+    def synchronizeSecondaryViewBoxGeometry(self):
+        """Flush secondary geometry before paint/export as well as resize signals."""
+        pairs = (
+            (self.ax, self.ax_right_view_box),
+            (self.ax_residuals, self.ax_residuals_right_view_box),
+        )
+        for plot_item, secondary in pairs:
+            if plot_item is not None and secondary is not None:
+                secondary.syncGeometry()
+
+    def _viewBoxForRecord(self, record, residual=False):
+        """Return the sole ViewBox that owns one record family."""
+        return self._viewBoxForSide(record.presentation.y_axis_side, residual=residual)
+
+    def _viewBoxForSide(self, side, *, residual=False):
+        """Return a ViewBox for one normalized presentation side."""
+        if residual:
+            return self.ax_residuals_right_view_box if side == "right" else (
+                None if self.ax_residuals is None else self.ax_residuals.getViewBox()
+            )
+        return self.ax_right_view_box if side == "right" else (
+            None if self.ax is None else self.ax.getViewBox()
+        )
+
+    def _hasVisibleSeriesForSide(self, side, *, residual=False):
+        """Determine axis activity from authoritative visible record state."""
+        for record in self.visibleTimeSeriesRecords():
+            if record.presentation.y_axis_side != side:
+                continue
+            if not residual:
+                return True
+            if (
+                record.analysis.fit.enabled
+                and record.analysis.fit.show_residuals
+                and record.data.residuals_values is not None
+            ):
+                return True
+        return False
+
+    def _syncSecondaryYInteraction(self, primary, secondary, *, residual):
+        """Apply primary interaction as the same screen-space transform per side."""
+        current = tuple(float(value) for value in primary.viewRange()[1])
+        key = id(primary)
+        previous = self._primary_y_ranges.get(key)
+        self._primary_y_ranges[key] = current
+        if previous is None or not self._axisViewChangeAllowed():
+            return
+        left_active = self._hasVisibleSeriesForSide("left", residual=residual)
+        right_active = self._hasVisibleSeriesForSide("right", residual=residual)
+        if not right_active:
+            return
+        previous_span = previous[1] - previous[0]
+        if not np.isfinite(previous_span) or previous_span == 0:
+            return
+        old_right = tuple(float(value) for value in secondary.viewRange()[1])
+        right_span = old_right[1] - old_right[0]
+        scale = (current[1] - current[0]) / previous_span
+        shift = ((current[0] + current[1]) - (previous[0] + previous[1])) / (2 * previous_span)
+        right_center = (old_right[0] + old_right[1]) / 2 + shift * right_span
+        new_right_span = right_span * scale
+        if not np.isfinite(new_right_span) or new_right_span <= 0:
+            return
+        with self.axisViewUpdateGuard():
+            secondary.setYRange(
+                right_center - new_right_span / 2,
+                right_center + new_right_span / 2,
+                padding=0,
+            )
+            if not left_active:
+                primary.setYRange(previous[0], previous[1], padding=0)
+                self._primary_y_ranges[key] = previous
 
     def _rebuild_axes_and_rerender_history(self) -> None:
         """Recreate axes and re-render retained records with stable identity."""
@@ -1076,6 +1235,7 @@ class PlotTs():
         # created graphics bundle before registry/store commit so no render or
         # rerender path can temporarily publish the wrong visibility state.
         self._set_graphics_visible(graphics, rendered_record.presentation.visible)
+        graphics.item_owners = {id(item): owner for owner, item in transaction._attachments}
         return graphics, rendered_record, transaction
 
     def render_record(
@@ -1272,21 +1432,11 @@ class PlotTs():
                 if item is not None:
                     yield item
 
-    def _main_graphics_item_ids(self, graphics):
-        return {
-            id(item) for item in (
-                graphics.scatter, graphics.line, graphics.fit_plot,
-                *(graphics.plot_multiple_fill or ()),
-                *(graphics.plot_multiple_lines or ()),
-                *(graphics.replicate_up or ()), *(graphics.replicate_dn or ()),
-            ) if item is not None
-        }
-
     def _detach_graphics(self, graphics: TimeSeriesGraphics) -> None:
         """Detach all items in a graphics bundle without changing the registry."""
-        main_ids = self._main_graphics_item_ids(graphics)
         for item in self._graphics_items(graphics):
-            self._removeItem(self.ax if id(item) in main_ids else self.ax_residuals, item)
+            owner = graphics.item_owners.get(id(item))
+            self._removeItem(owner, item)
 
     def remove_rendered_record(
         self, record_id: UUID
@@ -1335,7 +1485,10 @@ class PlotTs():
 
         if self._series_store.active_id() == record_id:
             self._set_current_series(record)
+        self._rebuildYDataRanges()
+        self.refreshAutomaticAxisRanges(draw=False)
         self.refreshLegends()
+        self._draw()
         return True
 
     @staticmethod
@@ -1357,6 +1510,9 @@ class PlotTs():
         presentation = record.presentation
         analysis = record.analysis
         items = TimeSeriesGraphics()
+        main_view = self._viewBoxForRecord(record)
+        if main_view is None:
+            raise RuntimeError("main ViewBox is not initialized")
         main_y_data = []
         series_style = presentation.series
         ensemble_style = presentation.ensemble
@@ -1382,9 +1538,9 @@ class PlotTs():
                     lower_line, upper_line,
                     brush=self._brush(series_fill_color, series_fill_alpha)
                 )
-                transaction.add_item(self.ax, lower_line)
-                transaction.add_item(self.ax, upper_line)
-                transaction.add_item(self.ax, fill)
+                transaction.add_item(main_view, lower_line)
+                transaction.add_item(main_view, upper_line)
+                transaction.add_item(main_view, fill)
                 items.plot_multiple_fill = [lower_line, upper_line, fill]
             main_y_data.extend([lower_bound, upper_bound])
 
@@ -1400,7 +1556,7 @@ class PlotTs():
                         pen=self._pen(series_line_color, series_line_width, series_line_alpha, series_line_style),
                         antialias=_INTERACTIVE_ANTIALIAS,
                     )
-                    transaction.add_item(self.ax, item)
+                    transaction.add_item(main_view, item)
                     items.plot_multiple_lines.append(item)
             for i in range(series.plot_multiple_values.shape[1]):
                 main_y_data.append(series.plot_multiple_values[:, i])
@@ -1413,7 +1569,7 @@ class PlotTs():
                 brush=self._brush(marker_color, marker_alpha),
                 antialias=_INTERACTIVE_ANTIALIAS,
             )
-            transaction.add_item(self.ax, items.scatter)
+            transaction.add_item(main_view, items.scatter)
 
         main_y_data.append(series.plot_values)
 
@@ -1424,11 +1580,12 @@ class PlotTs():
                 pen=self._pen(line_color, line_width, line_alpha, line_style),
                 antialias=_INTERACTIVE_ANTIALIAS,
             )
-            transaction.add_item(self.ax, items.line)
+            transaction.add_item(main_view, items.line)
 
         if analysis.replica.enabled:
             items.replicate_up, items.replicate_dn = self.plotReplicas(
-                series, presentation.replica, analysis.replica, transaction=transaction
+                series, presentation.replica, analysis.replica,
+                view_box=main_view, transaction=transaction,
             )
         else:
             items.replicate_up, items.replicate_dn = [None], [None]
@@ -1439,7 +1596,7 @@ class PlotTs():
         self.decoratePlot(parms=self.parms.get("time series plot", {}))
         items.fit_plot, residuals_values = self.fitModel(
             series, presentation, analysis.fit, items, report_statistics=report_statistics,
-            transaction=transaction
+            transaction=transaction, main_view=main_view,
         )
 
         self.decorateFigure(parms=self.parms.get("figure", {}))
@@ -1447,7 +1604,7 @@ class PlotTs():
 
     def plotReplicas(
         self, series: TimeSeriesData, replica_style,
-        replica_config: ReplicaConfiguration, transaction=None,
+        replica_config: ReplicaConfiguration, *, view_box=None, transaction=None,
     ):
         """Render Replica overlays from record-owned visual and calculation state."""
         replica = replica_style
@@ -1459,6 +1616,7 @@ class PlotTs():
         marker_replica = replica.marker
         replica_pair_count = self._validateReplicaPairCount(replica_config.pair_count)
         self._last_replica_y_data = []
+        view_box = view_box or self.ax
 
         # Plot symmetric positive/negative replica pairs around the source series.
         replicate_up_list = []
@@ -1480,7 +1638,7 @@ class PlotTs():
                 brush=self._brush(marker_replica_color, marker_alpha),
                 antialias=_INTERACTIVE_ANTIALIAS,
             )
-            transaction.add_item(self.ax, replicate_up)
+            transaction.add_item(view_box, replicate_up)
             replicate_up_list.append(replicate_up)
             self._last_replica_y_data.append(series.plot_values + replicate_value)
 
@@ -1494,7 +1652,7 @@ class PlotTs():
                 brush=self._brush(down_color, marker_alpha),
                 antialias=_INTERACTIVE_ANTIALIAS,
             )
-            transaction.add_item(self.ax, replicate_dn)
+            transaction.add_item(view_box, replicate_dn)
             replicate_dn_list.append(replicate_dn)
             self._last_replica_y_data.append(series.plot_values - replicate_value)
 
@@ -1503,7 +1661,7 @@ class PlotTs():
     def fitModel(
         self, series: TimeSeriesData, presentation: TimeSeriesPresentation,
         fit_config: FitConfiguration, graphics=None, *,
-        report_statistics=False, transaction=None
+        report_statistics=False, transaction=None, main_view=None,
     ):
         if series.plot_values is None:
             return None, None
@@ -1537,7 +1695,7 @@ class PlotTs():
                 pen=self._pen(fit_line_color, fit_line_width, fit_line_alpha, fit_line_type),
                 antialias=_INTERACTIVE_ANTIALIAS,
             )
-            transaction.add_item(self.ax, fit_plot)
+            transaction.add_item(main_view, fit_plot)
         observed_values = np.asarray(series.plot_values, dtype=np.float64)
         fitted_values = np.asarray(model_values, dtype=np.float64)
         finite_mask = np.isfinite(observed_values) & np.isfinite(fitted_values)
@@ -1583,6 +1741,9 @@ class PlotTs():
                 and self.ax_residuals is not None
                 and residuals_values is not None
         ):
+            residual_view = self._viewBoxForSide(presentation.y_axis_side, residual=True)
+            if residual_view is None:
+                return
             residual_style = self._normalizedResidualStyle(presentation)
             marker = residual_style.marker
             marker_size = residual_style.marker_size
@@ -1607,7 +1768,7 @@ class PlotTs():
                     brush=self._brush(marker_color, marker_alpha),
                     antialias=_INTERACTIVE_ANTIALIAS,
                 )
-                transaction.add_item(self.ax_residuals, items.residual_scatter)
+                transaction.add_item(residual_view, items.residual_scatter)
             if line_style and line_width > 0 and line_alpha > 0:
                 items.residual_line = pg.PlotDataItem(
                     x,
@@ -1615,7 +1776,7 @@ class PlotTs():
                     pen=self._pen(line_color, line_width, line_alpha, line_style),
                     antialias=_INTERACTIVE_ANTIALIAS,
                 )
-                transaction.add_item(self.ax_residuals, items.residual_line)
+                transaction.add_item(residual_view, items.residual_line)
             items.residual_y_data = [residuals_values]
             self.decoratePlot(ax=self.ax_residuals, parms=parms)
 
@@ -1640,7 +1801,7 @@ class PlotTs():
         font_size = parms['font size']
         font = QFont()
         font.setPointSize(int(font_size))
-        for axis_name in ('left', 'bottom'):
+        for axis_name in ('left', 'right', 'bottom'):
             ax.getAxis(axis_name).setTickFont(font)
 
     def setGrid(self, ax=None, parms={}):
@@ -1932,7 +2093,8 @@ class PlotTs():
         if data_range is None:
             return
 
-        key = id(ax)
+        view_box = self._viewBoxForAxis(ax)
+        key = id(view_box)
         current = self._y_data_ranges.get(key)
         if current is None:
             y_min, y_max = data_range
@@ -1952,13 +2114,19 @@ class PlotTs():
             ax = self.ax
         if ax is None:
             return None
-        data_range = self._y_data_ranges.get(id(ax))
+        data_range = self._y_data_ranges.get(id(self._viewBoxForAxis(ax)))
         if data_range is None:
             return None
         y_min, y_max = (float(value) for value in data_range)
         if not np.isfinite(y_min) or not np.isfinite(y_max) or y_min > y_max:
             return None
         return y_min, y_max
+
+    @staticmethod
+    def _viewBoxForAxis(axis):
+        """Accept either a PlotItem or a ViewBox in range/ownership helpers."""
+        getter = getattr(axis, "getViewBox", None)
+        return getter() if callable(getter) else axis
 
     def resolveManualYAxisRange(self, ax=None, manual=None):
         """Resolve one axis Manual range from the same data extent as From Data."""
@@ -2148,7 +2316,7 @@ class PlotTs():
             for axis in axes:
                 font = QFont()
                 font.setPointSize(int(appearance.font_size))
-                for axis_name in ("left", "bottom"):
+                for axis_name in ("left", "right", "bottom"):
                     axis.getAxis(axis_name).setTickFont(font)
                 self._applyAutomaticAxisForeground(
                     axis, appearance.canvas_background
@@ -2340,26 +2508,25 @@ class PlotTs():
     def _discardHoverMarker(self):
         """Detach and forget the transient hover marker without touching series graphics."""
         marker = self._hover_marker
-        plot_item = self._hover_marker_plot
+        owner = self._hover_marker_owner
         if marker is not None:
             try:
                 marker.hide()
             except RuntimeError:
                 pass
-        if marker is not None and plot_item is not None:
-            try:
-                plot_item.removeItem(marker)
-            except (AttributeError, RuntimeError):
-                pass
+        if marker is not None and owner is not None:
+            self._removeItem(owner, marker)
         self._hover_marker = None
         self._hover_marker_plot = None
+        self._hover_marker_owner = None
 
-    def _ensureHoverMarker(self):
+    def _ensureHoverMarker(self, view_box=None):
         """Create the single reusable hover marker after the primary plot exists."""
-        plot_item = self.ax
-        if plot_item is None:
+        if view_box is None:
+            view_box = None if self.ax is None else self.ax.getViewBox()
+        if view_box is None:
             return None
-        if self._hover_marker is not None and self._hover_marker_plot is plot_item:
+        if self._hover_marker is not None and self._hover_marker_owner is view_box:
             return self._hover_marker
         self._discardHoverMarker()
         marker = pg.ScatterPlotItem(
@@ -2370,9 +2537,10 @@ class PlotTs():
         )
         marker.setZValue(1e6)
         marker.hide()
-        plot_item.addItem(marker)
+        view_box.addItem(marker, ignoreBounds=True)
         self._hover_marker = marker
-        self._hover_marker_plot = plot_item
+        self._hover_marker_plot = None
+        self._hover_marker_owner = view_box
         return marker
 
     def _hoverMarkerFallbackColor(self):
@@ -2419,7 +2587,13 @@ class PlotTs():
         if observation is None:
             self._hideHoverMarker()
             return
-        marker = self._ensureHoverMarker()
+        record = self._series_store.get(observation.series_id)
+        if record is None:
+            pending = self.pending_record()
+            record = pending if pending is not None and pending.id == observation.series_id else None
+        marker = self._ensureHoverMarker(
+            None if record is None else self._viewBoxForRecord(record)
+        )
         if marker is None:
             return
         marker.setData(
@@ -2483,12 +2657,14 @@ class PlotTs():
         """Build lightweight scene-space observations from currently plotted data."""
         if self.ax is None:
             return ()
-        view_box = self.ax.getViewBox()
         observations = []
         for record in self._iterHoverRecords():
             dates = record.data.dates
             values = np.asarray(record.data.plot_values, dtype=float).reshape(-1)
             x_values = self._datesToX(dates)
+            view_box = self._viewBoxForRecord(record)
+            if view_box is None:
+                continue
             for date, x_value, value in zip(dates, x_values, values):
                 if not np.isfinite(value) or not np.isfinite(x_value):
                     continue
@@ -2529,10 +2705,11 @@ class PlotTs():
             axis = plot_item.getAxis(name)
             axis.setPen(pg.mkPen('k', width=1))
             axis.setTextPen(pg.mkPen('k'))
-        for name in ('top', 'right'):
+        for name in ('top',):
             axis = plot_item.getAxis(name)
             axis.setStyle(showValues=False)
             axis.setTicks([])
+        plot_item.getAxis('right').setStyle(showValues=False)
 
     def _clearPlotWidget(self):
         """Destroy plot axes and canvas items without deciding record lifetime."""
@@ -2551,12 +2728,18 @@ class PlotTs():
         self._residual_legend = None
         self._main_legend_overlay = None
         self._residual_legend_overlay = None
+        for secondary in (self.ax_right_view_box, self.ax_residuals_right_view_box):
+            if secondary is not None:
+                secondary.disposeInteractionLinks()
         self.ui.plot_widget.clear()
         self.ui.plot_widget.plot_items = []
         self.ax = None
         self.ax_residuals = None
+        self.ax_right_view_box = None
+        self.ax_residuals_right_view_box = None
         self._y_data_ranges = {}
         self._last_replica_y_data = []
+        self._primary_y_ranges = {}
 
     def _discardAllSeriesState(self) -> None:
         """Remove rendered graphics and discard all stored series state."""
@@ -2668,24 +2851,59 @@ class PlotTs():
         """Rebuild canonical Y extents from visible record-owned plot data."""
         self._y_data_ranges = {}
         records = self.visibleTimeSeriesRecords()
-        main_values = []
-        residual_values = []
+        main_values = {"left": [], "right": []}
+        residual_values = {"left": [], "right": []}
         for record in records:
             data = record.data
-            main_values.extend(self._recordAutomaticMainYValues(record))
+            side = record.presentation.y_axis_side
+            main_values[side].extend(self._recordAutomaticMainYValues(record))
             if (
                 data.residuals_values is not None
                 and record.analysis.fit.enabled
                 and record.analysis.fit.show_residuals
             ):
-                residual_values.append(data.residuals_values)
+                residual_values[side].append(data.residuals_values)
 
-        main_range = self._finiteRange(main_values)
-        if self.ax is not None and main_range is not None:
-            self._y_data_ranges[id(self.ax)] = main_range
-        residual_range = self._finiteRange(residual_values)
-        if self.ax_residuals is not None and residual_range is not None:
-            self._y_data_ranges[id(self.ax_residuals)] = residual_range
+        for side, values in main_values.items():
+            view_box = self._viewBoxForSide(side)
+            data_range = self._finiteRange(values)
+            if view_box is not None and data_range is not None:
+                self._y_data_ranges[id(view_box)] = data_range
+        for side, values in residual_values.items():
+            view_box = self._viewBoxForSide(side, residual=True)
+            data_range = self._finiteRange(values)
+            if view_box is not None and data_range is not None:
+                self._y_data_ranges[id(view_box)] = data_range
+        self._applySecondaryDataRanges()
+        self._updateAxisActivity()
+
+    def _updateAxisActivity(self):
+        """Suppress inactive axis text without changing PlotItem layout ownership."""
+        for plot_item, residual in ((self.ax, False), (self.ax_residuals, True)):
+            if plot_item is None:
+                continue
+            for side, axis_name in (("left", "left"), ("right", "right")):
+                axis = plot_item.getAxis(axis_name)
+                active = self._hasVisibleSeriesForSide(side, residual=residual)
+                axis.setStyle(showValues=active)
+                label = getattr(axis, "label", None)
+                if label is not None:
+                    label.setVisible(active)
+
+    def _applySecondaryDataRanges(self):
+        """Keep active secondary domains independently fitted to their own data."""
+        for view_box in (self.ax_right_view_box, self.ax_residuals_right_view_box):
+            if view_box is None:
+                continue
+            data_range = self.dataYAxisRange(view_box)
+            if data_range is None:
+                continue
+            lower, upper = data_range
+            if lower == upper:
+                lower -= 1
+                upper += 1
+            with self.axisViewUpdateGuard():
+                view_box.setYRange(lower, upper, padding=0.05)
 
     def _applyDateFormat(self, ax=None, parms={}):
         if ax is None:
@@ -2792,7 +3010,7 @@ class PlotTs():
     def _applyAutomaticAxisForeground(self, ax, canvas_background):
         """Apply Canvas-background contrast to axis lines, ticks, and tick text."""
         pen = pg.mkPen(self._canvasForegroundColor(canvas_background))
-        for axis_name in ("left", "bottom"):
+        for axis_name in ("left", "right", "bottom"):
             axis = ax.getAxis(axis_name)
             axis.setPen(pen)
             axis.setTextPen(pen)

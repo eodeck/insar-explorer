@@ -355,6 +355,7 @@ class TimeSeriesGraphics:
     residual_line: Any = None
     main_y_data: List[Any] = field(default_factory=list)
     residual_y_data: List[Any] = field(default_factory=list)
+    item_owners: dict[int, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
