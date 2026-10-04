@@ -4034,7 +4034,9 @@ class GuiController(QObject):
         if state.policy == "symmetric":
             presentation_mode = state.policy
         else:
-            presentation_mode = state.policy_for_effective_display(residual_visible)
+            presentation_mode = state.policy_for_effective_display(
+                residual_left_available=residual_visible
+            )
         self.ui.time_series_toolbar.setSelectedYAxisMode(
             presentation_mode,
             self.time_series_manual_y_lower,
@@ -4042,7 +4044,7 @@ class GuiController(QObject):
             self.residual_manual_y_lower,
             self.residual_manual_y_upper,
             residual_visible,
-            state.has_custom_view(residual_visible),
+            state.has_custom_view(residual_left_available=residual_visible),
         )
 
     def _applyTimeSeriesYAxisMode(self, mode, refresh=True):
@@ -4054,11 +4056,11 @@ class GuiController(QObject):
         current_axis = self.time_series_settings.y_axis
         if mode == "manual":
             updated_axis = current_axis.select_manual_for_visible_axes(
-                residual_available
+                residual_left_available=residual_available
             )
         elif mode == "from_data":
             updated_axis = current_axis.select_from_data_for_visible_axes(
-                residual_available
+                residual_left_available=residual_available
             )
         else:
             updated_axis = replace(
@@ -4085,7 +4087,7 @@ class GuiController(QObject):
             return False
         state = self.time_series_settings.y_axis
         residual_available = plotter.ax_residuals is not None
-        if not state.has_configured_manual(residual_available):
+        if not state.has_configured_manual(residual_left_available=residual_available):
             return False
         if plotter.resolveManualYAxisRange(
             ax=plotter.ax, manual=state.series_manual
@@ -4168,7 +4170,7 @@ class GuiController(QObject):
         lower, upper = (float(value) for value in axis.viewRange()[1])
         residual_available = plotter.ax_residuals is not None
         updated = self.time_series_settings.y_axis.commit_current_view(
-            axis_name, lower, upper, residual_available
+            axis_name, lower, upper, residual_left_available=residual_available
         )
         self.time_series_settings.replace_domain("y_axis", updated)
         self._manual_y_axis_session = None
@@ -4234,7 +4236,9 @@ class GuiController(QObject):
                     else "from_data"
                 ),
             )
-        resulting_policy = state.policy_for_effective_display(residual_available)
+        resulting_policy = state.policy_for_effective_display(
+            residual_left_available=residual_available
+        )
         self.time_series_settings.replace_domain(
             "y_axis", replace(state, policy=resulting_policy)
         )

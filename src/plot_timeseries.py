@@ -2082,7 +2082,10 @@ class PlotTs():
                 ),
             )
         state = replace(
-            state, policy=state.policy_for_effective_display(residual_available)
+            state,
+            policy=state.policy_for_effective_display(
+                residual_left_available=residual_available
+            ),
         )
         self.settings_model.replace_domain("y_axis", state)
         with self.axisViewUpdateGuard():
