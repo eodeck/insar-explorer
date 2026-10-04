@@ -4077,30 +4077,56 @@ class GuiController(QObject):
         if refresh:
             plotter.refreshAutomaticAxisRanges()
 
-    def _hasValidConfiguredManualYAxis(self):
-        """Return whether every active Y domain has a resolvable Manual configuration."""
+    def _usableStoredManualYAxisDomains(self):
+        """Return active Y domains whose saved Manual configuration is resolvable."""
         plotter = self.choose_point_click_handler.plot_ts
         availability = plotter.yAxisDomainAvailability()
-        if not any(availability.values()):
-            return False
         state = self.time_series_settings.y_axis
+        usable = []
         for domain, active in availability.items():
             if not active:
                 continue
             manual = getattr(state, f"{domain}_manual")
             if not manual.configured:
-                return False
+                continue
             if plotter.resolveManualYAxisRangeForDomain(domain, manual) is None:
-                return False
-        return True
+                continue
+            usable.append(domain)
+        return tuple(usable)
+
+    def _activateStoredManualYAxisDomains(self, domains):
+        """Activate remembered Manual rendering only for the supplied active domains."""
+        if not domains:
+            return
+        state = self.time_series_settings.y_axis
+        for domain in domains:
+            state = replace(
+                state,
+                **{
+                    f"{domain}_display_mode": "manual",
+                    f"{domain}_custom_view": False,
+                },
+            )
+        kwargs = self._yAxisAvailabilityKwargs()
+        state = replace(state, policy=state.policy_for_effective_display(**kwargs))
+        self.time_series_settings.replace_domain("y_axis", state)
+        plotter = self.choose_point_click_handler.plot_ts
+        plotter.refreshAutomaticAxisRanges()
+        self._syncTimeSeriesYAxisControls(state.policy)
 
     def setTimeSeriesYAxisMode(self, mode):
         """Apply the selected aggregate Y-axis policy."""
-        if mode == "manual" and not self._hasValidConfiguredManualYAxis():
+        if mode != "manual":
+            self._applyTimeSeriesYAxisMode(mode)
+            return
+
+        configured = self._usableStoredManualYAxisDomains()
+        if not configured:
             self._syncTimeSeriesYAxisControls(self.time_series_settings.y_axis.policy)
             self.showManualYAxisPopup()
             return
-        self._applyTimeSeriesYAxisMode(mode)
+
+        self._activateStoredManualYAxisDomains(configured)
 
     def showManualYAxisPopup(self):
         """Open the four-domain editor as a reversible viewport/settings transaction."""
