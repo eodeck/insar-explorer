@@ -3820,14 +3820,13 @@ class GuiController(QObject):
                 )
             )
             y_state = self.time_series_settings.y_axis
-            updated_y = y_state.select_all_from_data()
+            kwargs = self._yAxisAvailabilityKwargs()
+            updated_y = y_state.select_from_data_for_visible_axes(**kwargs)
             if updated_y != y_state:
                 self.time_series_settings.replace_domain("y_axis", updated_y)
 
             plotter.resetSharedXAxisFromData()
-            plotter.setYlims(ax=plotter.ax)
-            if plotter.ax_residuals is not None:
-                plotter.setYlims(ax=plotter.ax_residuals)
+            plotter.refreshAutomaticAxisRanges(draw=False)
             self._syncTimeSeriesXAxisControls()
             self._syncTimeSeriesYAxisControls(updated_y.policy)
             plotter._draw()
@@ -4047,206 +4046,136 @@ class GuiController(QObject):
             state.has_custom_view(residual_left_available=residual_visible),
         )
 
+    def _yAxisAvailabilityKwargs(self):
+        """Return canonical four-domain activity as YAxisSettings keyword flags."""
+        available = self.choose_point_click_handler.plot_ts.yAxisDomainAvailability()
+        return {
+            "main_left_available": available["series"],
+            "main_right_available": available["right_series"],
+            "residual_left_available": available["residual"],
+            "residual_right_available": available["right_residual"],
+        }
+
     def _applyTimeSeriesYAxisMode(self, mode, refresh=True):
-        """Apply an aggregate Y mode while preserving axis-local saved ranges."""
+        """Apply a toolbar Y policy to active domains only; preserve inactive state."""
         if mode not in {"from_data", "symmetric", "manual"}:
             mode = "from_data"
         plotter = self.choose_point_click_handler.plot_ts
-        residual_available = plotter.ax_residuals is not None
-        current_axis = self.time_series_settings.y_axis
+        kwargs = self._yAxisAvailabilityKwargs()
+        state = self.time_series_settings.y_axis
+        active = state._active_domains(**kwargs)
         if mode == "manual":
-            updated_axis = current_axis.select_manual_for_visible_axes(
-                residual_left_available=residual_available
-            )
-        elif mode == "from_data":
-            updated_axis = current_axis.select_from_data_for_visible_axes(
-                residual_left_available=residual_available
-            )
+            for domain in active:
+                state = replace(state, **{f"{domain}_display_mode": "manual", f"{domain}_custom_view": False})
         else:
-            updated_axis = replace(
-                current_axis, policy=mode,
-                series_custom_view=False, residual_custom_view=False,
-            )
-        self.time_series_settings.replace_domain("y_axis", updated_axis)
-        plotter.manual_y_lower = self.time_series_manual_y_lower
-        plotter.manual_y_upper = self.time_series_manual_y_upper
-        plotter.residual_manual_y_lower = self.residual_manual_y_lower
-        plotter.residual_manual_y_upper = self.residual_manual_y_upper
-        self._syncTimeSeriesYAxisControls(updated_axis.policy)
-        if refresh and plotter.ax is not None:
-            with plotter.axisViewUpdateGuard():
-                plotter.setYlims(ax=plotter.ax, parms=plotter.parms["time series plot"])
-                if plotter.ax_residuals is not None:
-                    plotter.setYlims(ax=plotter.ax_residuals, parms=plotter.parms["residual plot"])
-            plotter._draw()
+            for domain in active:
+                state = replace(state, **{f"{domain}_display_mode": mode, f"{domain}_custom_view": False})
+        policy = state.policy_for_effective_display(**kwargs)
+        state = replace(state, policy=policy)
+        self.time_series_settings.replace_domain("y_axis", state)
+        self._syncTimeSeriesYAxisControls(policy)
+        if refresh:
+            plotter.refreshAutomaticAxisRanges()
 
     def _hasValidConfiguredManualYAxis(self):
-        """Return whether relevant stored Y bounds are configured and resolvable."""
+        """Return whether every active Y domain has a resolvable Manual configuration."""
         plotter = self.choose_point_click_handler.plot_ts
-        if plotter.ax is None:
+        availability = plotter.yAxisDomainAvailability()
+        if not any(availability.values()):
             return False
         state = self.time_series_settings.y_axis
-        residual_available = plotter.ax_residuals is not None
-        if not state.has_configured_manual(residual_left_available=residual_available):
-            return False
-        if plotter.resolveManualYAxisRange(
-            ax=plotter.ax, manual=state.series_manual
-        ) is None:
-            return False
-        if residual_available and plotter.resolveManualYAxisRange(
-            ax=plotter.ax_residuals, manual=state.residual_manual
-        ) is None:
-            return False
+        for domain, active in availability.items():
+            if not active:
+                continue
+            manual = getattr(state, f"{domain}_manual")
+            if not manual.configured:
+                return False
+            if plotter.resolveManualYAxisRangeForDomain(domain, manual) is None:
+                return False
         return True
 
     def setTimeSeriesYAxisMode(self, mode):
-        """Apply a toolbar-selected shared Y-axis policy immediately."""
-        if mode == "manual":
-            plotter = self.choose_point_click_handler.plot_ts
-            if plotter.ax is None:
-                self._syncTimeSeriesYAxisControls(
-                    self.time_series_settings.y_axis.policy
-                )
-                return
-            if not self._hasValidConfiguredManualYAxis():
-                self._syncTimeSeriesYAxisControls(
-                    self.time_series_settings.y_axis.policy
-                )
-                self.showManualYAxisPopup()
-                return
+        """Apply the selected aggregate Y-axis policy."""
+        if mode == "manual" and not self._hasValidConfiguredManualYAxis():
+            self._syncTimeSeriesYAxisControls(self.time_series_settings.y_axis.policy)
+            self.showManualYAxisPopup()
+            return
         self._applyTimeSeriesYAxisMode(mode)
 
     def showManualYAxisPopup(self):
-        """Open the editor and capture both policies and viewports transactionally."""
+        """Open the four-domain editor as a reversible viewport/settings transaction."""
         plotter = self.choose_point_click_handler.plot_ts
-        if plotter.ax is None:
+        availability = plotter.yAxisDomainAvailability()
+        if not any(availability.values()):
             self._syncTimeSeriesYAxisControls(self.time_series_settings.y_axis.policy)
             return
         if self._manual_y_axis_session is not None:
-            self.manual_y_axis_popup.show()
-            self.manual_y_axis_popup.raise_()
-            self.manual_y_axis_popup.activateWindow()
-            return
-        series_data = plotter.dataYAxisRange(plotter.ax)
-        if series_data is None:
-            self._syncTimeSeriesYAxisControls(self.time_series_settings.y_axis.policy)
-            return
-        residual_available = plotter.ax_residuals is not None
-        residual_data = (
-            plotter.dataYAxisRange(plotter.ax_residuals) if residual_available else None
-        )
-        if residual_available and residual_data is None:
-            self._syncTimeSeriesYAxisControls(self.time_series_settings.y_axis.policy)
-            return
-        viewport = plotter.captureViewport()
-        self._manual_y_axis_session = {
-            "y_axis": self.time_series_settings.y_axis,
-            "viewport": viewport,
-        }
-        popup = self.manual_y_axis_popup
-        popup.openForBounds(
-            self.time_series_settings.y_axis.series_manual,
-            self.time_series_settings.y_axis.residual_manual,
-            series_data, residual_data or (0.0, 1.0), residual_available,
-        )
-        popup.adjustSize()
+            self.manual_y_axis_popup.show(); self.manual_y_axis_popup.raise_(); self.manual_y_axis_popup.activateWindow(); return
+        state = self.time_series_settings.y_axis
+        manuals = {name: getattr(state, f"{name}_manual") for name in availability}
+        data = {name: plotter.dataYAxisRangeForDomain(name) for name in availability}
+        self._manual_y_axis_session = {"y_axis": state, "viewport": plotter.captureViewport()}
+        self.manual_y_axis_popup.openForDomains(manuals, data, availability)
+        popup = self.manual_y_axis_popup; popup.adjustSize()
         button = self.ui.time_series_toolbar.y_axis_button
-        top_left = button.mapToGlobal(QPoint(0, 0))
-        anchor = QRect(top_left, button.size())
+        top_left = button.mapToGlobal(QPoint(0, 0)); anchor = QRect(top_left, button.size())
         geometry = available_screen_geometry(top_left, popup)
         popup.move(screen_aware_popup_position(anchor, popup.sizeHint(), geometry))
-        popup.show()
-        popup.raise_()
-        popup.activateWindow()
+        popup.show(); popup.raise_(); popup.activateWindow()
 
     def captureCurrentManualYAxisView(self, axis_name):
-        """Commit one visible Y viewport as Manual without touching its sibling."""
+        """Copy one current domain viewport into the popup draft without committing it."""
         if self._manual_y_axis_session is None:
             return
         plotter = self.choose_point_click_handler.plot_ts
-        axis = plotter.ax if axis_name == "series" else plotter.ax_residuals
-        if axis is None:
+        view_box = plotter._viewBoxForYAxisDomain(axis_name)
+        if view_box is None:
             return
-        lower, upper = (float(value) for value in axis.viewRange()[1])
-        residual_available = plotter.ax_residuals is not None
-        updated = self.time_series_settings.y_axis.commit_current_view(
-            axis_name, lower, upper, residual_left_available=residual_available
-        )
-        self.time_series_settings.replace_domain("y_axis", updated)
-        self._manual_y_axis_session = None
-        self.manual_y_axis_popup.closeAfterCommit()
-        self._syncTimeSeriesYAxisControls(updated.policy)
-        self.msg_signal.emit("Current Y-axis view saved as Manual.", STATUS_SUCCESS, 0)
+        lower, upper = (float(value) for value in view_box.viewRange()[1])
+        self.manual_y_axis_popup.setCurrentView(axis_name, lower, upper)
 
     def previewManualYAxisRange(self, axis_name, lower, upper):
-        """Preview the complete draft through the same paths used by Apply."""
+        """Preview only the edited domain while keeping authoritative settings unchanged."""
         if self._manual_y_axis_session is None:
             return
-        popup = self.manual_y_axis_popup
-        series_lower, series_upper = popup.bounds("series")
-        residual_lower, residual_upper = popup.bounds("residual")
-        series_retained = popup.retainedBounds("series")
-        residual_retained = popup.retainedBounds("residual")
-        plotter = self.choose_point_click_handler.plot_ts
-        plotter.setManualYRanges(
-            AxisManualRange(
-                series_lower, series_upper, *series_retained
-            ),
-            AxisManualRange(
-                residual_lower, residual_upper, *residual_retained
-            ),
-            plotter.ax_residuals is not None,
+        retained = self.manual_y_axis_popup.retainedBounds(axis_name)
+        self.choose_point_click_handler.plot_ts.previewManualYAxisDomain(
+            axis_name, AxisManualRange(lower, upper, *retained)
         )
 
-    def applyManualYAxisRange(
-        self, series_lower, series_upper, residual_lower, residual_upper,
-        series_retained_lower, series_retained_upper,
-        residual_retained_lower, residual_retained_upper,
-        series_changed, residual_changed,
-    ):
-        """Commit editor memory and activate Manual or truthful From Data mode."""
+    def applyManualYAxisRange(self, payload):
+        """Commit only changed Manual-editor domains; no-change Apply is a no-op."""
+        session = self._manual_y_axis_session
+        if session is None:
+            return
+        changed = [name for name, values in payload.items() if values["changed"]]
+        self._manual_y_axis_session = None
+        if not changed:
+            self._syncTimeSeriesYAxisControls(self.time_series_settings.y_axis.policy)
+            return
         state = self.time_series_settings.y_axis
-        state = replace(
-            state,
-            series_manual=AxisManualRange(
-                series_lower, series_upper,
-                series_retained_lower, series_retained_upper,
-            ),
-        )
-        if residual_changed:
+        for domain in changed:
+            values = payload[domain]; lower, upper = values["bounds"]
+            manual = AxisManualRange(
+                lower, upper, *values["retained"], configured=True
+            )
             state = replace(
                 state,
-                residual_manual=AxisManualRange(
-                    residual_lower, residual_upper,
-                    residual_retained_lower, residual_retained_upper,
-                ),
+                **{
+                    f"{domain}_manual": manual,
+                    f"{domain}_display_mode": "manual",
+                    f"{domain}_custom_view": False,
+                },
             )
-        residual_available = self.choose_point_click_handler.plot_ts.ax_residuals is not None
-        state = replace(
-            state,
-            series_display_mode=(
-                "manual" if series_lower is not None or series_upper is not None
-                else "from_data"
-            ),
-        )
-        if residual_available:
-            state = replace(
-                state, residual_display_mode=(
-                    "manual" if residual_lower is not None or residual_upper is not None
-                    else "from_data"
-                ),
-            )
-        resulting_policy = state.policy_for_effective_display(
-            residual_left_available=residual_available
-        )
-        self.time_series_settings.replace_domain(
-            "y_axis", replace(state, policy=resulting_policy)
-        )
-        self._manual_y_axis_session = None
-        self._applyTimeSeriesYAxisMode(resulting_policy, refresh=True)
+        kwargs = self._yAxisAvailabilityKwargs()
+        state = replace(state, policy=state.policy_for_effective_display(**kwargs))
+        self.time_series_settings.replace_domain("y_axis", state)
+        plotter = self.choose_point_click_handler.plot_ts
+        plotter.refreshAutomaticAxisRanges()
+        self._syncTimeSeriesYAxisControls(state.policy)
 
     def cancelManualYAxisRange(self):
-        """Restore both original policies and all captured X/Y view ranges."""
+        """Restore original settings and all captured X/four-domain Y viewports."""
         session = self._manual_y_axis_session
         if session is None:
             return

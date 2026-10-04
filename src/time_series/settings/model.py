@@ -304,19 +304,26 @@ class AxisManualRange:
     ``lower`` and ``upper`` are the active editor endpoints: ``None`` means
     Auto and a finite number means Manual.  ``retained_lower`` and
     ``retained_upper`` preserve the last numeric draft even while the
-    corresponding endpoint is Auto.
+    corresponding endpoint is Auto. ``configured`` distinguishes a never-used
+    default from an intentionally saved Manual configuration such as Auto/Auto.
     """
 
     lower: Optional[float] = None
     upper: Optional[float] = None
     retained_lower: Optional[float] = None
     retained_upper: Optional[float] = None
+    configured: bool = False
 
     def __post_init__(self):
         if self.lower is not None and self.retained_lower is None:
             object.__setattr__(self, "retained_lower", self.lower)
         if self.upper is not None and self.retained_upper is None:
             object.__setattr__(self, "retained_upper", self.upper)
+        if not self.configured and any(
+            value is not None
+            for value in (self.lower, self.upper, self.retained_lower, self.retained_upper)
+        ):
+            object.__setattr__(self, "configured", True)
 
 
 @dataclass(frozen=True)
@@ -354,9 +361,9 @@ class YAxisSettings:
         self, *, main_left_available=True, main_right_available=False,
         residual_left_available=False, residual_right_available=False,
     ):
-        """Return whether any currently relevant endpoint is explicitly Manual."""
+        """Return whether any currently relevant domain has saved Manual state."""
         return any(
-            manual.lower is not None or manual.upper is not None
+            manual.configured
             for manual in self.relevant_manual_ranges(
                 main_left_available=main_left_available,
                 main_right_available=main_right_available,
@@ -431,7 +438,13 @@ class YAxisSettings:
                 residual_right_available=residual_right_available,
             )
         )
-        return "manual" if "manual" in modes else "from_data"
+        if not modes:
+            return "from_data"
+        if "manual" in modes:
+            return "manual"
+        if all(mode == "symmetric" for mode in modes):
+            return "symmetric"
+        return "from_data"
 
     def select_all_from_data(self):
         """Select From Data for every Y axis without altering saved Manual ranges."""
@@ -506,7 +519,7 @@ class YAxisSettings:
         residual_right_available=False,
     ):
         """Commit one visible axis viewport as Manual without changing its sibling."""
-        manual = AxisManualRange(lower, upper, lower, upper)
+        manual = AxisManualRange(lower, upper, lower, upper, configured=True)
         if axis_name not in {"series", "right_series", "residual", "right_residual"}:
             raise ValueError(f"Unsupported Y axis: {axis_name}")
         state = replace(
