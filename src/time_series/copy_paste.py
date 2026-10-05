@@ -18,6 +18,7 @@ class CopyPasteCategory(str, Enum):
     STYLE = "style"
     FIT = "fit"
     REPLICA = "replica"
+    Y_AXIS = "y_axis"
     LEGEND = "legend"
     ALL_PRESENTATION = "all_presentation"
 
@@ -48,6 +49,13 @@ class ReplicaSnapshot:
 
 
 @dataclass(frozen=True)
+class YAxisSideSnapshot:
+    """Per-series Y-axis assignment only; no plot/domain range state."""
+
+    side: str
+
+
+@dataclass(frozen=True)
 class LegendEntrySnapshot:
     """Per-series legend-entry configuration without record identity or attributes."""
 
@@ -62,6 +70,7 @@ class TimeSeriesSettingsClipboard:
     style: StyleSnapshot
     fit: FitSnapshot
     replica: ReplicaSnapshot
+    y_axis: YAxisSideSnapshot
     legend: LegendEntrySnapshot
 
     def has(self, category: CopyPasteCategory) -> bool:
@@ -70,6 +79,7 @@ class TimeSeriesSettingsClipboard:
             CopyPasteCategory.STYLE,
             CopyPasteCategory.FIT,
             CopyPasteCategory.REPLICA,
+            CopyPasteCategory.Y_AXIS,
             CopyPasteCategory.LEGEND,
             CopyPasteCategory.ALL_PRESENTATION,
         )
@@ -88,6 +98,11 @@ def capture_fit(record: TimeSeriesRecord) -> FitSnapshot:
 def capture_replica(record: TimeSeriesRecord) -> ReplicaSnapshot:
     """Capture immutable Replica settings from one record."""
     return ReplicaSnapshot(record.analysis.replica, record.presentation.replica)
+
+
+def capture_y_axis_side(record: TimeSeriesRecord) -> YAxisSideSnapshot:
+    """Capture only the record-owned Left/Right Y-axis assignment."""
+    return YAxisSideSnapshot(record.presentation.y_axis_side)
 
 
 def capture_legend_entry(record: TimeSeriesRecord) -> LegendEntrySnapshot:
@@ -128,6 +143,22 @@ def _legend_field_is_available(record: TimeSeriesRecord, field_name: str) -> boo
     return (
         field_name in record.target_attributes.field_names()
         or field_name in record.reference_attributes.field_names()
+    )
+
+
+def normalize_y_axis_side(side) -> str:
+    """Return the normalized persisted Y-axis side used by copy/paste."""
+    value = str(side).strip().lower()
+    return value if value in {"left", "right"} else "left"
+
+
+def apply_y_axis_side_snapshot(
+    record: TimeSeriesRecord, snapshot: YAxisSideSnapshot
+) -> TimeSeriesRecord:
+    """Replace only the per-series Y-axis side, normalized by presentation state."""
+    side = normalize_y_axis_side(snapshot.side)
+    return replace(
+        record, presentation=replace(record.presentation, y_axis_side=side)
     )
 
 

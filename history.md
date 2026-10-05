@@ -1,5 +1,11 @@
 ### History
 
+v2.12.0
+
+- Added per-series Left/Right Y-axis assignment with Left/Right axis icons in the Selections list.
+- Added four-domain Data range, Symmetric, Manual, and Custom Y-range controls.
+- Added independent Main/Residual Left/Right Y-axis labels in Appearance settings.
+
 v2.11.0
 
 - Removed layer name from selection label and added sequential labels.

@@ -30,6 +30,7 @@
     <file alias="item_discard.svg">icons/light/item_discard.svg</file>
     <file alias="label.svg">icons/light/label.svg</file>
     <file alias="layers.svg">icons/light/layers.svg</file>
+    <file alias="left_axis.svg">icons/light/left_axis.svg</file>
     <file alias="legend.svg">icons/light/legend.svg</file>
     <file alias="plot_random_color.svg">icons/light/plot_random_color.svg</file>
     <file alias="plot_settings.svg">icons/light/plot_settings.svg</file>
@@ -39,8 +40,11 @@
     <file alias="replica.svg">icons/light/replica.svg</file>
     <file alias="reset_offset.svg">icons/light/reset_offset.svg</file>
     <file alias="residual.svg">icons/light/residual.svg</file>
+    <file alias="residual_left.svg">icons/light/residual_left.svg</file>
+    <file alias="residual_right.svg">icons/light/residual_right.svg</file>
     <file alias="reverse.svg">icons/light/reverse.svg</file>
     <file alias="revert.svg">icons/light/revert.svg</file>
+    <file alias="right_axis.svg">icons/light/right_axis.svg</file>
     <file alias="screenshot.svg">icons/light/screenshot.svg</file>
     <file alias="select_point.svg">icons/light/select_point.svg</file>
     <file alias="select_reset_reference.svg">icons/light/select_reset_reference.svg</file>
@@ -79,6 +83,7 @@
     <file alias="item_discard.svg">icons/dark/item_discard.svg</file>
     <file alias="label.svg">icons/dark/label.svg</file>
     <file alias="layers.svg">icons/dark/layers.svg</file>
+    <file alias="left_axis.svg">icons/dark/left_axis.svg</file>
     <file alias="legend.svg">icons/dark/legend.svg</file>
     <file alias="plot_random_color.svg">icons/dark/plot_random_color.svg</file>
     <file alias="plot_settings.svg">icons/dark/plot_settings.svg</file>
@@ -88,8 +93,11 @@
     <file alias="replica.svg">icons/dark/replica.svg</file>
     <file alias="reset_offset.svg">icons/dark/reset_offset.svg</file>
     <file alias="residual.svg">icons/dark/residual.svg</file>
+    <file alias="residual_left.svg">icons/dark/residual_left.svg</file>
+    <file alias="residual_right.svg">icons/dark/residual_right.svg</file>
     <file alias="reverse.svg">icons/dark/reverse.svg</file>
     <file alias="revert.svg">icons/dark/revert.svg</file>
+    <file alias="right_axis.svg">icons/dark/right_axis.svg</file>
     <file alias="screenshot.svg">icons/dark/screenshot.svg</file>
     <file alias="select_point.svg">icons/dark/select_point.svg</file>
     <file alias="select_reset_reference.svg">icons/dark/select_reset_reference.svg</file>

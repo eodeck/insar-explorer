@@ -22,7 +22,7 @@ from ..settings.model import (
     SeriesStyleSettings,
 )
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 DEFAULT_PREFIX = "insar_explorer/time_series"
 
 
@@ -154,7 +154,9 @@ KEY_SPECS = (
     ("appearance", "time_series_x_label", "appearance/time_series_x_label", "str", None),
     ("appearance", "residual_x_label", "appearance/residual_x_label", "str", None),
     ("appearance", "time_series_y_label", "appearance/time_series_y_label", "str", None),
+    ("appearance", "right_y_label", "appearance/right_y_label", "str", None),
     ("appearance", "residual_y_label", "appearance/residual_y_label", "str", None),
+    ("appearance", "residual_right_y_label", "appearance/residual_right_y_label", "str", None),
     ("appearance", "font_size", "appearance/font_size", "float", (1, 200)),
     ("appearance", "grid_mode", "appearance/grid_mode", "choice", AppearanceSettings.GRID_MODES),
     ("appearance", "plot_background", "appearance/plot_background", "str", None),
@@ -211,6 +213,16 @@ class QSettingsUserPreferencesRepository:
         """Return one fully namespaced QSettings key."""
         return f"{self.prefix}/{suffix}"
 
+    def _contains(self, suffix: str) -> bool:
+        """Return whether one namespaced key exists without inventing a stored value."""
+        contains = getattr(self._settings, "contains", None)
+        if contains is None:
+            return False
+        try:
+            return bool(contains(self.key(suffix)))
+        except Exception:
+            return False
+
     def _raw(self, suffix: str, default: Any) -> Any:
         try:
             return self._settings.value(self.key(suffix), default)
@@ -246,6 +258,21 @@ class QSettingsUserPreferencesRepository:
                     kwargs[field] = self._coerce(
                         self._raw(suffix, default), default, kind, constraints
                     )
+            if scope == "appearance":
+                # existing users may have customized Left labels
+                # before independent Right-label keys existed. Only inherit a Left
+                # value when that Left key is genuinely persisted and the matching
+                # Right key is genuinely absent; once saved, Right remains independent.
+                if (
+                    self._contains("appearance/time_series_y_label")
+                    and not self._contains("appearance/right_y_label")
+                ):
+                    kwargs["right_y_label"] = kwargs["time_series_y_label"]
+                if (
+                    self._contains("appearance/residual_y_label")
+                    and not self._contains("appearance/residual_right_y_label")
+                ):
+                    kwargs["residual_right_y_label"] = kwargs["residual_y_label"]
             if value_type is ExportSettings:
                 values[scope] = ExportSettings.normalized(**kwargs)
             elif value_type is ReplicaSettings:

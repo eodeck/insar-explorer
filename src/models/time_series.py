@@ -246,9 +246,15 @@ class TimeSeriesPresentation:
     legend: SeriesLegendSettings = field(default_factory=SeriesLegendSettings)
     label: Optional[str] = None
     visible: bool = True
+    y_axis_side: str = "left"
     # Reserved metadata for a later layering feature; the Phase 6 renderer
     # does not currently expose or apply per-series z-order editing.
     z_order: Optional[int] = None
+
+    def __post_init__(self) -> None:
+        """Normalize persisted axis metadata without relaxing immutability."""
+        side = str(self.y_axis_side).strip().lower()
+        object.__setattr__(self, "y_axis_side", side if side in {"left", "right"} else "left")
 
 
 def presentation_from_legacy_params(
@@ -349,6 +355,7 @@ class TimeSeriesGraphics:
     residual_line: Any = None
     main_y_data: List[Any] = field(default_factory=list)
     residual_y_data: List[Any] = field(default_factory=list)
+    item_owners: dict[int, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

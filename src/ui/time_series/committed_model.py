@@ -4,8 +4,9 @@ from qgis.PyQt import QtGui
 from qgis.PyQt.QtCore import QAbstractTableModel, QModelIndex, pyqtSignal
 
 from ...qt_compat import (
-    ALIGN_CENTER, ALIGN_LEFT, ALIGN_VCENTER, CHECK_STATE_ROLE, CHECKED,
-    DECORATION_ROLE, DISPLAY_ROLE, EDIT_ROLE, FONT_ROLE, FOREGROUND_ROLE,
+    ACCESSIBLE_DESCRIPTION_ROLE, ACCESSIBLE_TEXT_ROLE, ALIGN_CENTER, ALIGN_LEFT,
+    ALIGN_VCENTER, CHECK_STATE_ROLE, CHECKED, DECORATION_ROLE, DISPLAY_ROLE,
+    EDIT_ROLE, FONT_ROLE, FOREGROUND_ROLE,
     HORIZONTAL, ITEM_IS_EDITABLE, ITEM_IS_ENABLED, ITEM_IS_SELECTABLE,
     ITEM_IS_USER_CHECKABLE, TEXT_ALIGNMENT_ROLE, TOOLTIP_ROLE, UNCHECKED,
 )
@@ -27,6 +28,7 @@ class CommittedTimeSeriesModel(QAbstractTableModel):
         CommittedTimeSeriesColumn.VISIBLE: "",
         CommittedTimeSeriesColumn.SEQUENCE: "#",
         CommittedTimeSeriesColumn.LABEL: "Label",
+        CommittedTimeSeriesColumn.Y_AXIS: "Y",
         CommittedTimeSeriesColumn.TARGET: "T",
         CommittedTimeSeriesColumn.REFERENCE: "R",
     }
@@ -34,6 +36,7 @@ class CommittedTimeSeriesModel(QAbstractTableModel):
         CommittedTimeSeriesColumn.VISIBLE: "Show or hide all time series",
         CommittedTimeSeriesColumn.SEQUENCE: "Time-series sequence number",
         CommittedTimeSeriesColumn.LABEL: "Time-series label",
+        CommittedTimeSeriesColumn.Y_AXIS: "Y-axis assignment",
         CommittedTimeSeriesColumn.TARGET: "Target selection type",
         CommittedTimeSeriesColumn.REFERENCE: "Reference selection type",
     }
@@ -125,6 +128,16 @@ class CommittedTimeSeriesModel(QAbstractTableModel):
                 return font
             if not label and role == FOREGROUND_ROLE:
                 return QtGui.QBrush(placeholder_colour())
+            return None
+        if column == CommittedTimeSeriesColumn.Y_AXIS:
+            side = "right" if record.presentation.y_axis_side == "right" else "left"
+            accessible_text = "Right Y axis" if side == "right" else "Left Y axis"
+            if role == DECORATION_ROLE:
+                return themed_icon(f"{side}_axis")
+            if role in (TOOLTIP_ROLE, ACCESSIBLE_TEXT_ROLE, ACCESSIBLE_DESCRIPTION_ROLE):
+                return accessible_text
+            if role == TEXT_ALIGNMENT_ROLE:
+                return ALIGN_CENTER
             return None
         selection = record.target if column == CommittedTimeSeriesColumn.TARGET else record.reference
         kind = selection_kind_value(selection)

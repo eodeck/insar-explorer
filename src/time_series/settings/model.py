@@ -304,19 +304,26 @@ class AxisManualRange:
     ``lower`` and ``upper`` are the active editor endpoints: ``None`` means
     Auto and a finite number means Manual.  ``retained_lower`` and
     ``retained_upper`` preserve the last numeric draft even while the
-    corresponding endpoint is Auto.
+    corresponding endpoint is Auto. ``configured`` distinguishes a never-used
+    default from an intentionally saved Manual configuration such as Auto/Auto.
     """
 
     lower: Optional[float] = None
     upper: Optional[float] = None
     retained_lower: Optional[float] = None
     retained_upper: Optional[float] = None
+    configured: bool = False
 
     def __post_init__(self):
         if self.lower is not None and self.retained_lower is None:
             object.__setattr__(self, "retained_lower", self.lower)
         if self.upper is not None and self.retained_upper is None:
             object.__setattr__(self, "retained_upper", self.upper)
+        if not self.configured and any(
+            value is not None
+            for value in (self.lower, self.upper, self.retained_lower, self.retained_upper)
+        ):
+            object.__setattr__(self, "configured", True)
 
 
 @dataclass(frozen=True)
@@ -325,50 +332,119 @@ class YAxisSettings:
 
     policy: str = "from_data"
     series_manual: AxisManualRange = field(default_factory=AxisManualRange)
+    right_series_manual: AxisManualRange = field(default_factory=AxisManualRange)
     residual_manual: AxisManualRange = field(default_factory=AxisManualRange)
+    right_residual_manual: AxisManualRange = field(default_factory=AxisManualRange)
     series_display_mode: str = "from_data"
+    right_series_display_mode: str = "from_data"
     residual_display_mode: str = "from_data"
+    right_residual_display_mode: str = "from_data"
     series_custom_view: bool = False
+    right_series_custom_view: bool = False
     residual_custom_view: bool = False
+    right_residual_custom_view: bool = False
 
-    def relevant_manual_ranges(self, residual_available=False):
+    def relevant_manual_ranges(
+        self, *, main_left_available=True, main_right_available=False,
+        residual_left_available=False, residual_right_available=False,
+    ):
         """Return the editor ranges that participate in the active Y policy."""
-        ranges = (self.series_manual,)
-        if residual_available:
-            ranges += (self.residual_manual,)
-        return ranges
+        domains = (
+            (main_left_available, self.series_manual),
+            (main_right_available, self.right_series_manual),
+            (residual_left_available, self.residual_manual),
+            (residual_right_available, self.right_residual_manual),
+        )
+        return tuple(manual for available, manual in domains if available)
 
-    def has_configured_manual(self, residual_available=False):
-        """Return whether any currently relevant endpoint is explicitly Manual."""
+    def has_configured_manual(
+        self, *, main_left_available=True, main_right_available=False,
+        residual_left_available=False, residual_right_available=False,
+    ):
+        """Return whether any currently relevant domain has saved Manual state."""
         return any(
-            manual.lower is not None or manual.upper is not None
-            for manual in self.relevant_manual_ranges(residual_available)
+            manual.configured
+            for manual in self.relevant_manual_ranges(
+                main_left_available=main_left_available,
+                main_right_available=main_right_available,
+                residual_left_available=residual_left_available,
+                residual_right_available=residual_right_available,
+            )
         )
 
-    def policy_for_manual_editor(self, residual_available=False):
+    def policy_for_manual_editor(
+        self, *, main_left_available=True, main_right_available=False,
+        residual_left_available=False, residual_right_available=False,
+    ):
         """Return the truthful aggregate policy for the current editor state."""
-        return "manual" if self.has_configured_manual(residual_available) else "from_data"
+        return "manual" if self.has_configured_manual(
+            main_left_available=main_left_available,
+            main_right_available=main_right_available,
+            residual_left_available=residual_left_available,
+            residual_right_available=residual_right_available,
+        ) else "from_data"
 
-    def has_custom_view(self, residual_available=False):
+    def has_custom_view(
+        self, *, main_left_available=True, main_right_available=False,
+        residual_left_available=False, residual_right_available=False,
+    ):
         """Return whether any currently visible Y axis has a custom viewport."""
-        return self.series_custom_view or (
-            residual_available and self.residual_custom_view
+        return any((
+            main_left_available and self.series_custom_view,
+            main_right_available and self.right_series_custom_view,
+            residual_left_available and self.residual_custom_view,
+            residual_right_available and self.right_residual_custom_view,
+        ))
+
+    def _active_domains(
+        self, *, main_left_available=True, main_right_available=False,
+        residual_left_available=False, residual_right_available=False,
+    ):
+        """Return canonical field names for the active rendering domains."""
+        domains = (
+            (main_left_available, "series"),
+            (main_right_available, "right_series"),
+            (residual_left_available, "residual"),
+            (residual_right_available, "right_residual"),
         )
+        return tuple(name for available, name in domains if available)
 
     def display_mode_for_axis(self, axis_name):
         """Return the effective saved-range/display selection for one Y axis."""
-        if axis_name == "series_y":
-            return self.series_display_mode
-        if axis_name == "residual_y":
-            return self.residual_display_mode
-        raise ValueError(f"Unsupported Y axis: {axis_name}")
+        display_modes = {
+            "series": self.series_display_mode,
+            "series_y": self.series_display_mode,
+            "right_series": self.right_series_display_mode,
+            "residual": self.residual_display_mode,
+            "residual_y": self.residual_display_mode,
+            "right_residual": self.right_residual_display_mode,
+        }
+        try:
+            return display_modes[axis_name]
+        except KeyError as error:
+            raise ValueError(f"Unsupported Y axis: {axis_name}") from error
 
-    def policy_for_effective_display(self, residual_available=False):
+    def policy_for_effective_display(
+        self, *, main_left_available=True, main_right_available=False,
+        residual_left_available=False, residual_right_available=False,
+    ):
         """Return the aggregate toolbar policy from currently visible local modes."""
-        modes = (self.series_display_mode,)
-        if residual_available:
-            modes += (self.residual_display_mode,)
-        return "manual" if "manual" in modes else "from_data"
+        modes = tuple(
+            self.display_mode_for_axis(name)
+            for name in self._active_domains(
+                main_left_available=main_left_available,
+                main_right_available=main_right_available,
+                residual_left_available=residual_left_available,
+                residual_right_available=residual_right_available,
+            )
+        )
+        if not modes:
+            return "from_data"
+        if "manual" in modes:
+            return "manual"
+        if all(mode == "symmetric" for mode in modes):
+            return "symmetric"
+        return "from_data"
 
     def select_all_from_data(self):
         """Select From Data for every Y axis without altering saved Manual ranges."""
@@ -376,54 +452,92 @@ class YAxisSettings:
             self,
             policy="from_data",
             series_display_mode="from_data",
+            right_series_display_mode="from_data",
             residual_display_mode="from_data",
+            right_residual_display_mode="from_data",
             series_custom_view=False,
+            right_series_custom_view=False,
             residual_custom_view=False,
+            right_residual_custom_view=False,
         )
 
-    def select_manual_for_visible_axes(self, residual_available=False):
+    def select_manual_for_visible_axes(
+        self, *, main_left_available=True, main_right_available=False,
+        residual_left_available=False, residual_right_available=False,
+    ):
         """Select saved Manual rendering for every currently relevant Y axis."""
-        state = replace(
-            self, series_display_mode="manual", series_custom_view=False
-        )
-        if residual_available:
+        state = self
+        for domain in self._active_domains(
+            main_left_available=main_left_available,
+            main_right_available=main_right_available,
+            residual_left_available=residual_left_available,
+            residual_right_available=residual_right_available,
+        ):
             state = replace(
-                state, residual_display_mode="manual", residual_custom_view=False
+                state,
+                **{f"{domain}_display_mode": "manual", f"{domain}_custom_view": False},
             )
-        return replace(state, policy="manual")
-
-    def select_from_data_for_visible_axes(self, residual_available=False):
-        """Select From Data rendering without discarding saved Manual ranges."""
-        state = replace(
-            self, series_display_mode="from_data", series_custom_view=False
-        )
-        if residual_available:
-            state = replace(
-                state, residual_display_mode="from_data", residual_custom_view=False
-            )
-        return replace(state, policy="from_data")
-
-    def commit_current_view(self, axis_name, lower, upper, residual_available=False):
-        """Commit one visible axis viewport as Manual without changing its sibling."""
-        manual = AxisManualRange(lower, upper, lower, upper)
-        if axis_name == "series":
-            state = replace(
-                self,
-                series_manual=manual,
-                series_display_mode="manual",
-                series_custom_view=False,
-            )
-        elif axis_name == "residual":
-            state = replace(
-                self,
-                residual_manual=manual,
-                residual_display_mode="manual",
-                residual_custom_view=False,
-            )
-        else:
-            raise ValueError(f"Unsupported Y axis: {axis_name}")
         return replace(
-            state, policy=state.policy_for_effective_display(residual_available)
+            state,
+            policy=state.policy_for_effective_display(
+                main_left_available=main_left_available,
+                main_right_available=main_right_available,
+                residual_left_available=residual_left_available,
+                residual_right_available=residual_right_available,
+            ),
+        )
+
+    def select_from_data_for_visible_axes(
+        self, *, main_left_available=True, main_right_available=False,
+        residual_left_available=False, residual_right_available=False,
+    ):
+        """Select From Data rendering without discarding saved Manual ranges."""
+        state = self
+        for domain in self._active_domains(
+            main_left_available=main_left_available,
+            main_right_available=main_right_available,
+            residual_left_available=residual_left_available,
+            residual_right_available=residual_right_available,
+        ):
+            state = replace(
+                state,
+                **{f"{domain}_display_mode": "from_data", f"{domain}_custom_view": False},
+            )
+        return replace(
+            state,
+            policy=state.policy_for_effective_display(
+                main_left_available=main_left_available,
+                main_right_available=main_right_available,
+                residual_left_available=residual_left_available,
+                residual_right_available=residual_right_available,
+            ),
+        )
+
+    def commit_current_view(
+        self, axis_name, lower, upper, *, main_left_available=True,
+        main_right_available=False, residual_left_available=False,
+        residual_right_available=False,
+    ):
+        """Commit one visible axis viewport as Manual without changing its sibling."""
+        manual = AxisManualRange(lower, upper, lower, upper, configured=True)
+        if axis_name not in {"series", "right_series", "residual", "right_residual"}:
+            raise ValueError(f"Unsupported Y axis: {axis_name}")
+        state = replace(
+            self,
+            **{
+                f"{axis_name}_manual": manual,
+                f"{axis_name}_display_mode": "manual",
+                f"{axis_name}_custom_view": False,
+            },
+        )
+        return replace(
+            state,
+            policy=state.policy_for_effective_display(
+                main_left_available=main_left_available,
+                main_right_available=main_right_available,
+                residual_left_available=residual_left_available,
+                residual_right_available=residual_right_available,
+            ),
         )
 
 
@@ -494,7 +608,9 @@ class AppearanceSettings:
     time_series_x_label: str = "Date"
     residual_x_label: str = "Date"
     time_series_y_label: str = "Deformation"
+    right_y_label: str = ""
     residual_y_label: str = "Residual"
+    residual_right_y_label: str = ""
     font_size: float = 10.0
     grid_mode: str = "both"
     plot_background: str = "white"

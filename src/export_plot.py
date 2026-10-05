@@ -237,6 +237,10 @@ class TimeSeriesPlotExporter:
             except AttributeError:
                 pass
 
+        synchronize = getattr(self.plotter, "synchronizeSecondaryViewBoxGeometry", None)
+        if callable(synchronize):
+            synchronize()
+
         QApplication.processEvents()
 
     def _addCreditToRaster(self, filename, dpi, attribution_text):

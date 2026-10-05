@@ -1,4 +1,6 @@
-"""Compact editor for independent manual Time Series Y-axis bounds."""
+"""Transactional four-domain Manual Y-axis editor."""
+
+import math
 
 from qgis.PyQt.QtCore import pyqtSignal
 from qgis.PyQt.QtWidgets import (
@@ -14,25 +16,33 @@ from qgis.PyQt.QtWidgets import (
     QWidget,
 )
 
-from ...time_series.y_axis_range import resolve_manual_y_range
 from ...qt_compat import (
     FRAME_SHAPE_STYLED_PANEL,
     POPUP_WINDOW_FLAG,
     SIZE_POLICY_FIXED,
 )
-from ..spacing import SPACE_SM, SPACE_MD, SPACE_LG, SPACE_XL
+from ...time_series.y_axis_range import resolve_manual_y_range
+from ..icon_theme import icon as themed_icon
+from ..spacing import SPACE_LG, SPACE_MD, SPACE_SM, SPACE_XL
 
 
 class ManualYAxisPopup(QFrame):
-    """Anchored transactional editor for independent Series and Residual ranges."""
+    """Edit four independent Y domains without mutating authoritative state on open."""
 
     previewChanged = pyqtSignal(str, object, object)
-    applyRequested = pyqtSignal(object, object, object, object, object, object, object, object, object, object)
+    applyRequested = pyqtSignal(object)
     cancelRequested = pyqtSignal()
     currentViewRequested = pyqtSignal(str)
 
+    DOMAINS = (
+        ("series", "Main left", "Main L", "left_axis"),
+        ("right_series", "Main right", "Main R", "right_axis"),
+        ("residual", "Residual left", "Resid L", "residual_left"),
+        ("right_residual", "Residual right", "Resid R", "residual_right"),
+    )
+
     def __init__(self, parent=None):
-        """Create compact tabbed lower/upper Auto and numeric editors."""
+        """Create four always-visible tabs with per-domain Auto/numeric endpoints."""
         super().__init__(parent, POPUP_WINDOW_FLAG)
         self.setObjectName("popup_manual_y_axis")
         self.setFrameShape(FRAME_SHAPE_STYLED_PANEL)
@@ -40,28 +50,26 @@ class ManualYAxisPopup(QFrame):
         self._loading = False
         self._editors = {}
         self._control_axes = {}
-        self._changed = {"series": False, "residual": False}
-        self._captured_exact = {"series": None, "residual": None}
-        self._data_bounds = {"series": None, "residual": None}
+        self._changed = {name: False for name, *_ in self.DOMAINS}
+        self._captured_exact = {name: None for name, *_ in self.DOMAINS}
+        self._data_bounds = {name: None for name, *_ in self.DOMAINS}
+        self._available = {name: False for name, *_ in self.DOMAINS}
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(SPACE_XL, SPACE_LG, SPACE_XL, SPACE_LG)
         layout.setSpacing(SPACE_MD)
+
         title = QLabel("Manual Y-axis", self)
         title.setObjectName("label_manual_y_axis_title")
         layout.addWidget(title)
 
         self.tabs = QTabWidget(self)
-        self.series_tab = self._createAxisTab("series")
-        self.residual_tab = self._createAxisTab("residual")
-        self.tabs.addTab(self.series_tab, "Time series")
-        self.tabs.addTab(self.residual_tab, "Residuals")
+        for name, title, short_title, icon_name in self.DOMAINS:
+            tab = self._createAxisTab(name)
+            self.tabs.addTab(tab, themed_icon(icon_name), short_title)
+            self.tabs.setTabToolTip(self.tabs.count() - 1, title)
+            tab.setAccessibleName(title)
         layout.addWidget(self.tabs)
-
-        self.residual_message = QLabel("Residual inactive.", self.residual_tab)
-        self.residual_message.setToolTip("Residual inactive.")
-        self.residual_message.setWordWrap(False)
-        self.residual_tab.layout().insertWidget(0, self.residual_message)
 
         actions = QHBoxLayout()
         actions.addStretch(1)
@@ -75,28 +83,30 @@ class ManualYAxisPopup(QFrame):
         self.apply_button.clicked.connect(self._apply)
 
     def _createAxisTab(self, axis_name):
-        """Create one compact axis tab and register its controls."""
+        """Create and register controls for one canonical Y domain."""
         tab = QWidget(self)
         outer = QVBoxLayout(tab)
         outer.setContentsMargins(SPACE_SM, SPACE_MD, SPACE_SM, SPACE_SM)
-        outer.setSpacing(SPACE_SM)
+
         grid = QGridLayout()
-        grid.setContentsMargins(0, 0, 0, 0)
-        grid.setHorizontalSpacing(SPACE_LG)
-        grid.setVerticalSpacing(SPACE_SM)
         grid.addWidget(QLabel("Auto", tab), 0, 1)
         grid.addWidget(QLabel("Value", tab), 0, 2)
         controls = {}
+
         for row, bound in enumerate(("upper", "lower"), 1):
             auto = QCheckBox("", tab)
-            auto.setAccessibleName(f"{axis_name} {bound} automatic Y-axis bound")
             value = QDoubleSpinBox(tab)
-            value.setRange(-1000000000.0, 1000000000.0)
+            auto.setAccessibleName(
+                f"{axis_name} {bound} automatic Y-axis bound"
+            )
+            value.setAccessibleName(
+                f"{axis_name} {bound} manual Y-axis bound"
+            )
+            value.setRange(-1e9, 1e9)
             value.setDecimals(1)
             value.setSingleStep(1.0)
             value.setFixedWidth(105)
             value.setSizePolicy(SIZE_POLICY_FIXED, SIZE_POLICY_FIXED)
-            value.setAccessibleName(f"{axis_name} {bound} manual Y-axis bound")
             auto.toggled.connect(self._editorChanged)
             value.valueChanged.connect(self._editorChanged)
             self._control_axes[auto] = axis_name
@@ -105,139 +115,153 @@ class ManualYAxisPopup(QFrame):
             grid.addWidget(auto, row, 1)
             grid.addWidget(value, row, 2)
             controls[bound] = (auto, value)
-        self._editors[axis_name] = controls
+
         outer.addLayout(grid)
-        use_current_view = QPushButton("Use current view", tab)
-        use_current_view.setCheckable(False)
-        use_current_view.clicked.connect(
+        button = QPushButton("Use current view", tab)
+        button.clicked.connect(
             lambda _checked=False, name=axis_name: self.currentViewRequested.emit(name)
         )
-        outer.addWidget(use_current_view)
-        controls["use_current_view"] = use_current_view
+        outer.addWidget(button)
+        controls["use_current_view"] = button
+        self._editors[axis_name] = controls
         return tab
 
-    def openForBounds(self, series_range, residual_range, series_data, residual_data, residual_active):
-        """Load endpoint policies and retained values, seeding only missing drafts from data."""
+    def openForDomains(self, manuals, data_bounds, availability):
+        """Load drafts for all domains while preserving inactive stored values."""
         self._loading = True
-        self._changed = {"series": False, "residual": False}
-        self._captured_exact = {"series": None, "residual": None}
-        self._data_bounds = {
-            "series": tuple(series_data),
-            "residual": tuple(residual_data),
-        }
-        for axis_name, manual, data_bounds in (
-            ("series", series_range, series_data),
-            ("residual", residual_range, residual_data),
-        ):
-            data_lower, data_upper = data_bounds
+        self._available = dict(availability)
+        self._changed = {name: False for name, *_ in self.DOMAINS}
+        self._captured_exact = {name: None for name, *_ in self.DOMAINS}
+        self._data_bounds = dict(data_bounds)
+
+        for index, (name, _title, _short, _icon) in enumerate(self.DOMAINS):
+            manual = manuals[name]
+            bounds = data_bounds.get(name) or (0.0, 1.0)
             for bound_name, active, retained, seeded in (
-                ("lower", manual.lower, manual.retained_lower, data_lower),
-                ("upper", manual.upper, manual.retained_upper, data_upper),
+                ("lower", manual.lower, manual.retained_lower, bounds[0]),
+                ("upper", manual.upper, manual.retained_upper, bounds[1]),
             ):
-                auto, value = self._editors[axis_name][bound_name]
-                draft = retained if retained is not None else seeded
-                value.setValue(float(draft))
+                auto, value = self._editors[name][bound_name]
+                value.setValue(
+                    float(retained if retained is not None else seeded)
+                )
                 auto.setChecked(active is None)
+            self._setDomainEnabled(name, bool(availability.get(name, False)))
+            self.tabs.setTabEnabled(index, True)
+
         self._loading = False
-        self.setResidualActive(residual_active)
         self._updateState()
         self._closing_after_apply = False
 
-    def setResidualActive(self, active):
-        """Keep the Residual tab visible while toggling editor availability."""
-        for bound_name in ("lower", "upper"):
-            auto, value = self._editors["residual"][bound_name]
+    def _setDomainEnabled(self, name, active):
+        """Enable one domain's controls while keeping its tab visible."""
+        for bound in ("lower", "upper"):
+            auto, value = self._editors[name][bound]
             auto.setEnabled(active)
             value.setEnabled(active and not auto.isChecked())
-        self._editors["residual"]["use_current_view"].setEnabled(active)
-        self.residual_message.setVisible(not active)
+        self._editors[name]["use_current_view"].setEnabled(active)
 
     def setCurrentView(self, axis_name, lower, upper):
-        """Populate one tab from its visible Y-range without previewing or persisting."""
-        if axis_name not in self._editors:
+        """Populate one draft from its current ViewBox without committing settings."""
+        if not self._available.get(axis_name, False):
             return
-        button = self._editors[axis_name]["use_current_view"]
-        if not button.isEnabled():
-            return
+
         self._loading = True
-        for bound_name, value_number in (("lower", lower), ("upper", upper)):
-            auto, value = self._editors[axis_name][bound_name]
-            value.setValue(float(value_number))
+        for bound, number in (("lower", lower), ("upper", upper)):
+            auto, value = self._editors[axis_name][bound]
+            value.setValue(float(number))
             auto.setChecked(False)
         self._loading = False
         self._changed[axis_name] = True
         self._captured_exact[axis_name] = (float(lower), float(upper))
         self._updateState()
 
-    def bounds(self, axis_name):
-        """Return one tab's current bounds, using ``None`` for Auto."""
-        captured = self._captured_exact.get(axis_name)
+    def bounds(self, name):
+        """Return the draft lower/upper policy for one domain."""
+        captured = self._captured_exact.get(name)
         if captured is not None:
             return captured
-        controls = self._editors[axis_name]
         return tuple(
-            None if controls[name][0].isChecked() else float(controls[name][1].value())
-            for name in ("lower", "upper")
+            None if self._editors[name][bound][0].isChecked()
+            else float(self._editors[name][bound][1].value())
+            for bound in ("lower", "upper")
         )
 
-    def retainedBounds(self, axis_name):
-        """Return both numeric editor drafts regardless of Auto checkbox state."""
-        captured = self._captured_exact.get(axis_name)
+    def retainedBounds(self, name):
+        """Return retained numeric editor values for one domain."""
+        captured = self._captured_exact.get(name)
         if captured is not None:
             return captured
-        controls = self._editors[axis_name]
-        return tuple(float(controls[name][1].value()) for name in ("lower", "upper"))
+        return tuple(
+            float(self._editors[name][bound][1].value())
+            for bound in ("lower", "upper")
+        )
 
-    def _isValid(self, axis_name):
-        data_bounds = self._data_bounds.get(axis_name)
-        if data_bounds is None:
-            return False
-        lower, upper = self.bounds(axis_name)
-        return resolve_manual_y_range(*data_bounds, lower, upper) is not None
+    def _isValid(self, name):
+        """Return whether one active domain's draft can resolve to a finite range."""
+        if not self._available.get(name, False):
+            return True
+
+        lower, upper = self.bounds(name)
+        if lower is not None and upper is not None:
+            return (
+                math.isfinite(lower)
+                and math.isfinite(upper)
+                and lower < upper
+            )
+
+        data = self._data_bounds.get(name)
+        return data is not None and resolve_manual_y_range(
+            *data, lower, upper
+        ) is not None
 
     def _updateState(self):
-        residual_active = self._editors["residual"]["lower"][0].isEnabled()
-        for axis_name in ("series", "residual"):
-            for bound_name in ("lower", "upper"):
-                auto, value = self._editors[axis_name][bound_name]
+        """Refresh value-editor enablement and Apply validity."""
+        for name, *_ in self.DOMAINS:
+            for bound in ("lower", "upper"):
+                auto, value = self._editors[name][bound]
                 value.setEnabled(auto.isEnabled() and not auto.isChecked())
         self.apply_button.setEnabled(
-            self._isValid("series") and (not residual_active or self._isValid("residual"))
+            all(self._isValid(name) for name, *_ in self.DOMAINS)
         )
 
     def _editorChanged(self, *_args):
-        self._updateState()
+        """Track and preview one edited domain without committing settings."""
         if self._loading:
             return
-        axis_name = self._control_axes.get(self.sender())
-        if axis_name is None:
+        name = self._control_axes.get(self.sender())
+        if name is None:
             return
-        self._changed[axis_name] = True
-        self._captured_exact[axis_name] = None
-        if self._isValid(axis_name):
-            self.previewChanged.emit(axis_name, *self.bounds(axis_name))
+
+        self._changed[name] = True
+        self._captured_exact[name] = None
+        self._updateState()
+        if self._isValid(name):
+            self.previewChanged.emit(name, *self.bounds(name))
 
     def _apply(self):
+        """Emit changed-domain drafts and close without a Cancel signal."""
         if not self.apply_button.isEnabled():
             return
+
+        payload = {}
+        for name, *_ in self.DOMAINS:
+            payload[name] = {
+                "bounds": self.bounds(name),
+                "retained": self.retainedBounds(name),
+                "changed": self._changed[name],
+            }
         self._closing_after_apply = True
-        self.applyRequested.emit(
-            *self.bounds("series"),
-            *self.bounds("residual"),
-            *self.retainedBounds("series"),
-            *self.retainedBounds("residual"),
-            self._changed["series"],
-            self._changed["residual"],
-        )
+        self.applyRequested.emit(payload)
         self.close()
 
     def closeAfterCommit(self):
-        """Close after an external shortcut commits without emitting Cancel."""
+        """Close after external completion without emitting Cancel."""
         self._closing_after_apply = True
         self.close()
 
     def closeEvent(self, event):
-        """Treat popup dismissal and Escape exactly like Cancel."""
+        """Treat dismissal and Escape as transaction cancellation."""
         if not self._closing_after_apply:
             self.cancelRequested.emit()
         self._closing_after_apply = False

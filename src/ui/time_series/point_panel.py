@@ -41,7 +41,7 @@ from ...qt_compat import (
 
 from .committed_columns import (
     COMMITTED_SEQUENCE_COLUMN_WIDTH, COMMITTED_VISIBLE_COLUMN_WIDTH,
-    CommittedTimeSeriesColumn,
+    COMMITTED_Y_AXIS_COLUMN_WIDTH, CommittedTimeSeriesColumn,
 )
 from .committed_model import CommittedTimeSeriesModel
 from .committed_view import CommittedTimeSeriesView
@@ -511,6 +511,7 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         header.setSectionResizeMode(CommittedTimeSeriesColumn.VISIBLE, HEADER_FIXED)
         header.setSectionResizeMode(CommittedTimeSeriesColumn.SEQUENCE, HEADER_FIXED)
         header.setSectionResizeMode(CommittedTimeSeriesColumn.LABEL, HEADER_STRETCH)
+        header.setSectionResizeMode(CommittedTimeSeriesColumn.Y_AXIS, HEADER_FIXED)
         header.setSectionResizeMode(CommittedTimeSeriesColumn.TARGET, HEADER_FIXED)
         header.setSectionResizeMode(CommittedTimeSeriesColumn.REFERENCE, HEADER_FIXED)
         self.committed_view.setColumnWidth(
@@ -518,6 +519,12 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         )
         self.committed_view.setColumnWidth(
             CommittedTimeSeriesColumn.SEQUENCE, COMMITTED_SEQUENCE_COLUMN_WIDTH
+        )
+        self.committed_view.setColumnWidth(
+            CommittedTimeSeriesColumn.Y_AXIS, COMMITTED_Y_AXIS_COLUMN_WIDTH
+        )
+        self.committed_view.setItemDelegateForColumn(
+            CommittedTimeSeriesColumn.Y_AXIS, self.committed_type_indicator_delegate
         )
         for column in (
             CommittedTimeSeriesColumn.TARGET,
@@ -642,6 +649,10 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         """Project session clipboard availability without owning clipboard state."""
         self._clipboard_categories = tuple(categories)
         self.refresh_removal_actions()
+
+    def set_y_axis_copy_paste_icons(self, *, paste_side=None):
+        """Project the copied Y-axis snapshot into the shared Paste action."""
+        self.committed_view.set_y_axis_copy_paste_icons(paste_side=paste_side)
 
     def _sync_remove_button_enabled(self):
         """Mirror the shared Remove action state onto the bottom button."""
