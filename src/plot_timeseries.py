@@ -9,7 +9,7 @@ from uuid import UUID
 
 import numpy as np
 from ..external import pyqtgraph as pg
-from qgis.PyQt.QtCore import QPointF, QRectF
+from qgis.PyQt.QtCore import QPointF, QRectF, QTimer
 from qgis.PyQt.QtGui import QColor, QFont
 from qgis.PyQt.QtWidgets import QApplication, QGraphicsWidget
 from ..external.pyqtgraph.graphicsItems.LegendItem import (
@@ -78,6 +78,7 @@ class PassiveSecondaryViewBox(pg.ViewBox):
         self._resize_signal_connected = False
         self._history_signal_callback = None
         self._interaction_signal_callback = None
+        self._layout_signal_callback = None
         self.setAcceptedMouseButtons(NO_MOUSE_BUTTON)
         self.setAcceptHoverEvents(False)
 
@@ -104,6 +105,12 @@ class PassiveSecondaryViewBox(pg.ViewBox):
                 primary.sigYRangeChanged.disconnect(history_callback)
             except (RuntimeError, TypeError):
                 pass
+        layout_callback = self._layout_signal_callback
+        if layout_callback is not None:
+            try:
+                self.sigYRangeChanged.disconnect(layout_callback)
+            except (RuntimeError, TypeError):
+                pass
         if primary is not None and self._resize_signal_connected:
             try:
                 primary.sigResized.disconnect(self.syncGeometry)
@@ -112,6 +119,7 @@ class PassiveSecondaryViewBox(pg.ViewBox):
         self._resize_signal_connected = False
         self._history_signal_callback = None
         self._interaction_signal_callback = None
+        self._layout_signal_callback = None
         self._primary_view_box = None
 
     @staticmethod
@@ -518,6 +526,8 @@ class PlotTs():
         self._hover_marker_plot = None
         self._hover_marker_owner = None
         self._hover_tolerance_px = 10.0
+        self._stacked_y_gutter_sync_pending = False
+        self._stacked_y_gutter_sync_generation = 0
 
     @contextmanager
     def axisViewUpdateGuard(self):
@@ -947,9 +957,16 @@ class PlotTs():
 
         def cache_y_range(*_args):
             self._cachePrimaryYRange(primary)
+            self._scheduleStackedYAxisGutterSynchronization()
 
         secondary._history_signal_callback = cache_y_range
         primary.sigYRangeChanged.connect(cache_y_range)
+
+        def schedule_layout_refresh(*_args):
+            self._scheduleStackedYAxisGutterSynchronization()
+
+        secondary._layout_signal_callback = schedule_layout_refresh
+        secondary.sigYRangeChanged.connect(schedule_layout_refresh)
         secondary._interaction_signal_callback = sync_y_interaction
         primary.sigRangeChangedManually.connect(sync_y_interaction)
         self._initializePrimaryYRangeHistory(primary)
@@ -2923,6 +2940,8 @@ class PlotTs():
 
     def _clearPlotWidget(self):
         """Destroy plot axes and canvas items without deciding record lifetime."""
+        self._stacked_y_gutter_sync_generation += 1
+        self._stacked_y_gutter_sync_pending = False
         self._clearHoverReadout()
         self._discardHoverMarker()
         self._removeLegend(
@@ -3095,6 +3114,77 @@ class PlotTs():
                 label = getattr(axis, "label", None)
                 if label is not None:
                     label.setVisible(active)
+        self._synchronizeStackedYAxisGutters()
+        self._scheduleStackedYAxisGutterSynchronization()
+
+    @staticmethod
+    def _naturalVerticalAxisWidth(axis):
+        """Return one AxisItem's current natural width using pyqtgraph sizing APIs."""
+        axis.setWidth(None)
+        try:
+            return float(axis.minimumWidth())
+        except (AttributeError, TypeError, ValueError):
+            # ``setWidth(None)`` has already restored automatic sizing.  The current
+            # geometry is a safe compatibility fallback for older Qt bindings.
+            return float(axis.geometry().width())
+
+    def _synchronizeStackedYAxisGutters(self):
+        """Keep stacked main/residual data rectangles horizontally aligned.
+
+        Left and Right gutter widths are measured independently from the current
+        natural AxisItem requirements, then the larger width on each side is
+        reserved by both stacked plots.  Axis activity continues to control tick
+        and label visibility; an inactive axis may therefore reserve blank space.
+        """
+        main = self.ax
+        residual = self.ax_residuals
+        if main is None:
+            return
+
+        main_left = main.getAxis("left")
+        main_right = main.getAxis("right")
+        if residual is None:
+            main_left.setWidth(None)
+            main_right.setWidth(None)
+            return
+
+        residual_left = residual.getAxis("left")
+        residual_right = residual.getAxis("right")
+
+        # always restore automatic sizing before measuring so a previously shared
+        # fixed width cannot become the input to the next calculation.
+        left_width = max(
+            self._naturalVerticalAxisWidth(main_left),
+            self._naturalVerticalAxisWidth(residual_left),
+        )
+        right_width = max(
+            self._naturalVerticalAxisWidth(main_right),
+            self._naturalVerticalAxisWidth(residual_right),
+        )
+
+        for axis in (main_left, residual_left):
+            axis.setWidth(left_width)
+        for axis in (main_right, residual_right):
+            axis.setWidth(right_width)
+
+    def _scheduleStackedYAxisGutterSynchronization(self):
+        """Coalesce range-driven gutter recalculation onto the Qt event loop."""
+        if self.ax is None or self.ax_residuals is None:
+            return
+        if self._stacked_y_gutter_sync_pending:
+            return
+        self._stacked_y_gutter_sync_pending = True
+        generation = self._stacked_y_gutter_sync_generation
+
+        def synchronize():
+            self._stacked_y_gutter_sync_pending = False
+            if generation != self._stacked_y_gutter_sync_generation:
+                return
+            if self.ax is None or self.ax_residuals is None:
+                return
+            self._synchronizeStackedYAxisGutters()
+
+        QTimer.singleShot(0, synchronize)
 
     def _applySecondaryDataRanges(self):
         """Compatibility no-op; secondary ranges are governed by stored domain policy."""
