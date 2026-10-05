@@ -4,8 +4,9 @@ from qgis.PyQt import QtGui
 from qgis.PyQt.QtCore import QAbstractTableModel, QModelIndex, pyqtSignal
 
 from ...qt_compat import (
-    ALIGN_CENTER, ALIGN_LEFT, ALIGN_VCENTER, CHECK_STATE_ROLE, CHECKED,
-    DECORATION_ROLE, DISPLAY_ROLE, EDIT_ROLE, FONT_ROLE, FOREGROUND_ROLE,
+    ACCESSIBLE_DESCRIPTION_ROLE, ACCESSIBLE_TEXT_ROLE, ALIGN_CENTER, ALIGN_LEFT,
+    ALIGN_VCENTER, CHECK_STATE_ROLE, CHECKED, DECORATION_ROLE, DISPLAY_ROLE,
+    EDIT_ROLE, FONT_ROLE, FOREGROUND_ROLE,
     HORIZONTAL, ITEM_IS_EDITABLE, ITEM_IS_ENABLED, ITEM_IS_SELECTABLE,
     ITEM_IS_USER_CHECKABLE, TEXT_ALIGNMENT_ROLE, TOOLTIP_ROLE, UNCHECKED,
 )
@@ -129,14 +130,12 @@ class CommittedTimeSeriesModel(QAbstractTableModel):
                 return QtGui.QBrush(placeholder_colour())
             return None
         if column == CommittedTimeSeriesColumn.Y_AXIS:
-            side = record.presentation.y_axis_side
-            if role == DISPLAY_ROLE:
-                return "R" if side == "right" else "L"
-            if role == TOOLTIP_ROLE:
-                return (
-                    "Plotted on right Y axis" if side == "right"
-                    else "Plotted on left Y axis"
-                )
+            side = "right" if record.presentation.y_axis_side == "right" else "left"
+            accessible_text = "Right Y axis" if side == "right" else "Left Y axis"
+            if role == DECORATION_ROLE:
+                return themed_icon(f"{side}_axis")
+            if role in (TOOLTIP_ROLE, ACCESSIBLE_TEXT_ROLE, ACCESSIBLE_DESCRIPTION_ROLE):
+                return accessible_text
             if role == TEXT_ALIGNMENT_ROLE:
                 return ALIGN_CENTER
             return None

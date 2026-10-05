@@ -16,6 +16,7 @@ from ...qt_compat import (
     QActionGroup,
     SIZE_POLICY_EXPANDING,
     SIZE_POLICY_PREFERRED,
+    TOOL_BUTTON_ICON_ONLY,
     TOOL_BUTTON_INSTANT_POPUP,
 )
 from ..styles import (
@@ -216,22 +217,23 @@ class TimeSeriesToolbar(QToolBar):
         self.series_y_axis_group = QActionGroup(self.series_y_axis_menu)
         self.series_y_axis_group.setExclusive(True)
         self.series_y_axis_actions = {}
-        for side, text, icon_name, object_name in (
-            ("left", "Left", "left_axis", "action_ts_series_y_left"),
-            ("right", "Right", "right_axis", "action_ts_series_y_right"),
+        for side, text, accessible_text, icon_name, object_name in (
+            ("left", "Left axis", "Left Y axis", "left_axis", "action_ts_series_y_left"),
+            ("right", "Right axis", "Right Y axis", "right_axis", "action_ts_series_y_right"),
         ):
             action = QAction(themed_icon(icon_name), text, self.series_y_axis_group)
             action.setObjectName(object_name)
             action.setCheckable(True)
             action.setData(side)
-            action.setToolTip(f"{text} Y axis")
-            action.setStatusTip(f"Plot this time series on the {text.lower()} Y axis")
+            action.setToolTip(accessible_text)
+            action.setStatusTip(f"Plot this time series on the {side} Y axis")
             self.series_y_axis_group.addAction(action)
             self.series_y_axis_menu.addAction(action)
             self.series_y_axis_actions[side] = action
         self.series_y_axis_actions["left"].setChecked(True)
         self.series_y_axis_button.setMenu(self.series_y_axis_menu)
         self.series_y_axis_button.setCheckable(False)
+        self.series_y_axis_button.setToolButtonStyle(TOOL_BUTTON_ICON_ONLY)
         self.series_y_axis_button.setIconSize(self.iconSize())
         self.series_y_axis_button.setAccessibleName("Y axis; current: Left")
         self.series_y_axis_button.setToolTip("Choose the Y axis for this time series\n\nCurrent: Left")

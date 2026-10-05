@@ -523,6 +523,9 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         self.committed_view.setColumnWidth(
             CommittedTimeSeriesColumn.Y_AXIS, COMMITTED_Y_AXIS_COLUMN_WIDTH
         )
+        self.committed_view.setItemDelegateForColumn(
+            CommittedTimeSeriesColumn.Y_AXIS, self.committed_type_indicator_delegate
+        )
         for column in (
             CommittedTimeSeriesColumn.TARGET,
             CommittedTimeSeriesColumn.REFERENCE,
