@@ -76,6 +76,7 @@ class PassiveSecondaryViewBox(pg.ViewBox):
         super().__init__(*args, **kwargs)
         self._primary_view_box = primary_view_box
         self._resize_signal_connected = False
+        self._history_signal_callback = None
         self._interaction_signal_callback = None
         self.setAcceptedMouseButtons(NO_MOUSE_BUTTON)
         self.setAcceptHoverEvents(False)
@@ -97,12 +98,19 @@ class PassiveSecondaryViewBox(pg.ViewBox):
                 primary.sigRangeChangedManually.disconnect(callback)
             except (RuntimeError, TypeError):
                 pass
+        history_callback = self._history_signal_callback
+        if primary is not None and history_callback is not None:
+            try:
+                primary.sigYRangeChanged.disconnect(history_callback)
+            except (RuntimeError, TypeError):
+                pass
         if primary is not None and self._resize_signal_connected:
             try:
                 primary.sigResized.disconnect(self.syncGeometry)
             except (RuntimeError, TypeError):
                 pass
         self._resize_signal_connected = False
+        self._history_signal_callback = None
         self._interaction_signal_callback = None
         self._primary_view_box = None
 
@@ -677,10 +685,17 @@ class PlotTs():
         """Compatibility alias that never reads persistence from the renderer."""
         self.refreshCompatibilityViews()
 
+    def _disposeSecondaryInteractionLinks(self):
+        """Disconnect every plugin-owned primary/secondary signal link idempotently."""
+        for secondary in (self.ax_right_view_box, self.ax_residuals_right_view_box):
+            if secondary is not None:
+                secondary.disposeInteractionLinks()
+
     def dispose(self):
-        """Disconnect renderer-owned subscriptions and hover signal handlers."""
+        """Disconnect renderer-owned subscriptions, hover, and axis interaction links."""
         self._disconnectHoverSignals()
         self._discardHoverMarker()
+        self._disposeSecondaryInteractionLinks()
         unsubscribe = self._settings_unsubscribe
         self._settings_unsubscribe = None
         if unsubscribe is not None:
@@ -930,6 +945,11 @@ class PlotTs():
         def sync_y_interaction(mask):
             self._handleManualRangeChange(primary, mask, residual=residual)
 
+        def cache_y_range(*_args):
+            self._cachePrimaryYRange(primary)
+
+        secondary._history_signal_callback = cache_y_range
+        primary.sigYRangeChanged.connect(cache_y_range)
         secondary._interaction_signal_callback = sync_y_interaction
         primary.sigRangeChangedManually.connect(sync_y_interaction)
         self._initializePrimaryYRangeHistory(primary)
@@ -2602,21 +2622,19 @@ class PlotTs():
         )
         left_axis = AutomaticContrastAxisItem(orientation='left')
         plot_item = self.ui.plot_widget.addPlot(
-            row=row, col=0, axisItems={'bottom': bottom_axis, 'left': left_axis, 'right': AutomaticContrastAxisItem(orientation='right')}
+            row=row,
+            col=0,
+            axisItems={
+                'bottom': bottom_axis,
+                'left': left_axis,
+                'right': AutomaticContrastAxisItem(orientation='right'),
+            },
         )
         self._stylePlotFrame(plot_item)
-        self._connectAxisViewSignals(plot_item, row=row)
         self._connectAutoButton(plot_item)
         plot_item.showButtons()
         self.ui.plot_widget.plot_items.append(plot_item)
         return plot_item
-
-    def _connectAxisViewSignals(self, plot_item, *, row):
-        """Keep passive range caches; semantic Custom state uses manual signals only."""
-        view_box = plot_item.getViewBox()
-        view_box.sigYRangeChanged.connect(lambda *args, vb=view_box: self._cachePrimaryYRange(vb))
-        if row == 0:
-            view_box.sigXRangeChanged.connect(lambda *args: None)
 
     def _connectAutoButton(self, plot_item):
         """Replace all native Auto receivers with one application-owned handler."""
@@ -2920,9 +2938,7 @@ class PlotTs():
         self._residual_legend = None
         self._main_legend_overlay = None
         self._residual_legend_overlay = None
-        for secondary in (self.ax_right_view_box, self.ax_residuals_right_view_box):
-            if secondary is not None:
-                secondary.disposeInteractionLinks()
+        self._disposeSecondaryInteractionLinks()
         self.ui.plot_widget.clear()
         self.ui.plot_widget.plot_items = []
         self.ax = None
