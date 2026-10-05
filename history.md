@@ -1,6 +1,6 @@
 ### History
 
-v2.12.0dev
+v2.12.0
 
 - Added per-series Left/Right Y-axis assignment with Left/Right axis icons in the Selections list.
 - Added four-domain Data range, Symmetric, Manual, and Custom Y-range controls.
