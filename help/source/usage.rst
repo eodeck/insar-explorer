@@ -47,7 +47,9 @@ Time-series list
 Added time series remain in **Selections**, allowing multiple series to be
 retained and compared while you work with other layers or create another
 pending selection. Select one or more rows to use actions that apply to stored
-time series.
+time series. The **Y** column shows whether each stored time series is assigned
+to the Left or Right Y axis using the corresponding axis icon. The icon is
+informational; change the assignment with **Y axis** in the time-series toolbar.
 
 Rename, remove, and copy settings
 ---------------------------------
@@ -63,9 +65,13 @@ Appearance
 ----------
 
 The time-series toolbar separates per-series controls from plot-level controls.
-Use **Style**, **Fit**, **Replica**, and **Legend entry** for the selected or
-pending time series. Use **Plot legend**, **X range**, **Y range**,
+Use **Style**, **Fit**, **Replica**, **Y axis**, and **Legend entry** for the
+selected or pending time series. Use **Plot legend**, **X range**, **Y range**,
 **Appearance**, and **Export** for the plot as a whole.
+
+Appearance also provides independent labels for **Main left Y**, **Main right Y**,
+**Residual left Y**, and **Residual right Y**. A label for an inactive axis is
+preserved and appears again when that axis becomes active.
 
 Style
 -----
@@ -123,6 +129,38 @@ Replica
 Use **Replica** to toggle replicas for the current time series. Open
 **Replica settings** from the split-button arrow to configure replica behavior
 and appearance.
+
+Y axis
+------
+
+Use **Y axis** to assign the selected or pending time series to the **Left axis**
+or **Right axis**. The toolbar button shows the current assignment as an icon.
+The assignment applies to the complete time-series presentation, including its
+main series, Fit, Replica, Ensemble, and residual graphics where applicable.
+
+New time series start on the Left axis. A pending time series can be moved to
+the Right axis before it is added to **Selections**. For example, assign one
+time series to the Left axis and another to the Right axis when they have
+different value ranges but should be compared over the same time interval.
+
+Y range
+-------
+
+Use **Y range** to control the vertical range of the time-series and residual
+plots. Left and Right Y axes keep independent ranges. Available modes include
+**Data range**, **Symmetric**, and **Manual**. Manual ranges are remembered
+separately for the Main Left, Main Right, Residual Left, and Residual Right
+axes.
+
+When a saved Manual range exists for an active axis, choosing **Manual**
+restores that range. If no active axis has a saved Manual range yet, the range
+editor opens. If only some active axes have saved Manual ranges, those axes
+switch to their saved Manual ranges while unconfigured axes keep their current
+range mode.
+
+When both Left and Right axes are visible, plot-body pan and zoom keep the two
+scales visually synchronized while preserving their independent numeric
+ranges.
 
 Export
 ======
