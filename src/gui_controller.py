@@ -232,7 +232,6 @@ class GuiController(QObject):
         )
         self.time_series_settings = self.choose_point_click_handler.plot_ts.settings_model
         plotter = self.choose_point_click_handler.plot_ts
-        plotter.axis_view_changed_callback = self._axisViewportChanged
         plotter.auto_view_requested_callback = self._handlePlotAutoRequest
         plotter.axis_state_sync_callback = self._syncAxisToolbarControls
         plotter.fit_failure_callback = self._handleTimeSeriesFitFailure
@@ -2949,7 +2948,7 @@ class GuiController(QObject):
             self._syncTimeSeriesYAxisAssignmentControl()
             raise
         self._syncTimeSeriesYAxisAssignmentControl()
-        self._syncTimeSeriesYAxisControls(self.time_series_settings.y_axis.policy)
+        self._syncTimeSeriesYAxisControls()
         self._refreshTimeSeriesPlotActionState()
         return True
 
@@ -3819,32 +3818,7 @@ class GuiController(QObject):
     def _syncAxisToolbarControls(self):
         """Refresh both axis selectors from authoritative runtime state without drawing."""
         self._syncTimeSeriesXAxisControls()
-        self._syncTimeSeriesYAxisControls(self.time_series_settings.y_axis.policy)
-
-    def _axisViewportChanged(self, axis_name):
-        """Mark an interactively changed ViewBox as Custom without redrawing."""
-        if axis_name == "x":
-            state = self.time_series_settings.x_axis
-            if not state.custom_view:
-                self.time_series_settings.replace_domain(
-                    "x_axis", replace(state, custom_view=True)
-                )
-            self._syncTimeSeriesXAxisControls()
-            return
-
-        state = self.time_series_settings.y_axis
-        if axis_name == "series_y":
-            updated = replace(state, series_custom_view=True)
-        elif axis_name == "residual_y":
-            if not self.choose_point_click_handler.plot_ts.plot_residuals_flag:
-                self._syncTimeSeriesYAxisControls(state.policy)
-                return
-            updated = replace(state, residual_custom_view=True)
-        else:
-            return
-        if updated != state:
-            self.time_series_settings.replace_domain("y_axis", updated)
-        self._syncTimeSeriesYAxisControls(updated.policy)
+        self._syncTimeSeriesYAxisControls()
 
     def _handlePlotAutoRequest(self):
         """Reset the coordinated plot workspace to canonical From Data ranges."""
@@ -3872,7 +3846,7 @@ class GuiController(QObject):
             plotter.resetSharedXAxisFromData()
             plotter.refreshAutomaticAxisRanges(draw=False)
             self._syncTimeSeriesXAxisControls()
-            self._syncTimeSeriesYAxisControls(updated_y.policy)
+            self._syncTimeSeriesYAxisControls()
             plotter._draw()
 
     def _restoreTimeSeriesXAxisMode(self):
@@ -4066,28 +4040,17 @@ class GuiController(QObject):
         plotter.manual_y_upper = self.time_series_manual_y_upper
         plotter.residual_manual_y_lower = self.residual_manual_y_lower
         plotter.residual_manual_y_upper = self.residual_manual_y_upper
-        self._syncTimeSeriesYAxisControls(self.time_series_settings.y_axis.policy)
+        self._syncTimeSeriesYAxisControls()
 
-    def _syncTimeSeriesYAxisControls(self, mode):
-        """Synchronize the toolbar from policy and aggregate visible custom state."""
+    def _syncTimeSeriesYAxisControls(self):
+        """Synchronize the Y-range toolbar from all active rendering domains."""
         state = self.time_series_settings.y_axis
-        residual_visible = bool(
-            self.choose_point_click_handler.plot_ts.plot_residuals_flag
-        )
-        if state.policy == "symmetric":
-            presentation_mode = state.policy
-        else:
-            presentation_mode = state.policy_for_effective_display(
-                residual_left_available=residual_visible
-            )
+        kwargs = self._yAxisAvailabilityKwargs()
+        presentation_mode = state.policy_for_effective_display(**kwargs)
+        custom_view = state.has_custom_view(**kwargs)
         self.ui.time_series_toolbar.setSelectedYAxisMode(
             presentation_mode,
-            self.time_series_manual_y_lower,
-            self.time_series_manual_y_upper,
-            self.residual_manual_y_lower,
-            self.residual_manual_y_upper,
-            residual_visible,
-            state.has_custom_view(residual_left_available=residual_visible),
+            custom_view=custom_view,
         )
 
     def _yAxisAvailabilityKwargs(self):
@@ -4101,23 +4064,28 @@ class GuiController(QObject):
         }
 
     def _applyTimeSeriesYAxisMode(self, mode, refresh=True):
-        """Apply a toolbar Y policy to active domains only; preserve inactive state."""
-        if mode not in {"from_data", "symmetric", "manual"}:
+        """Apply From Data or Symmetric to active domains; preserve inactive state."""
+        if mode not in {"from_data", "symmetric"}:
             mode = "from_data"
         plotter = self.choose_point_click_handler.plot_ts
+        availability = plotter.yAxisDomainAvailability()
         kwargs = self._yAxisAvailabilityKwargs()
         state = self.time_series_settings.y_axis
-        active = state._active_domains(**kwargs)
-        if mode == "manual":
-            for domain in active:
-                state = replace(state, **{f"{domain}_display_mode": "manual", f"{domain}_custom_view": False})
-        else:
-            for domain in active:
-                state = replace(state, **{f"{domain}_display_mode": mode, f"{domain}_custom_view": False})
+        active = tuple(
+            domain for domain, available in availability.items() if available
+        )
+        for domain in active:
+            state = replace(
+                state,
+                **{
+                    f"{domain}_display_mode": mode,
+                    f"{domain}_custom_view": False,
+                },
+            )
         policy = state.policy_for_effective_display(**kwargs)
         state = replace(state, policy=policy)
         self.time_series_settings.replace_domain("y_axis", state)
-        self._syncTimeSeriesYAxisControls(policy)
+        self._syncTimeSeriesYAxisControls()
         if refresh:
             plotter.refreshAutomaticAxisRanges()
 
@@ -4156,7 +4124,7 @@ class GuiController(QObject):
         self.time_series_settings.replace_domain("y_axis", state)
         plotter = self.choose_point_click_handler.plot_ts
         plotter.refreshAutomaticAxisRanges()
-        self._syncTimeSeriesYAxisControls(state.policy)
+        self._syncTimeSeriesYAxisControls()
 
     def setTimeSeriesYAxisMode(self, mode):
         """Apply the selected aggregate Y-axis policy."""
@@ -4166,7 +4134,7 @@ class GuiController(QObject):
 
         configured = self._usableStoredManualYAxisDomains()
         if not configured:
-            self._syncTimeSeriesYAxisControls(self.time_series_settings.y_axis.policy)
+            self._syncTimeSeriesYAxisControls()
             self.showManualYAxisPopup()
             return
 
@@ -4177,7 +4145,7 @@ class GuiController(QObject):
         plotter = self.choose_point_click_handler.plot_ts
         availability = plotter.yAxisDomainAvailability()
         if not any(availability.values()):
-            self._syncTimeSeriesYAxisControls(self.time_series_settings.y_axis.policy)
+            self._syncTimeSeriesYAxisControls()
             return
         if self._manual_y_axis_session is not None:
             self.manual_y_axis_popup.show(); self.manual_y_axis_popup.raise_(); self.manual_y_axis_popup.activateWindow(); return
@@ -4197,11 +4165,11 @@ class GuiController(QObject):
         """Copy one current domain viewport into the popup draft without committing it."""
         if self._manual_y_axis_session is None:
             return
-        plotter = self.choose_point_click_handler.plot_ts
-        view_box = plotter._viewBoxForYAxisDomain(axis_name)
-        if view_box is None:
+        viewport = self.choose_point_click_handler.plot_ts.captureViewport()
+        range_ = viewport.get(axis_name)
+        if range_ is None:
             return
-        lower, upper = (float(value) for value in view_box.viewRange()[1])
+        lower, upper = (float(value) for value in range_)
         self.manual_y_axis_popup.setCurrentView(axis_name, lower, upper)
 
     def previewManualYAxisRange(self, axis_name, lower, upper):
@@ -4221,7 +4189,7 @@ class GuiController(QObject):
         changed = [name for name, values in payload.items() if values["changed"]]
         self._manual_y_axis_session = None
         if not changed:
-            self._syncTimeSeriesYAxisControls(self.time_series_settings.y_axis.policy)
+            self._syncTimeSeriesYAxisControls()
             return
         state = self.time_series_settings.y_axis
         for domain in changed:
@@ -4242,7 +4210,7 @@ class GuiController(QObject):
         self.time_series_settings.replace_domain("y_axis", state)
         plotter = self.choose_point_click_handler.plot_ts
         plotter.refreshAutomaticAxisRanges()
-        self._syncTimeSeriesYAxisControls(state.policy)
+        self._syncTimeSeriesYAxisControls()
 
     def cancelManualYAxisRange(self):
         """Restore original settings and all captured X/four-domain Y viewports."""
@@ -4253,7 +4221,7 @@ class GuiController(QObject):
         plotter = self.choose_point_click_handler.plot_ts
         self.time_series_settings.replace_domain("y_axis", session["y_axis"])
         plotter.restoreViewport(session["viewport"])
-        self._syncTimeSeriesYAxisControls(session["y_axis"].policy)
+        self._syncTimeSeriesYAxisControls()
         plotter._draw()
 
     def _loadReplicaInterval(self):
@@ -4498,7 +4466,7 @@ class GuiController(QObject):
         if self._shouldReapplyAutomaticYAxisAfterReplicaChange():
             with plot.axisViewUpdateGuard():
                 plot.setYlims(ax=plot.ax, parms=plot.parms["time series plot"])
-        self._syncTimeSeriesYAxisControls(self.time_series_settings.y_axis.policy)
+        self._syncTimeSeriesYAxisControls()
         plot._draw()
 
     def _applyTimeSeriesReplicaState(self, refresh=True):

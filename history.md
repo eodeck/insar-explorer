@@ -2,7 +2,7 @@
 
 v2.12.0dev
 
-- Added per-series Left/Right Y-axis assignment with a `L/R` list indicator.
+- Added per-series Left/Right Y-axis assignment with Left/Right axis icons in the Selections list.
 - Added four-domain Data range, Symmetric, Manual, and Custom Y-range controls.
 - Added independent Main/Residual Left/Right Y-axis labels in Appearance settings.
 

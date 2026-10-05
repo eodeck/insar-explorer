@@ -512,12 +512,10 @@ class PlotTs():
         self._y_data_ranges = {}
         self._last_replica_y_data = []
         self._axis_view_update_depth = 0
-        self.axis_view_changed_callback = None
         self.axis_state_sync_callback = None
         self.fit_failure_callback = None
         self.fit_success_callback = None
         self.analysis_state_sync_callback = None
-        self._last_axis_ranges = {}
         self._primary_y_ranges = {}
         self._new_record_analysis = self._snapshotAnalysisDefaults()
         self._hover_scene = None
@@ -531,16 +529,12 @@ class PlotTs():
 
     @contextmanager
     def axisViewUpdateGuard(self):
-        """Ignore ViewBox range signals caused by application-driven updates."""
+        """Keep passive Y-range history at an application-driven range baseline."""
         self._axis_view_update_depth += 1
         try:
             yield
         finally:
             self._axis_view_update_depth -= 1
-
-    def _axisViewChangeAllowed(self):
-        """Return whether a range signal represents an interactive viewport change."""
-        return self._axis_view_update_depth == 0
 
     @staticmethod
     def rangesAreClose(first, second, *, rel_tol=1e-9, abs_tol=1e-7):
@@ -550,23 +544,6 @@ class PlotTs():
         span = max(abs(first[1] - first[0]), abs(second[1] - second[0]), 1.0)
         tolerance = max(abs_tol, span * rel_tol)
         return all(abs(float(a) - float(b)) <= tolerance for a, b in zip(first, second))
-
-    def _handleAxisRangeChanged(self, axis_name, view_box, axis_index):
-        """Record one axis-specific range and report only material user changes."""
-        current = tuple(float(value) for value in view_box.viewRange()[axis_index])
-        previous = self._last_axis_ranges.get(axis_name)
-        self._last_axis_ranges[axis_name] = current
-        if previous is None or self.rangesAreClose(previous, current):
-            return
-        if not self._axisViewChangeAllowed() or self.axis_view_changed_callback is None:
-            return
-        self.axis_view_changed_callback(axis_name)
-
-    def _notifyAxisViewChanged(self, axis_name):
-        """Report one interactive axis viewport change without redrawing."""
-        if not self._axisViewChangeAllowed() or self.axis_view_changed_callback is None:
-            return
-        self.axis_view_changed_callback(axis_name)
 
     @property
     def series_history(self) -> List[TimeSeriesRecord]:
@@ -1072,8 +1049,11 @@ class PlotTs():
         key = id(primary)
         current = self._primaryYRange(primary)
         state = self._primary_y_ranges.get(key)
-        previous = current if state is None else state.current
-        state = _PrimaryYRangeHistory(previous, current)
+        if self._axis_view_update_depth:
+            state = _PrimaryYRangeHistory(current, current)
+        else:
+            previous = current if state is None else state.current
+            state = _PrimaryYRangeHistory(previous, current)
         self._primary_y_ranges[key] = state
         return state
 
@@ -2459,36 +2439,6 @@ class PlotTs():
         self._draw()
         return True
 
-    def setManualYRanges(self, series_manual, residual_manual, residual_available):
-        """Preview the complete Y editor draft through the committed render paths."""
-        state = replace(
-            self.settings_model.y_axis,
-            series_manual=series_manual,
-            residual_manual=residual_manual,
-            series_display_mode=(
-                "manual" if series_manual.configured else "from_data"
-            ),
-        )
-        if residual_available:
-            state = replace(
-                state, residual_display_mode=(
-                    "manual" if residual_manual.configured else "from_data"
-                ),
-            )
-        state = replace(
-            state,
-            policy=state.policy_for_effective_display(
-                residual_left_available=residual_available
-            ),
-        )
-        self.settings_model.replace_domain("y_axis", state)
-        with self.axisViewUpdateGuard():
-            if self.ax is not None:
-                self.setYlims(ax=self.ax, parms=self.parms["time series plot"])
-            if residual_available and self.ax_residuals is not None:
-                self.setYlims(ax=self.ax_residuals, parms=self.parms["residual plot"])
-        self._draw()
-
     def captureViewport(self):
         """Capture shared X plus all four independent Y ViewBox ranges."""
         viewport = {}
@@ -3185,10 +3135,6 @@ class PlotTs():
             self._synchronizeStackedYAxisGutters()
 
         QTimer.singleShot(0, synchronize)
-
-    def _applySecondaryDataRanges(self):
-        """Compatibility no-op; secondary ranges are governed by stored domain policy."""
-        return None
 
     def _applyDateFormat(self, ax=None, parms={}):
         if ax is None:

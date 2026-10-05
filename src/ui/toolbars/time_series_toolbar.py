@@ -163,7 +163,8 @@ class TimeSeriesToolbar(QToolBar):
             (
                 "manual",
                 "Manual",
-                "Apply stored manual Y-axis ranges",
+                "Apply stored Manual ranges for configured active Y axes. "
+                "Use Edit ranges… to view or change per-axis values.",
                 "y_axis_manual",
                 "action_ts_y_manual",
             ),
@@ -487,43 +488,17 @@ class TimeSeriesToolbar(QToolBar):
         self.x_axis_button.setWhatsThis(tooltip)
         self.x_axis_button.setAccessibleName(f"X range; current: {state_text}")
 
-    def setSelectedYAxisMode(self, mode, lower=None, upper=None, residual_lower=None, residual_upper=None,
-                             residual_active=True, custom_view=False):
+    def setSelectedYAxisMode(self, mode, custom_view=False):
         """Update the selected Y-axis mode without emitting a user-change signal."""
-        self.refreshYAxisPresentation(
-            mode, lower, upper, residual_lower, residual_upper, residual_active,
-            custom_view,
-        )
+        self.refreshYAxisPresentation(mode, custom_view=custom_view)
 
-    def refreshYAxisPresentation(self, mode, lower=None, upper=None, residual_lower=None, residual_upper=None,
-                                 residual_active=True, custom_view=False):
+    def refreshYAxisPresentation(self, mode, custom_view=False):
         """Refresh checked policy and aggregate visible viewport presentation."""
         action = self.y_axis_actions[mode]
-        if mode == "manual":
-            self.setManualYAxisSummary(lower, upper, residual_lower, residual_upper, residual_active)
         previous = self.y_axis_group.blockSignals(True)
         action.setChecked(True)
         self.y_axis_group.blockSignals(previous)
         self._updateYAxisSelector(action, custom_view=custom_view)
-
-    def setManualYAxisSummary(self, lower, upper, residual_lower=None, residual_upper=None, residual_active=True):
-        """Update Manual action text and metadata with its configured bounds."""
-        def display(value):
-            if value is None:
-                return "Auto"
-            return f"{value:g}"
-
-        action = self.y_axis_actions["manual"]
-        action.setText("Manual")
-        residual_summary = (
-            f"{display(residual_lower)} to {display(residual_upper)}"
-            if residual_active
-            else "Inactive"
-        )
-        action.setToolTip(
-            f"Time series: {display(lower)} to {display(upper)}\n"
-            f"Residuals: {residual_summary}"
-        )
 
     def _yAxisActionTriggered(self, action):
         """Emit the requested policy; the controller owns presentation refresh."""

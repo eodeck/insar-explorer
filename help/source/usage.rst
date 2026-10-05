@@ -149,8 +149,8 @@ Y range
 Use **Y range** to control the vertical range of the time-series and residual
 plots. Left and Right Y axes keep independent ranges. Available modes include
 **Data range**, **Symmetric**, and **Manual**. Manual ranges are remembered
-separately for the Main Left, Main Right, Residual Left, and Residual Right
-axes.
+separately for **Main left Y**, **Main right Y**, **Residual left Y**, and
+**Residual right Y**.
 
 When a saved Manual range exists for an active axis, choosing **Manual**
 restores that range. If no active axis has a saved Manual range yet, the range
