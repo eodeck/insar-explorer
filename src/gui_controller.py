@@ -99,9 +99,10 @@ from .time_series.settings.model import (
 from .time_series.settings.persistence import build_legacy_plot_params
 from .time_series.persistence import PreferencesPersistenceError
 from .time_series.copy_paste import (
-    CopyPasteCategory, TimeSeriesSettingsClipboard,
+    CopyPasteCategory, TimeSeriesSettingsClipboard, YAxisSideSnapshot,
     apply_fit_snapshot, apply_legend_entry_snapshot, apply_replica_snapshot, apply_style_snapshot,
-    capture_fit, capture_legend_entry, capture_replica, capture_style,
+    apply_y_axis_side_snapshot, capture_fit, capture_legend_entry, capture_replica, capture_style,
+    capture_y_axis_side,
 )
 
 
@@ -2938,9 +2939,8 @@ class GuiController(QObject):
         if record.presentation.y_axis_side == normalized:
             self._syncTimeSeriesYAxisAssignmentControl()
             return False
-        updated = replace(
-            record,
-            presentation=replace(record.presentation, y_axis_side=normalized),
+        updated = apply_y_axis_side_snapshot(
+            record, YAxisSideSnapshot(normalized)
         )
         try:
             plotter.rerender_editable_record(updated)
@@ -3239,6 +3239,7 @@ class GuiController(QObject):
             CopyPasteCategory.STYLE,
             CopyPasteCategory.FIT,
             CopyPasteCategory.REPLICA,
+            CopyPasteCategory.Y_AXIS,
             CopyPasteCategory.LEGEND,
             CopyPasteCategory.ALL_PRESENTATION,
         )
@@ -3404,7 +3405,7 @@ class GuiController(QObject):
         return self._navigateCommittedTimeSeriesSelection("reference")
 
     def copyCommittedTimeSeriesSettings(self):
-        """Atomically capture Style, Fit, Replica, and Legend entry from one source."""
+        """Atomically capture all committed per-series toolbar settings from one source."""
         panel = self.ui.time_series_point_panel
         selected = panel.selected_committed_ids()
         if len(selected) != 1:
@@ -3423,6 +3424,7 @@ class GuiController(QObject):
                 style=capture_style(record),
                 fit=capture_fit(record),
                 replica=capture_replica(record),
+                y_axis=capture_y_axis_side(record),
                 legend=capture_legend_entry(record),
             )
         except Exception as error:
@@ -3430,7 +3432,11 @@ class GuiController(QObject):
             return
         self.time_series_clipboard = clipboard
         self._refreshTimeSeriesClipboardProjection()
-        self.msg_signal.emit("Copied Style, Fit, Replica and Legend entry settings.", STATUS_SUCCESS, 3000)
+        self.msg_signal.emit(
+            "Copied Style, Fit, Replica, Y axis and Legend entry settings.",
+            STATUS_SUCCESS,
+            3000,
+        )
 
     def pasteCommittedTimeSeriesSettings(self, category):
         """Atomically paste one typed category to selected committed destinations."""
@@ -3468,6 +3474,8 @@ class GuiController(QObject):
                     updated = apply_fit_snapshot(updated, clipboard.fit)
                 if category in (CopyPasteCategory.REPLICA, CopyPasteCategory.ALL_PRESENTATION):
                     updated = apply_replica_snapshot(updated, clipboard.replica)
+                if category in (CopyPasteCategory.Y_AXIS, CopyPasteCategory.ALL_PRESENTATION):
+                    updated = apply_y_axis_side_snapshot(updated, clipboard.y_axis)
                 if category in (CopyPasteCategory.LEGEND, CopyPasteCategory.ALL_PRESENTATION):
                     updated = apply_legend_entry_snapshot(updated, clipboard.legend)
                 replacements.append(updated)
@@ -3496,6 +3504,7 @@ class GuiController(QObject):
             CopyPasteCategory.STYLE: "style",
             CopyPasteCategory.FIT: "Fit",
             CopyPasteCategory.REPLICA: "Replica",
+            CopyPasteCategory.Y_AXIS: "Y axis",
             CopyPasteCategory.LEGEND: "Legend entry",
             CopyPasteCategory.ALL_PRESENTATION: "All settings",
         }
