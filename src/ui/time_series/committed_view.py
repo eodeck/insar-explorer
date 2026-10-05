@@ -5,6 +5,7 @@ from ..icon_theme import icon as themed_icon
 from qgis.PyQt import QtGui, QtWidgets
 from qgis.PyQt.QtCore import QEvent, QTimer, pyqtSignal
 
+from ...time_series.copy_paste import CopyPasteCategory
 from ...qt_compat import (
     QAction, CLEAR_AND_SELECT, CURRENT_SELECTION, CUSTOM_CONTEXT_MENU,
     CHECK_STATE_ROLE, CHECKED, UNCHECKED, LEFT_MOUSE_BUTTON,
@@ -85,7 +86,6 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
         self.export_action.setEnabled(False)
         self.export_action.triggered.connect(self._request_selected_export)
         self.addAction(self.export_action)
-        from ...time_series.copy_paste import CopyPasteCategory
         self.copy_settings_action = QAction(
             themed_icon("copy_content"), "Copy settings", self
         )
@@ -222,7 +222,19 @@ class CommittedTimeSeriesView(QtWidgets.QTableView):
         menu = QtWidgets.QMenu(parent or self)
         menu.addAction(self.copy_settings_action)
         menu.addMenu(self._create_paste_menu(menu))
+        menu.aboutToShow.connect(self.actionStateRefreshRequested.emit)
         return menu
+
+    def set_y_axis_copy_paste_icons(self, *, paste_side=None):
+        """Refresh the Paste Y-axis icon from the authoritative clipboard snapshot."""
+        self.copy_settings_action.setIcon(themed_icon("copy_content"))
+        y_axis_action = self.paste_actions.get(CopyPasteCategory.Y_AXIS)
+        if y_axis_action is not None:
+            y_axis_action.setIcon(
+                themed_icon(f"{paste_side}_axis")
+                if paste_side in {"left", "right"}
+                else QtGui.QIcon()
+            )
 
     def set_selection_active(self, active):
         """Render selected rows as active or inactive without changing selection."""

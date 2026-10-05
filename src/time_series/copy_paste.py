@@ -146,13 +146,17 @@ def _legend_field_is_available(record: TimeSeriesRecord, field_name: str) -> boo
     )
 
 
+def normalize_y_axis_side(side) -> str:
+    """Return the normalized persisted Y-axis side used by copy/paste."""
+    value = str(side).strip().lower()
+    return value if value in {"left", "right"} else "left"
+
+
 def apply_y_axis_side_snapshot(
     record: TimeSeriesRecord, snapshot: YAxisSideSnapshot
 ) -> TimeSeriesRecord:
     """Replace only the per-series Y-axis side, normalized by presentation state."""
-    side = str(snapshot.side).strip().lower()
-    if side not in {"left", "right"}:
-        side = "left"
+    side = normalize_y_axis_side(snapshot.side)
     return replace(
         record, presentation=replace(record.presentation, y_axis_side=side)
     )

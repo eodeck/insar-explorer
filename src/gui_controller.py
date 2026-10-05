@@ -102,7 +102,7 @@ from .time_series.copy_paste import (
     CopyPasteCategory, TimeSeriesSettingsClipboard, YAxisSideSnapshot,
     apply_fit_snapshot, apply_legend_entry_snapshot, apply_replica_snapshot, apply_style_snapshot,
     apply_y_axis_side_snapshot, capture_fit, capture_legend_entry, capture_replica, capture_style,
-    capture_y_axis_side,
+    capture_y_axis_side, normalize_y_axis_side,
 )
 
 
@@ -3249,6 +3249,17 @@ class GuiController(QObject):
         self.ui.time_series_point_panel.set_clipboard_categories(
             self._clipboard_available_categories()
         )
+        self._refreshCommittedCopyPasteYAxisIcons()
+
+    def _refreshCommittedCopyPasteYAxisIcons(self):
+        """Project the copied Y-axis side into the shared Paste action."""
+        clipboard = self.time_series_clipboard
+        paste_side = None
+        if clipboard is not None and clipboard.has(CopyPasteCategory.Y_AXIS):
+            paste_side = normalize_y_axis_side(clipboard.y_axis.side)
+        self.ui.time_series_point_panel.set_y_axis_copy_paste_icons(
+            paste_side=paste_side
+        )
 
     def clearTimeSeriesClipboard(self):
         """Clear the dataset-scoped, non-persistent settings clipboard."""
@@ -3293,9 +3304,10 @@ class GuiController(QObject):
         return target_location, reference_location
 
     def _refreshCommittedNavigationActionState(self):
-        """Refresh all single-record committed map-navigation command states."""
+        """Refresh all single-record committed context-menu presentation state."""
         source_layer = self._refreshCommittedSourceLayerActionState()
         self._refreshCommittedMapNavigationActionState()
+        self._refreshCommittedCopyPasteYAxisIcons()
         return source_layer
 
     def selectCommittedTimeSeriesSourceLayer(self):

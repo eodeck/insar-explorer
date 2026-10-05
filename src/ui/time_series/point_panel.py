@@ -650,6 +650,10 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         self._clipboard_categories = tuple(categories)
         self.refresh_removal_actions()
 
+    def set_y_axis_copy_paste_icons(self, *, paste_side=None):
+        """Project the copied Y-axis snapshot into the shared Paste action."""
+        self.committed_view.set_y_axis_copy_paste_icons(paste_side=paste_side)
+
     def _sync_remove_button_enabled(self):
         """Mirror the shared Remove action state onto the bottom button."""
         self.remove_selected_button.setEnabled(
