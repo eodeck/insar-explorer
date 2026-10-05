@@ -42,6 +42,7 @@ class TimeSeriesToolbar(QToolBar):
     xAxisModeChanged = pyqtSignal(str)
     manualXAxisEditRequested = pyqtSignal()
     yAxisModeChanged = pyqtSignal(str)
+    yAxisSideChanged = pyqtSignal(str)
     manualYAxisEditRequested = pyqtSignal()
     replicaEnabledChanged = pyqtSignal(bool)
     replicaSettingsRequested = pyqtSignal()
@@ -205,6 +206,38 @@ class TimeSeriesToolbar(QToolBar):
         self.replica_button.setSecondaryAccessibleDescription(
             "Open Replica settings."
         )
+
+        self.series_y_axis_button = QToolButton(self)
+        self.series_y_axis_button.setObjectName("tool_ts_series_y_axis")
+        set_toolbar_control_role(self.series_y_axis_button, "selector")
+        self.series_y_axis_button.setPopupMode(TOOL_BUTTON_INSTANT_POPUP)
+        self.series_y_axis_menu = QMenu(self.series_y_axis_button)
+        self.series_y_axis_menu.setObjectName("menu_ts_series_y_axis")
+        self.series_y_axis_group = QActionGroup(self.series_y_axis_menu)
+        self.series_y_axis_group.setExclusive(True)
+        self.series_y_axis_actions = {}
+        for side, text, icon_name, object_name in (
+            ("left", "Left", "left_axis", "action_ts_series_y_left"),
+            ("right", "Right", "right_axis", "action_ts_series_y_right"),
+        ):
+            action = QAction(themed_icon(icon_name), text, self.series_y_axis_group)
+            action.setObjectName(object_name)
+            action.setCheckable(True)
+            action.setData(side)
+            action.setToolTip(f"{text} Y axis")
+            action.setStatusTip(f"Plot this time series on the {text.lower()} Y axis")
+            self.series_y_axis_group.addAction(action)
+            self.series_y_axis_menu.addAction(action)
+            self.series_y_axis_actions[side] = action
+        self.series_y_axis_actions["left"].setChecked(True)
+        self.series_y_axis_button.setMenu(self.series_y_axis_menu)
+        self.series_y_axis_button.setCheckable(False)
+        self.series_y_axis_button.setIconSize(self.iconSize())
+        self.series_y_axis_button.setAccessibleName("Y axis; current: Left")
+        self.series_y_axis_button.setToolTip("Choose the Y axis for this time series\n\nCurrent: Left")
+        self.series_y_axis_button.setStatusTip("Choose the Y axis for this time series")
+        self.series_y_axis_button.setIcon(themed_icon("left_axis"))
+        self.series_y_axis_button.setEnabled(False)
         self.plot_style_action = self._createAction(
             STYLE_ACTION_ICON,
             "Style",
@@ -273,6 +306,7 @@ class TimeSeriesToolbar(QToolBar):
         self.addSeparator()
         self.addWidget(self.fit_button)
         self.addWidget(self.replica_button)
+        self.addWidget(self.series_y_axis_button)
         self.addSeparator()
         self.addAction(self.legend_entry_action)
 
@@ -325,6 +359,7 @@ class TimeSeriesToolbar(QToolBar):
         self.edit_manual_y_axis_action.triggered.connect(self.manualYAxisEditRequested.emit)
         self.replica_button.primaryToggled.connect(self.replicaEnabledChanged.emit)
         self.replica_button.secondaryTriggered.connect(self.replicaSettingsRequested.emit)
+        self.series_y_axis_group.triggered.connect(self._seriesYAxisActionTriggered)
         self.legend_button.primaryToggled.connect(self.legendEnabledChanged.emit)
         self.legend_button.secondaryTriggered.connect(self.legendSettingsRequested.emit)
 
@@ -339,6 +374,7 @@ class TimeSeriesToolbar(QToolBar):
         self.legend_entry_action.setEnabled(enabled)
         self.fit_button.setEnabled(enabled)
         self.replica_button.setEnabled(enabled)
+        self.series_y_axis_button.setEnabled(enabled)
 
     def setRangeControlsEnabled(self, enabled):
         """Enable plot-scoped X/Y range controls when usable plotted data exist."""
@@ -506,6 +542,30 @@ class TimeSeriesToolbar(QToolBar):
         self.y_axis_button.setStatusTip("Set the time-series plot Y range")
         self.y_axis_button.setWhatsThis(tooltip)
         self.y_axis_button.setAccessibleName(f"Y range; current: {state_text}")
+
+    def setSelectedYAxisSide(self, side):
+        """Reflect the current record Y-axis assignment without emitting mutation."""
+        side = side if side in self.series_y_axis_actions else "left"
+        action = self.series_y_axis_actions[side]
+        previous = self.series_y_axis_group.blockSignals(True)
+        action.setChecked(True)
+        self.series_y_axis_group.blockSignals(previous)
+        label = "Left" if side == "left" else "Right"
+        self.series_y_axis_button.setIcon(themed_icon(f"{side}_axis"))
+        self.series_y_axis_button.setText("Y axis")
+        self.series_y_axis_button.setToolTip(
+            f"Choose the Y axis for this time series\n\nCurrent: {label}"
+        )
+        self.series_y_axis_button.setStatusTip(
+            f"Plot this time series on the {label.lower()} Y axis"
+        )
+        self.series_y_axis_button.setAccessibleName(f"Y axis; current: {label}")
+
+    def _seriesYAxisActionTriggered(self, action):
+        """Emit one normalized per-series Y-axis assignment request."""
+        side = action.data()
+        if side in ("left", "right"):
+            self.yAxisSideChanged.emit(side)
 
     def setReplicaPresentation(self, enabled, interval_mm, pair_count):
         """Refresh the Replica split button without changing runtime state."""

@@ -16,7 +16,7 @@ class AppearancePopup(QWidget):
     """Edit all persistent plot presentation settings without Apply or Cancel."""
 
     settingsChanged = pyqtSignal(
-        str, str, str, str, str, str, str, int, str, str, str
+        str, str, str, str, str, str, str, str, str, int, str, str, str
     )
     applySavedDefaultRequested = pyqtSignal()
     saveCurrentAsDefaultRequested = pyqtSignal()
@@ -56,18 +56,27 @@ class AppearancePopup(QWidget):
         self.residual_title_edit = self._compactLineEdit()
         self.time_series_x_label_edit = self._compactLineEdit()
         self.residual_x_label_edit = self._compactLineEdit()
-        self.time_series_y_label_edit = self._compactLineEdit()
-        self.residual_y_label_edit = self._compactLineEdit()
         rows = (
             ("Title", self.time_series_title_edit, self.residual_title_edit),
             ("X label", self.time_series_x_label_edit, self.residual_x_label_edit),
-            ("Y label", self.time_series_y_label_edit, self.residual_y_label_edit),
         )
         for row, (label, series_edit, residual_edit) in enumerate(rows, start=1):
             text_layout.addWidget(QLabel(label, text_group), row, 0)
             text_layout.addWidget(series_edit, row, 1)
             text_layout.addWidget(residual_edit, row, 2)
         layout.addWidget(text_group)
+
+        self.time_series_y_label_edit = self._compactLineEdit()
+        self.right_y_label_edit = self._compactLineEdit()
+        self.residual_y_label_edit = self._compactLineEdit()
+        self.residual_right_y_label_edit = self._compactLineEdit()
+        y_labels = QGroupBox("Y-axis labels", self)
+        y_labels_form = QFormLayout(y_labels)
+        y_labels_form.addRow("Main left Y", self.time_series_y_label_edit)
+        y_labels_form.addRow("Main right Y", self.right_y_label_edit)
+        y_labels_form.addRow("Residual left Y", self.residual_y_label_edit)
+        y_labels_form.addRow("Residual right Y", self.residual_right_y_label_edit)
+        layout.addWidget(y_labels)
 
         self.date_format_combo = QComboBox(self)
         for label, value in self.DATE_FORMATS:
@@ -131,8 +140,9 @@ class AppearancePopup(QWidget):
         """Return text controls in canonical runtime field order."""
         return (
             self.time_series_title_edit, self.residual_title_edit,
-            self.time_series_x_label_edit, self.time_series_y_label_edit,
-            self.residual_x_label_edit, self.residual_y_label_edit,
+            self.time_series_x_label_edit, self.residual_x_label_edit,
+            self.time_series_y_label_edit, self.right_y_label_edit,
+            self.residual_y_label_edit, self.residual_right_y_label_edit,
         )
 
     def settings(self):
@@ -148,9 +158,11 @@ class AppearancePopup(QWidget):
             self.time_series_title_edit.text(),
             self.residual_title_edit.text(),
             self.time_series_x_label_edit.text(),
-            self.time_series_y_label_edit.text(),
             self.residual_x_label_edit.text(),
+            self.time_series_y_label_edit.text(),
+            self.right_y_label_edit.text(),
             self.residual_y_label_edit.text(),
+            self.residual_right_y_label_edit.text(),
             str(date_format or "%Y-%m-%d"),
             int(self.font_size_spin.value()),
             str(self.grid_mode_combo.currentData() or "both"),
@@ -169,9 +181,11 @@ class AppearancePopup(QWidget):
             self.time_series_title_edit.setText(settings.time_series_title)
             self.residual_title_edit.setText(settings.residual_title)
             self.time_series_x_label_edit.setText(settings.time_series_x_label)
-            self.time_series_y_label_edit.setText(settings.time_series_y_label)
             self.residual_x_label_edit.setText(settings.residual_x_label)
+            self.time_series_y_label_edit.setText(settings.time_series_y_label)
+            self.right_y_label_edit.setText(settings.right_y_label)
             self.residual_y_label_edit.setText(settings.residual_y_label)
+            self.residual_right_y_label_edit.setText(settings.residual_right_y_label)
             index = self.date_format_combo.findData(settings.date_format)
             if index >= 0:
                 self.date_format_combo.setCurrentIndex(index)

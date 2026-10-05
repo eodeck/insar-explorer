@@ -1579,6 +1579,9 @@ class GuiController(QObject):
             self.setTimeSeriesReplicaEnabled
         )
         self.ui.time_series_toolbar.replicaSettingsRequested.connect(self.showReplicaPopup)
+        self.ui.time_series_toolbar.yAxisSideChanged.connect(
+            self.setCurrentTimeSeriesYAxisSide
+        )
         self.ui.time_series_toolbar.legendEnabledChanged.connect(self.setLegendEnabled)
         self.ui.time_series_toolbar.legendSettingsRequested.connect(self.showLegendPopup)
         self.ui.time_series_toolbar.legendEntryRequested.connect(self.showLegendEntryPopup)
@@ -2775,8 +2778,9 @@ class GuiController(QObject):
 
     def updateAppearanceSettings(
         self, time_series_title, residual_title, time_series_x_label,
-        time_series_y_label, residual_x_label, residual_y_label, date_format,
-        font_size, grid_mode, plot_background, canvas_background,
+        residual_x_label, time_series_y_label, right_y_label, residual_y_label,
+        residual_right_y_label, date_format, font_size, grid_mode,
+        plot_background, canvas_background,
     ):
         """Persist one complete appearance replacement after an immediate edit."""
         plotter = self.choose_point_click_handler.plot_ts
@@ -2786,9 +2790,11 @@ class GuiController(QObject):
             time_series_title=str(time_series_title),
             residual_title=str(residual_title),
             time_series_x_label=str(time_series_x_label),
-            time_series_y_label=str(time_series_y_label),
             residual_x_label=str(residual_x_label),
+            time_series_y_label=str(time_series_y_label),
+            right_y_label=str(right_y_label),
             residual_y_label=str(residual_y_label),
+            residual_right_y_label=str(residual_right_y_label),
             date_format=str(date_format),
             font_size=float(font_size),
             grid_mode=AppearanceSettings.normalize_grid_mode(grid_mode),
@@ -2909,6 +2915,43 @@ class GuiController(QObject):
         ))
         self.legend_popup.show()
         self.legend_popup.raise_()
+
+    def _timeSeriesYAxisRecord(self):
+        """Return the canonical pending-or-selected record targeted by per-series tools."""
+        return self.choose_point_click_handler.plot_ts.editable_time_series_record()
+
+    def _syncTimeSeriesYAxisAssignmentControl(self):
+        """Project the authoritative current record side into the toolbar selector."""
+        record = self._timeSeriesYAxisRecord()
+        side = "left" if record is None else record.presentation.y_axis_side
+        self.ui.time_series_toolbar.setSelectedYAxisSide(side)
+
+    def setCurrentTimeSeriesYAxisSide(self, side):
+        """Move only the current record family to one authoritative Y-axis side."""
+        normalized = str(side).strip().lower()
+        if normalized not in {"left", "right"}:
+            normalized = "left"
+        plotter = self.choose_point_click_handler.plot_ts
+        record = plotter.editable_time_series_record()
+        if record is None:
+            self._syncTimeSeriesYAxisAssignmentControl()
+            return False
+        if record.presentation.y_axis_side == normalized:
+            self._syncTimeSeriesYAxisAssignmentControl()
+            return False
+        updated = replace(
+            record,
+            presentation=replace(record.presentation, y_axis_side=normalized),
+        )
+        try:
+            plotter.rerender_editable_record(updated)
+        except Exception:
+            self._syncTimeSeriesYAxisAssignmentControl()
+            raise
+        self._syncTimeSeriesYAxisAssignmentControl()
+        self._syncTimeSeriesYAxisControls(self.time_series_settings.y_axis.policy)
+        self._refreshTimeSeriesPlotActionState()
+        return True
 
     def _legendEntryRecord(self):
         """Return the same selected-or-pending record targeted by other series tools."""
@@ -3763,6 +3806,7 @@ class GuiController(QObject):
         toolbar.setLegendEnabled(plotter.settings_model.legend.enabled)
         toolbar.plot_export_button.setPrimaryEnabled(has_plot)
         toolbar.setRangeControlsEnabled(plotter.hasPlottedTimeSeriesData())
+        self._syncTimeSeriesYAxisAssignmentControl()
 
     def discardPendingTimeSeries(self):
         """Discard only the pending preview and preserve the active reference."""

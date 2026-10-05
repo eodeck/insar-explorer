@@ -10,6 +10,7 @@ from qgis.PyQt.QtWidgets import (
 
 from ...time_series.y_axis_range import resolve_manual_y_range
 from ...qt_compat import FRAME_SHAPE_STYLED_PANEL, POPUP_WINDOW_FLAG, SIZE_POLICY_FIXED
+from ..icon_theme import icon as themed_icon
 from ..spacing import SPACE_SM, SPACE_MD, SPACE_LG, SPACE_XL
 
 
@@ -22,10 +23,10 @@ class ManualYAxisPopup(QFrame):
     currentViewRequested = pyqtSignal(str)
 
     DOMAINS = (
-        ("series", "Main left"),
-        ("right_series", "Main right"),
-        ("residual", "Residual left"),
-        ("right_residual", "Residual right"),
+        ("series", "Main left", "Main L", "left_axis"),
+        ("right_series", "Main right", "Main R", "right_axis"),
+        ("residual", "Residual left", "Resid L", "residual_left"),
+        ("right_residual", "Residual right", "Resid R", "residual_right"),
     )
 
     def __init__(self, parent=None):
@@ -37,10 +38,10 @@ class ManualYAxisPopup(QFrame):
         self._loading = False
         self._editors = {}
         self._control_axes = {}
-        self._changed = {name: False for name, _ in self.DOMAINS}
-        self._captured_exact = {name: None for name, _ in self.DOMAINS}
-        self._data_bounds = {name: None for name, _ in self.DOMAINS}
-        self._available = {name: False for name, _ in self.DOMAINS}
+        self._changed = {name: False for name, *_ in self.DOMAINS}
+        self._captured_exact = {name: None for name, *_ in self.DOMAINS}
+        self._data_bounds = {name: None for name, *_ in self.DOMAINS}
+        self._available = {name: False for name, *_ in self.DOMAINS}
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(SPACE_XL, SPACE_LG, SPACE_XL, SPACE_LG)
@@ -49,9 +50,9 @@ class ManualYAxisPopup(QFrame):
         title.setObjectName("label_manual_y_axis_title")
         layout.addWidget(title)
         self.tabs = QTabWidget(self)
-        for name, title in self.DOMAINS:
+        for name, title, short_title, icon_name in self.DOMAINS:
             tab = self._createAxisTab(name)
-            self.tabs.addTab(tab, title)
+            self.tabs.addTab(tab, themed_icon(icon_name), short_title)
             self.tabs.setTabToolTip(self.tabs.count() - 1, title)
             tab.setAccessibleName(title)
         layout.addWidget(self.tabs)
@@ -90,10 +91,10 @@ class ManualYAxisPopup(QFrame):
         """Load drafts for all domains while preserving inactive stored values."""
         self._loading = True
         self._available = dict(availability)
-        self._changed = {name: False for name, _ in self.DOMAINS}
-        self._captured_exact = {name: None for name, _ in self.DOMAINS}
+        self._changed = {name: False for name, *_ in self.DOMAINS}
+        self._captured_exact = {name: None for name, *_ in self.DOMAINS}
         self._data_bounds = dict(data_bounds)
-        for index, (name, _title) in enumerate(self.DOMAINS):
+        for index, (name, _title, _short, _icon) in enumerate(self.DOMAINS):
             manual = manuals[name]; bounds = data_bounds.get(name) or (0.0, 1.0)
             for bound_name, active, retained, seeded in (
                 ("lower", manual.lower, manual.retained_lower, bounds[0]),
@@ -163,10 +164,10 @@ class ManualYAxisPopup(QFrame):
         ) is not None
 
     def _updateState(self):
-        for name, _ in self.DOMAINS:
+        for name, *_ in self.DOMAINS:
             for bound in ("lower", "upper"):
                 auto, value = self._editors[name][bound]; value.setEnabled(auto.isEnabled() and not auto.isChecked())
-        self.apply_button.setEnabled(all(self._isValid(name) for name, _ in self.DOMAINS))
+        self.apply_button.setEnabled(all(self._isValid(name) for name, *_ in self.DOMAINS))
 
     def _editorChanged(self, *_args):
         if self._loading:
@@ -183,7 +184,7 @@ class ManualYAxisPopup(QFrame):
     def _apply(self):
         if not self.apply_button.isEnabled(): return
         payload = {}
-        for name, _ in self.DOMAINS:
+        for name, *_ in self.DOMAINS:
             payload[name] = {"bounds": self.bounds(name), "retained": self.retainedBounds(name), "changed": self._changed[name]}
         self._closing_after_apply = True; self.applyRequested.emit(payload); self.close()
 

@@ -608,7 +608,9 @@ class AppearanceSettings:
     time_series_x_label: str = "Date"
     residual_x_label: str = "Date"
     time_series_y_label: str = "Deformation"
+    right_y_label: str = ""
     residual_y_label: str = "Residual"
+    residual_right_y_label: str = ""
     font_size: float = 10.0
     grid_mode: str = "both"
     plot_background: str = "white"

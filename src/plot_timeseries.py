@@ -1939,6 +1939,16 @@ class PlotTs():
                 'left', parms['ylabel'],
                 **{'font-size': font_size, 'color': foreground}
             )
+        appearance = self.settings_model.appearance
+        right_label = (
+            appearance.residual_right_y_label
+            if ax is self.ax_residuals else appearance.right_y_label
+        )
+        ax.setLabel(
+            'right', right_label,
+            **{'font-size': font_size, 'color': foreground}
+        )
+        self._updateAxisActivity()
 
     def setXticks(self, ax=None, parms={}):
         if not ax:
@@ -2534,6 +2544,10 @@ class PlotTs():
                 "left", appearance.time_series_y_label,
                 **{"font-size": font_size, "color": foreground}
             )
+            self.ax.setLabel(
+                "right", appearance.right_y_label,
+                **{"font-size": font_size, "color": foreground}
+            )
             if self.ax_residuals is not None:
                 self.ax_residuals.setTitle(
                     appearance.residual_title or None,
@@ -2548,6 +2562,11 @@ class PlotTs():
                     "left", appearance.residual_y_label,
                     **{"font-size": font_size, "color": foreground}
                 )
+                self.ax_residuals.setLabel(
+                    "right", appearance.residual_right_y_label,
+                    **{"font-size": font_size, "color": foreground}
+                )
+            self._updateAxisActivity()
             self.ui.plot_widget.setBackground(
                 self._color(appearance.canvas_background)
             )

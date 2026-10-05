@@ -27,6 +27,7 @@ class CommittedTimeSeriesModel(QAbstractTableModel):
         CommittedTimeSeriesColumn.VISIBLE: "",
         CommittedTimeSeriesColumn.SEQUENCE: "#",
         CommittedTimeSeriesColumn.LABEL: "Label",
+        CommittedTimeSeriesColumn.Y_AXIS: "Y",
         CommittedTimeSeriesColumn.TARGET: "T",
         CommittedTimeSeriesColumn.REFERENCE: "R",
     }
@@ -34,6 +35,7 @@ class CommittedTimeSeriesModel(QAbstractTableModel):
         CommittedTimeSeriesColumn.VISIBLE: "Show or hide all time series",
         CommittedTimeSeriesColumn.SEQUENCE: "Time-series sequence number",
         CommittedTimeSeriesColumn.LABEL: "Time-series label",
+        CommittedTimeSeriesColumn.Y_AXIS: "Y-axis assignment",
         CommittedTimeSeriesColumn.TARGET: "Target selection type",
         CommittedTimeSeriesColumn.REFERENCE: "Reference selection type",
     }
@@ -125,6 +127,18 @@ class CommittedTimeSeriesModel(QAbstractTableModel):
                 return font
             if not label and role == FOREGROUND_ROLE:
                 return QtGui.QBrush(placeholder_colour())
+            return None
+        if column == CommittedTimeSeriesColumn.Y_AXIS:
+            side = record.presentation.y_axis_side
+            if role == DISPLAY_ROLE:
+                return "R" if side == "right" else "L"
+            if role == TOOLTIP_ROLE:
+                return (
+                    "Plotted on right Y axis" if side == "right"
+                    else "Plotted on left Y axis"
+                )
+            if role == TEXT_ALIGNMENT_ROLE:
+                return ALIGN_CENTER
             return None
         selection = record.target if column == CommittedTimeSeriesColumn.TARGET else record.reference
         kind = selection_kind_value(selection)
