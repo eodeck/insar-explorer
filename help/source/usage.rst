@@ -56,7 +56,7 @@ Rename, remove, and copy settings
 
 Use the selection list controls or context menu to rename or remove stored time
 series. Settings can be copied from one time series and pasted as **Style**,
-**Fit**, **Replica**, **Legend entry**, or **All** presentation settings.
+**Fit**, **Replica**, **Y axis,**, **Legend entry**, or **All** presentation settings.
 
 Configure the plot
 ==================
