@@ -356,6 +356,17 @@ class TimeSeriesToolbar(QToolBar):
             "timeSeriesAutoColorPlotBoundarySpaceBefore", 6
         )
         self._creation_plot_separator = self.addSeparator()
+        self._fit_velocity_space_before = self._addFixedSpace(
+            "timeSeriesFitVelocitySpaceBefore", 6
+        )
+        self.fit_velocity_readout = QLabel(self)
+        self.fit_velocity_readout.setObjectName("timeSeriesFitVelocityReadout")
+        self.fit_velocity_readout.setAccessibleName("Fitted model velocity")
+        self.fit_velocity_readout.setToolTip(
+            "Velocity calculated from the fitted time-series model"
+        )
+        self.fit_velocity_readout.setText("")
+        self.addWidget(self.fit_velocity_readout)
 
         self._spacer_widget = QWidget(self)
         self._spacer_widget.setObjectName("timeSeriesToolbarSpacer")
@@ -422,6 +433,16 @@ class TimeSeriesToolbar(QToolBar):
     def setHoverReadout(self, text):
         """Update the secondary time-series hover readout text."""
         self.hover_readout.setText(str(text or ""))
+
+    def setFitVelocityReadout(self, text, tooltip=None):
+        """Update the fitted model velocity readout on the toolbar."""
+        self.fit_velocity_readout.setText(str(text or ""))
+        if tooltip is not None:
+            self.fit_velocity_readout.setToolTip(str(tooltip))
+        elif not text:
+            self.fit_velocity_readout.setToolTip(
+                "Velocity calculated from the fitted time-series model"
+            )
 
     def setSeriesControlsEnabled(self, enabled):
         """Enable controls that require one editable time-series record."""

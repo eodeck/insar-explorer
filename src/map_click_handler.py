@@ -1,3 +1,4 @@
+import os
 from dataclasses import dataclass
 
 import numpy as np
@@ -104,11 +105,16 @@ class PolygonGeometry:
         return wgs84_geom.asWkt()
 
 
-def time_series_source_from_layer(layer: QgsMapLayer) -> TimeSeriesSource:
+def time_series_source_from_layer(layer: QgsMapLayer = None, h5_path: str = None) -> TimeSeriesSource:
     """Capture immutable provenance for a genuine new time-series extraction."""
-    if layer is None:
-        raise ValueError("a source layer is required for time-series extraction")
-    return TimeSeriesSource(layer_id=str(layer.id()), layer_name=str(layer.name()))
+    if h5_path:
+        abs_path = os.path.abspath(h5_path)
+        label = raster_layer_utils.h5_layer_utils.format_h5_display_name(abs_path) or os.path.basename(abs_path)
+        layer_id = str(layer.id()) if layer is not None else f"h5:{abs_path}"
+        return TimeSeriesSource(layer_id=layer_id, layer_name=label)
+    if layer is not None:
+        return TimeSeriesSource(layer_id=str(layer.id()), layer_name=str(layer.name()))
+    raise ValueError("a source layer is required for time-series extraction")
 
 
 class MapClickHandler:
@@ -342,6 +348,30 @@ class TSClickHandler(MapClickHandler):
         """Compatibility entry point for an intentional full workspace reset."""
         self.clearTimeSeriesWorkspace()
 
+    def setH5FilePath(self, file_path: str):
+        self.raster_layer.setH5FilePath(file_path)
+
+    def h5FilePath(self) -> str:
+        return self.raster_layer.h5_file_path
+
+    def activeH5FilePath(self, layer=None) -> str:
+        return self.raster_layer.resolveActiveH5FilePath(layer)
+
+    def hasValidH5Timeseries(self, layer=None) -> bool:
+        return self.raster_layer.hasValidH5Timeseries(layer)
+
+    def _resolveRasterTargetCrs(self, layer):
+        """Determine the CRS used by the active raster/H5 pixel grid."""
+        h5_path = self.raster_layer.resolveActiveH5FilePath(layer)
+        if h5_path:
+            _, use_layer_crs = self.raster_layer.h5_reader.resolve_geotransform(h5_path, layer=layer)
+            if use_layer_crs and layer is not None and layer.crs().isValid():
+                return layer.crs()
+            return QgsCoordinateReferenceSystem("EPSG:4326")
+        if layer is not None and layer.crs().isValid():
+            return layer.crs()
+        return self.iface.mapCanvas().mapSettings().destinationCrs()
+
     def choosePointClicked(self, *, point: QgsPointXY, layer: QgsMapLayer = None, ref=False, start_callback=None):
         if start_callback:  # use start_callback to remove previous polygon from map
             start_callback()
@@ -349,7 +379,9 @@ class TSClickHandler(MapClickHandler):
             layer = self.iface.activeLayer()
 
         status_vector, _ = vector_layer_utils.checkVectorLayerTimeseries(layer)
-        status_raster, _ = grd_layer_utils.checkGrdTimeseries(layer)
+        status_raster, _ = grd_layer_utils.checkGrdTimeseries(
+            layer, h5_file_path=self.raster_layer.h5_file_path
+        )
         if status_vector:
             self.choosePointClickedVector(point=point, layer=layer, ref=ref)
         elif status_raster:
@@ -519,29 +551,41 @@ class TSClickHandler(MapClickHandler):
         if not layer:
             layer = self.iface.activeLayer()
 
-        status, _ = grd_layer_utils.checkGrdTimeseries(layer)
+        status, _ = grd_layer_utils.checkGrdTimeseries(
+            layer, h5_file_path=self.raster_layer.h5_file_path
+        )
         if status is False:
             self._warnInvalidTimeSeriesLayer()
             return
 
-        date_values = self.raster_layer.getRasterTimeseriesAttributes(layer, point=point)
+        canvas_crs = self.iface.mapCanvas().mapSettings().destinationCrs()
+        target_crs = self._resolveRasterTargetCrs(layer)
+        target_point = QgsPointXY(point)
+        if canvas_crs.isValid() and target_crs.isValid() and canvas_crs != target_crs:
+            try:
+                transform = QgsCoordinateTransform(canvas_crs, target_crs, QgsProject.instance())
+                target_point = transform.transform(point)
+            except Exception:
+                target_point = QgsPointXY(point)
+
+        date_values = self.raster_layer.getRasterTimeseriesAttributes(layer, point=target_point)
 
         if date_values.size == 0:
             self._warnNoValidTimeSeriesData()
             return
 
-        clicked_point = QgsGeometry.fromPointXY(point)
-        if not ref:
-            self.highlightSelectedFeatures(clicked_point)
-        else:
-            self.highlightSelectedReferenceFeature(clicked_point)
+        clicked_point = QgsGeometry.fromPointXY(target_point if layer is not None else point)
+        if layer is not None:
+            if not ref:
+                self.highlightSelectedFeatures(clicked_point, layer=layer)
+            else:
+                self.highlightSelectedReferenceFeature(clicked_point, layer=layer)
 
         if not self._hasUsableTimeSeriesValues(date_values[:, 1]):
             self._warnNoValidTimeSeriesData()
             return
 
-        crds = Coordinates(x=clicked_point.asPoint().x(), y=clicked_point.asPoint().y(), crs=layer.crs())
-        canvas_crs = self.iface.mapCanvas().mapSettings().destinationCrs()
+        crds = Coordinates(x=float(target_point.x()), y=float(target_point.y()), crs=target_crs)
         selection = SpatialSelection(
             value=crds,
             kind=SpatialSelectionKind.POINT,
@@ -560,7 +604,8 @@ class TSClickHandler(MapClickHandler):
             coords = selection
         else:
             ref_values = date_values[:, 1]
-            self.map_reference_clicked_value = self.raster_layer.getClickedPixelValue(layer, point=point)
+            clicked_val = self.raster_layer.getClickedPixelValue(layer, point=target_point)
+            self.map_reference_clicked_value = clicked_val if clicked_val is not None else 0
             ts_values = None
             ref_coords = selection
 
@@ -575,10 +620,12 @@ class TSClickHandler(MapClickHandler):
         else:
             previous = self.plot_ts.pending_record()
             previous_id = None if previous is None else previous.id
+            h5_path = self.raster_layer.resolveActiveH5FilePath(layer)
             self.plot_ts.plotTs(
                 dates=dates, ts_values=ts_values, ref_values=ref_values,
                 coords=coords, ref_coords=ref_coords, update=False,
-                analysis=analysis, source_provenance=time_series_source_from_layer(layer),
+                analysis=analysis,
+                source_provenance=time_series_source_from_layer(layer, h5_path),
                 report_statistics=True,
             )
             pending = self.plot_ts.pending_record()
@@ -648,16 +695,84 @@ class PolygonClickHandler(MapClickHandler):
             layer = self.iface.activeLayer()
 
         status_vector, _ = vector_layer_utils.checkVectorLayerTimeseries(layer)
-        status_raster, _ = grd_layer_utils.checkGrdTimeseries(layer)
+        status_raster, _ = grd_layer_utils.checkGrdTimeseries(
+            layer, h5_file_path=self.raster_layer.h5_file_path
+        )
 
         if status_vector:
             self.choosePolygonDrawnVector(layer=layer, polygon=polygon, ref=ref)
         elif status_raster:
-            pass
-            # self.choosePolygonDrawnRaster(layer=layer, ref=ref)
+            self.choosePolygonDrawnRaster(layer=layer, polygon=polygon, ref=ref)
         else:
             self._warnInvalidTimeSeriesLayer()
             return
+
+    def choosePolygonDrawnRaster(self, *, layer: QgsMapLayer = None, polygon=None, ref=False):
+        if not layer:
+            layer = self.iface.activeLayer()
+
+        if not self.raster_layer.hasValidH5Timeseries(layer):
+            self._warnInvalidTimeSeriesLayer()
+            return
+
+        if not polygon or not polygon.isGeosValid():
+            self.msg_signal.emit("Invalid polygon geometry.", STATUS_WARNING, 0)
+            return
+
+        canvas_crs = self.iface.mapCanvas().mapSettings().destinationCrs()
+        target_crs = self._resolveRasterTargetCrs(layer)
+        poly_target = QgsGeometry(polygon)
+        if canvas_crs.isValid() and target_crs.isValid() and canvas_crs != target_crs:
+            try:
+                transform = QgsCoordinateTransform(canvas_crs, target_crs, QgsProject.instance())
+                poly_target.transform(transform)
+            except Exception:
+                poly_target = QgsGeometry(polygon)
+
+        dates, values = self.raster_layer.getPolygonTimeseriesAttributes(layer, poly_target)
+        if dates.size == 0 or values.size == 0 or not self._hasUsableTimeSeriesValues(values):
+            self._warnNoValidTimeSeriesData()
+            return
+
+        crds = PolygonGeometry(geom=poly_target, crs=target_crs)
+        coords = None
+        ref_coords = None
+
+        if not ref:
+            ts_values = values
+            ref_values, ref_coords = self._referenceInputsForNewTarget()
+            coords = crds
+        else:
+            ref_values = values
+            ts_values = None
+            ref_coords = crds
+
+        analysis = self._analysisForNewRecord() if not ref else None
+        if ref:
+            if not self._applySelectedReference(
+                dates=dates, values=ref_values, selection=ref_coords
+            ):
+                self._warnNoValidTimeSeriesData()
+                return
+        else:
+            previous = self.plot_ts.pending_record()
+            previous_id = None if previous is None else previous.id
+            h5_path = self.raster_layer.resolveActiveH5FilePath(layer)
+            self.plot_ts.plotTs(
+                dates=dates, ts_values=ts_values, ref_values=ref_values,
+                coords=coords, ref_coords=ref_coords, plot_multiple=True,
+                update=False, analysis=analysis,
+                source_provenance=time_series_source_from_layer(layer, h5_path),
+                report_statistics=True,
+            )
+            pending = self.plot_ts.pending_record()
+            if pending is not None and pending.id != previous_id:
+                self._commitSelectedTarget(
+                    dates=dates, values=ts_values, selection=pending.target,
+                    source=pending.source, plot_multiple=True,
+                )
+            else:
+                self._warnNoValidTimeSeriesData()
 
     def choosePolygonDrawnVector(self, *, layer: QgsMapLayer = None, polygon=None, ref=False):
         if not layer:
@@ -807,23 +922,29 @@ class ClickHandler(TSClickHandler, PolygonClickHandler):
 
         status_raster, _ = grd_layer_utils.checkGrdLayer(layer)
         if status_raster and selection.kind is SpatialSelectionKind.POINT:
-            if selection.map_location is not None:
+            target_crs = self._resolveRasterTargetCrs(layer)
+            point_value = selection.value
+            if hasattr(point_value, "x") and hasattr(point_value, "y"):
+                point = QgsPointXY(float(point_value.x), float(point_value.y))
+                source_crs = getattr(point_value, "crs", None)
+                if source_crs is not None and target_crs.isValid() and source_crs.authid() != target_crs.authid():
+                    transform = QgsCoordinateTransform(
+                        source_crs, target_crs, QgsProject.instance()
+                    )
+                    point = transform.transform(point)
+            elif selection.map_location is not None:
                 point = QgsPointXY(
                     float(selection.map_location.x),
                     float(selection.map_location.y),
                 )
-            else:
-                point_value = selection.value
-                if not hasattr(point_value, "x") or not hasattr(point_value, "y"):
-                    return None
-                point = QgsPointXY(float(point_value.x), float(point_value.y))
-                source_crs = getattr(point_value, "crs", None)
                 canvas_crs = self.iface.mapCanvas().mapSettings().destinationCrs()
-                if source_crs is not None and source_crs.authid() != canvas_crs.authid():
+                if canvas_crs.isValid() and target_crs.isValid() and canvas_crs.authid() != target_crs.authid():
                     transform = QgsCoordinateTransform(
-                        source_crs, canvas_crs, QgsProject.instance()
+                        canvas_crs, target_crs, QgsProject.instance()
                     )
                     point = transform.transform(point)
+            else:
+                return None
             value = self.raster_layer.getClickedPixelValue(layer, point=point)
             try:
                 numeric = float(value)

@@ -3,8 +3,16 @@ import math
 import re
 from dataclasses import dataclass, replace
 
-from qgis.gui import QgsMapToolEmitPoint
-from qgis.core import QgsProject
+from qgis.gui import QgsMapToolEmitPoint, QgsRubberBand
+from qgis.core import (
+    QgsCoordinateReferenceSystem,
+    QgsCoordinateTransform,
+    QgsGeometry,
+    QgsPointXY,
+    QgsProject,
+    QgsRasterLayer,
+    QgsRectangle,
+)
 from qgis.PyQt.QtWidgets import QFileDialog, QComboBox, QMessageBox
 from qgis.PyQt.QtCore import (
     QObject, QPoint, QRect, QSettings, QSignalBlocker, QStandardPaths, QTimer, QVariant, pyqtSignal,
@@ -18,6 +26,7 @@ from .bootstrap import ensure_time_series_services
 from .map_setting import InsarMap
 from .layer_utils import vector_layer as vector_layer_utils
 from .layer_utils import grd_layer as grd_layer_utils
+from .layer_utils import h5_layer as h5_layer_utils
 from .ui_windows.about_dialog import AboutDialog
 from .drawing_tools.polygon_drawing_tool import PolygonDrawingTool
 from .ui.popups.time_series_style_popup import TimeSeriesStylePopup
@@ -55,6 +64,7 @@ from .qt_compat import (
     ITEM_IS_ENABLED,
     ITEM_IS_SELECTABLE,
     POINT_GEOMETRY,
+    POLYGON_GEOMETRY,
     RASTER_LAYER,
     VECTOR_LAYER,
     available_screen_geometry,
@@ -342,11 +352,24 @@ class GuiController(QObject):
         self._active_time_series_selection_capability = TimeSeriesSelectionCapability(False, False)
         self._map_tool_signal_connected = False
         self._session_teardown_complete = False
+        self._h5_frame_rubber_band = None
+        self._updating_h5_layer = False
+        self._h5_file_list = []
+        canvas_crs_sig = getattr(self.iface.mapCanvas(), "destinationCrsChanged", None)
+        if canvas_crs_sig is not None:
+            try:
+                canvas_crs_sig.connect(self._onDestinationCrsChangedForH5Frame)
+            except (AttributeError, TypeError, RuntimeError):
+                pass
         self.initializeUiParams()
         self.connectUiSignals()
         self._syncSelectionControlsToActiveMapTool()
 
         self.iface.currentLayerChanged.connect(self.onLayerChanged)
+        self.settings.remove('insar_explorer/h5_file_list')
+        self.settings.remove('insar_explorer/h5_file_path')
+        self.choose_point_click_handler.setH5FilePath("")
+        self._syncH5PanelList("")
         self.onLayerChanged()
 
     def _installSplitButtonPopupHoverReconciliation(self):
@@ -484,6 +507,13 @@ class GuiController(QObject):
                 pass
             self._theme_signal = None
         self.disconnectMapToolSync()
+        canvas_crs_sig = getattr(self.iface.mapCanvas(), "destinationCrsChanged", None)
+        if canvas_crs_sig is not None:
+            try:
+                canvas_crs_sig.disconnect(self._onDestinationCrsChangedForH5Frame)
+            except (TypeError, RuntimeError):
+                pass
+        self._clearH5FrameOverlay()
         try:
             self.iface.currentLayerChanged.disconnect(self.onLayerChanged)
         except (TypeError, RuntimeError):
@@ -537,6 +567,24 @@ class GuiController(QObject):
 
         self._setLiveSymbologyEnabled(False)
         self._syncPointMarkerControls(layer)
+        if (
+            layer is not None
+            and not getattr(self, "_updating_h5_layer", False)
+            and self._h5_file_list
+        ):
+            try:
+                layer_h5 = layer.customProperty("insar_explorer/h5_velocity_source", "")
+                if layer_h5:
+                    abs_layer_h5 = os.path.abspath(
+                        h5_layer_utils.unwrap_h5_or_gdal_path(str(layer_h5))
+                    )
+                    norm_layer_h5 = os.path.normcase(abs_layer_h5)
+                    if any(os.path.normcase(p) == norm_layer_h5 for p in self._h5_file_list):
+                        self.choose_point_click_handler.setH5FilePath(abs_layer_h5)
+            except Exception:
+                pass
+        active_h5 = self.choose_point_click_handler.h5FilePath()
+        self._syncH5PanelList(active_h5 if self._h5_file_list else "")
         selection_capability = self._projectTimeSeriesSelectionCapability(layer)
         pending_layer_id = self._pending_default_range_layer_id
         if pending_layer_id is not None and pending_layer_id != layer_id:
@@ -596,7 +644,13 @@ class GuiController(QObject):
                     self._initializeFreshLayerMapSettingsEditorState()
                     self._scheduleDefaultRangeInitialization(layer)
             else:
-                self.setVectorFields(initialize_default_range=False)
+                self.setVectorFields(
+                    initialize_default_range=False,
+                    preferred_field_name=(
+                        cached_map_state.range_state.field_name
+                        if cached_map_state is not None else None
+                    ),
+                )
                 if layer_type == RASTER_LAYER and is_local_raster:
                     if cached_map_state is not None:
                         restored_map_state = self._restoreLayerMapSettingsWorkingState(
@@ -611,12 +665,18 @@ class GuiController(QObject):
 
             if layer_type == RASTER_LAYER and not is_local_raster:
                 self.ui.settings_panel.setEnabled(False)
-                self._active_selection_state_layer_id = None
+                self._active_selection_state_layer_id = (
+                    layer_id if selection_capability.supported else None
+                )
                 self._active_map_settings_state_layer_id = None
                 self._active_map_settings_state_is_vector = False
                 self._active_map_settings_provenance = None
                 self._active_map_settings_default_fingerprint = None
-                message = "Unsupported layer selected. Please choose a layer compatible with InSAR Explorer."
+                message = (
+                    ""
+                    if selection_capability.supported
+                    else "Unsupported layer selected. Please choose a layer compatible with InSAR Explorer."
+                )
             elif layer_type == VECTOR_LAYER and not fields_available:
                 self.ui.settings_panel.setEnabled(True)
                 self._active_selection_state_layer_id = (
@@ -657,15 +717,25 @@ class GuiController(QObject):
                 ):
                     self._layer_map_settings_editing_baselines[layer_id] = cached_map_state
                 message = ""
+            self._updateH5FrameOverlay(
+                self.choose_point_click_handler.activeH5FilePath(layer),
+                layer=layer,
+            )
             self._syncTimeSeriesSelectionControlState()
             self._syncMapSettingsActionState()
             self.msg_signal.emit(message, STATUS_INFO, 0)
         else:
-            self._active_selection_state_layer_id = None
+            active_h5 = self.choose_point_click_handler.activeH5FilePath(None)
+            self.setVectorFields(initialize_default_range=False)
+            if selection_capability.supported and active_h5:
+                self._active_selection_state_layer_id = f"h5:{active_h5}"
+            else:
+                self._active_selection_state_layer_id = None
             self._active_map_settings_state_layer_id = None
             self._active_map_settings_state_is_vector = False
             self._active_map_settings_provenance = None
             self._active_map_settings_default_fingerprint = None
+            self._updateH5FrameOverlay(active_h5, layer=None)
             self._syncTimeSeriesSelectionControlState()
             self._syncMapSettingsActionState()
 
@@ -681,7 +751,8 @@ class GuiController(QObject):
     def _timeSeriesSelectionCapability(self, layer):
         """Return Target/Reference extraction capability for one active layer."""
         if layer is None:
-            return TimeSeriesSelectionCapability(False, False)
+            has_h5 = self.choose_point_click_handler.hasValidH5Timeseries(None)
+            return TimeSeriesSelectionCapability(bool(has_h5), bool(has_h5))
         try:
             layer_type = layer.type()
         except (AttributeError, RuntimeError):
@@ -691,8 +762,11 @@ class GuiController(QObject):
             supported, _ = vector_layer_utils.checkVectorLayerTimeseries(layer)
             return TimeSeriesSelectionCapability(bool(supported), bool(supported))
         if layer_type == RASTER_LAYER:
-            supported, _ = grd_layer_utils.checkGrdTimeseries(layer)
-            return TimeSeriesSelectionCapability(bool(supported), False)
+            has_h5 = self.choose_point_click_handler.hasValidH5Timeseries(layer)
+            supported, _ = grd_layer_utils.checkGrdTimeseries(
+                layer, h5_file_path=self.choose_point_click_handler.h5FilePath()
+            )
+            return TimeSeriesSelectionCapability(bool(supported or has_h5), bool(has_h5))
         return TimeSeriesSelectionCapability(False, False)
 
     def _syncTimeSeriesSelectionControlState(self):
@@ -756,55 +830,88 @@ class GuiController(QObject):
         return -1
 
     def setVectorFields(self, initialize_default_range=False, preferred_field_name=None):
-        """Populate vector fields and optionally initialize a fresh range state."""
+        """Populate vector or H5 fields and optionally initialize a fresh range state."""
         layer = self.iface.activeLayer()
-        if not layer:
-            return
-
-        status, message = vector_layer_utils.checkVectorLayer(layer)
+        status, message = (
+            vector_layer_utils.checkVectorLayer(layer)
+            if layer is not None
+            else (False, "")
+        )
         field_combo = self.ui.cb_select_field
         was_blocked = field_combo.blockSignals(True)
         try:
             field_combo.clear()
             if status is False:
-                field_combo.setEnabled(False)
+                active_h5 = self.choose_point_click_handler.activeH5FilePath(layer)
+                reader = self.choose_point_click_handler.raster_layer.h5_reader
+                h5_fields = reader.get_h5_fields(active_h5) if active_h5 else []
+                if not h5_fields:
+                    field_combo.setEnabled(False)
+                    self.ui.sb_symbol_size.setEnabled(False)
+                    self._setSymbologyDirty(False)
+                    return False
+
+                field_combo.setEnabled(True)
                 self.ui.sb_symbol_size.setEnabled(False)
-                self._setSymbologyDirty(False)
-                return False
+                for field_name, is_spatial in h5_fields:
+                    field_combo.addItem(field_name)
+                    if not is_spatial:
+                        index = field_combo.count() - 1
+                        field_combo.model().item(index).setEnabled(False)
 
-            field_combo.setEnabled(True)
-            self.ui.sb_symbol_size.setEnabled(True)
-
-            field_list, field_types = vector_layer_utils.getVectorFields(layer)
-            velocity_field, message = vector_layer_utils.getVectorVelocityFieldName(layer)
-
-            for field, field_type in zip(field_list, field_types):
-                field_combo.addItem(field)
-                if field_type not in [QVariant.Double, QVariant.Int, QVariant.LongLong]:
-                    index = field_combo.count() - 1
-                    field_combo.model().item(index).setEnabled(False)
-
-            preferred_index = self._findSelectableFieldIndex(
-                field_combo, preferred_field_name
-            )
-            if preferred_index >= 0:
-                field_combo.setCurrentIndex(preferred_index)
-            else:
-                velocity_index = self._findSelectableFieldIndex(
-                    field_combo, velocity_field
+                target_pref = (
+                    preferred_field_name
+                    or getattr(reader, "selected_field_name", None)
+                    or reader.cum_key
                 )
-                if velocity_index >= 0:
-                    field_combo.setCurrentIndex(velocity_index)
+                preferred_index = self._findSelectableFieldIndex(
+                    field_combo, target_pref
+                )
+                if preferred_index >= 0:
+                    field_combo.setCurrentIndex(preferred_index)
+                else:
+                    cum_index = self._findSelectableFieldIndex(
+                        field_combo, reader.cum_key
+                    )
+                    if cum_index >= 0:
+                        field_combo.setCurrentIndex(cum_index)
+            else:
+                field_combo.setEnabled(True)
+                self.ui.sb_symbol_size.setEnabled(True)
+
+                field_list, field_types = vector_layer_utils.getVectorFields(layer)
+                velocity_field, message = vector_layer_utils.getVectorVelocityFieldName(layer)
+
+                for field, field_type in zip(field_list, field_types):
+                    field_combo.addItem(field)
+                    if field_type not in [QVariant.Double, QVariant.Int, QVariant.LongLong]:
+                        index = field_combo.count() - 1
+                        field_combo.model().item(index).setEnabled(False)
+
+                preferred_index = self._findSelectableFieldIndex(
+                    field_combo, preferred_field_name
+                )
+                if preferred_index >= 0:
+                    field_combo.setCurrentIndex(preferred_index)
+                else:
+                    velocity_index = self._findSelectableFieldIndex(
+                        field_combo, velocity_field
+                    )
+                    if velocity_index >= 0:
+                        field_combo.setCurrentIndex(velocity_index)
         finally:
             field_combo.blockSignals(was_blocked)
 
         if hasattr(self.ui, "map_settings_panel"):
             self.ui.map_settings_panel.sync_field_selection_state()
 
-        self.insar_map.selected_field_name = field_combo.currentText()
-        self.choose_point_click_handler.selected_field_name = self.insar_map.selected_field_name
+        selected_text = field_combo.currentText()
+        self.insar_map.selected_field_name = selected_text
+        self.choose_point_click_handler.selected_field_name = selected_text
+        if status is False and selected_text:
+            self.choose_point_click_handler.raster_layer.h5_reader.selected_field_name = selected_text
 
-        if initialize_default_range:
+        if initialize_default_range and layer is not None:
             self._scheduleDefaultRangeInitialization(layer)
         else:
             self._setSymbologyDirty(False)
@@ -899,7 +1006,7 @@ class GuiController(QObject):
     def _currentLayerRangeWorkingState(self):
         """Capture the current range portion of Map Settings working state."""
         field_name = None
-        if self._active_map_settings_state_is_vector:
+        if self._active_map_settings_state_is_vector or self.ui.cb_select_field.isEnabled():
             field_name = self.ui.cb_select_field.currentText() or None
         raw_values = self._range_source_raw_values
         if raw_values is not None:
@@ -1143,20 +1250,24 @@ class GuiController(QObject):
         except (AttributeError, RuntimeError):
             return False
 
-        if layer_type == VECTOR_LAYER:
+        if layer_type == VECTOR_LAYER or self.ui.cb_select_field.isEnabled():
             field_combo = self.ui.cb_select_field
             field_index = self._findSelectableFieldIndex(
                 field_combo, state.field_name
             )
             if field_index < 0:
-                return False
-            blocked = field_combo.blockSignals(True)
-            try:
-                field_combo.setCurrentIndex(field_index)
-            finally:
-                field_combo.blockSignals(blocked)
-            self.insar_map.selected_field_name = state.field_name
-            self.choose_point_click_handler.selected_field_name = state.field_name
+                if layer_type == VECTOR_LAYER:
+                    return False
+            else:
+                blocked = field_combo.blockSignals(True)
+                try:
+                    field_combo.setCurrentIndex(field_index)
+                finally:
+                    field_combo.blockSignals(blocked)
+                self.insar_map.selected_field_name = state.field_name
+                self.choose_point_click_handler.selected_field_name = state.field_name
+                if layer_type != VECTOR_LAYER:
+                    self.choose_point_click_handler.raster_layer.h5_reader.selected_field_name = state.field_name
 
         layer_id = self._layerIdentity(layer)
         if self._pending_default_range_layer_id == layer_id:
@@ -1301,8 +1412,24 @@ class GuiController(QObject):
             self.ui.sb_symbol_upper_range.value(),
         )
 
-        self.insar_map.selected_field_name = self.ui.cb_select_field.currentText()
-        self.choose_point_click_handler.selected_field_name = self.insar_map.selected_field_name
+        selected_field = self.ui.cb_select_field.currentText()
+        self.insar_map.selected_field_name = selected_field
+        self.choose_point_click_handler.selected_field_name = selected_field
+
+        if not self._active_map_settings_state_is_vector:
+            active_layer = self.iface.activeLayer()
+            active_h5 = self.choose_point_click_handler.activeH5FilePath(active_layer)
+            if active_h5 and os.path.isfile(active_h5):
+                reader = self.choose_point_click_handler.raster_layer.h5_reader
+                reader.selected_field_name = selected_field
+                self._ensureH5VelocityLayerAndFrame(
+                    active_h5,
+                    field_name=selected_field,
+                    only_if_no_local_layer=False,
+                    zoom_to_frame=False,
+                )
+                return
+
         self.insar_map.reset()
 
         if self.ui.cb_symbol_value_offset_sync_with_ref.isChecked():
@@ -1563,6 +1690,12 @@ class GuiController(QObject):
             self._refreshCommittedNavigationActionState
         )
         panel.indicatorSettingsRequested.connect(self.showMapIndicatorSettingsPopup)
+        if hasattr(panel, "browseH5Requested"):
+            panel.browseH5Requested.connect(self.browseH5File)
+        if hasattr(panel, "clearH5Requested"):
+            panel.clearH5Requested.connect(self.clearH5File)
+        if hasattr(panel, "h5PathEdited"):
+            panel.h5PathEdited.connect(self.onH5PathEdited)
         self.ui.pb_choose_point.clicked.connect(self.activatePointSelection)
         self.ui.pb_set_reference.clicked.connect(self.activateReferencePointSelection)
         self.ui.pb_reset_reference.clicked.connect(self.resetReferencePoint)
@@ -1762,6 +1895,401 @@ class GuiController(QObject):
         indicator_popup.saveCurrentAsDefaultRequested.connect(
             self.setCurrentMapIndicatorsAsDefault
         )
+
+    def _clearH5FrameOverlay(self):
+        """Remove the H5 bounding-frame rubber band from the map canvas."""
+        band = getattr(self, "_h5_frame_rubber_band", None)
+        self._h5_frame_rubber_band = None
+        if band is None:
+            return
+        try:
+            canvas = self.iface.mapCanvas()
+            scene = None if canvas is None else canvas.scene()
+            if scene is not None:
+                scene.removeItem(band)
+        except Exception:
+            pass
+
+    def _onDestinationCrsChangedForH5Frame(self, *_):
+        """Reproject the H5 frame overlay when the map canvas CRS changes."""
+        layer = self.iface.activeLayer()
+        active_h5 = self.choose_point_click_handler.activeH5FilePath(layer)
+        self._updateH5FrameOverlay(active_h5, layer=layer)
+
+    def _updateH5FrameOverlay(self, h5_path: str, layer=None):
+        """Draw or update the bounding frame for the active H5 file on the map canvas."""
+        self._clearH5FrameOverlay()
+        if not h5_path:
+            return
+        reader = self.choose_point_click_handler.raster_layer.h5_reader
+        corners, use_layer_crs = reader.get_frame_corners(h5_path, layer=layer)
+        if not corners or len(corners) < 4:
+            return
+
+        canvas = self.iface.mapCanvas()
+        if canvas is None:
+            return
+
+        source_crs = QgsCoordinateReferenceSystem("EPSG:4326")
+        if use_layer_crs and layer is not None:
+            try:
+                if layer.crs().isValid():
+                    source_crs = layer.crs()
+            except Exception:
+                pass
+
+        ring = [QgsPointXY(float(x), float(y)) for x, y in corners]
+        ring.append(QgsPointXY(float(corners[0][0]), float(corners[0][1])))
+        geom = QgsGeometry.fromPolygonXY([ring])
+        if geom.isEmpty():
+            return
+
+        dest_crs = canvas.mapSettings().destinationCrs()
+        if source_crs.isValid() and dest_crs.isValid() and source_crs != dest_crs:
+            try:
+                transform = QgsCoordinateTransform(source_crs, dest_crs, QgsProject.instance())
+                geom.transform(transform)
+            except Exception:
+                pass
+
+        try:
+            band = QgsRubberBand(canvas, POLYGON_GEOMETRY)
+            band.setToGeometry(geom, None)
+            band.setStrokeColor(QColor(0, 180, 255, 235))
+            band.setFillColor(QColor(0, 180, 255, 0))
+            band.setWidth(2)
+            self._h5_frame_rubber_band = band
+        except Exception:
+            self._h5_frame_rubber_band = None
+        return geom
+
+    def _addH5ToList(self, file_path: str) -> str:
+        """Add a validated H5 file path to the session list if not already present."""
+        cleaned = h5_layer_utils.unwrap_h5_or_gdal_path(file_path or "").strip()
+        if not cleaned:
+            return ""
+        abs_path = os.path.abspath(cleaned)
+        norm_target = os.path.normcase(abs_path)
+        for existing in self._h5_file_list:
+            if os.path.normcase(existing) == norm_target:
+                return existing
+        self._h5_file_list.append(abs_path)
+        return abs_path
+
+    def _saveH5Settings(self, active_path: str = ""):
+        """No-op: H5 file list is session-local and starts empty on plugin launch."""
+        _ = active_path
+
+    def _syncH5PanelList(self, active_path: str = ""):
+        """Sync the H5 dropdown menu on the Selection panel with _h5_file_list."""
+        panel = getattr(self.ui, "time_series_point_panel", None)
+        if panel is None:
+            return
+        if hasattr(panel, "set_h5_files"):
+            panel.set_h5_files(self._h5_file_list, active_path)
+        elif hasattr(panel, "set_h5_path"):
+            panel.set_h5_path(active_path)
+
+    def _ensureH5VelocityLayerAndFrame(
+        self,
+        h5_path: str,
+        *,
+        field_name: str = None,
+        only_if_no_local_layer: bool = False,
+        zoom_to_frame: bool = True,
+    ):
+        """Create/style a raster layer for the selected H5 field and draw its bounding frame."""
+        if not h5_path or getattr(self, "_updating_h5_layer", False):
+            return None
+
+        active_layer = self.iface.activeLayer()
+        if only_if_no_local_layer and active_layer is not None:
+            try:
+                provider = active_layer.dataProvider()
+                pname = provider.name() if provider is not None else ""
+                if pname in ("gdal", "ogr"):
+                    self._updateH5FrameOverlay(h5_path, layer=active_layer)
+                    return active_layer
+            except Exception:
+                pass
+
+        was_point = bool(self.ui.pb_choose_point.isChecked())
+        was_ref_point = bool(self.ui.pb_set_reference.isChecked())
+        was_poly = bool(self.ui.pb_choose_polygon.isChecked())
+        was_ref_poly = bool(self.ui.pb_set_reference_polygon.isChecked())
+
+        reader = self.choose_point_click_handler.raster_layer.h5_reader
+        target_field = field_name or getattr(reader, "selected_field_name", None) or "cum"
+        reader.selected_field_name = target_field
+        tif_path = reader.export_velocity_geotiff(
+            h5_path, layer=active_layer, field_name=target_field
+        )
+        if not tif_path or not os.path.isfile(tif_path):
+            frame_geom = self._updateH5FrameOverlay(h5_path, layer=active_layer)
+            if zoom_to_frame and frame_geom is not None and not frame_geom.isEmpty():
+                try:
+                    rect = QgsRectangle(frame_geom.boundingBox())
+                    rect.scale(1.08)
+                    self.iface.mapCanvas().setExtent(rect)
+                    self.iface.mapCanvas().refresh()
+                except Exception:
+                    pass
+            return None
+
+        self._updating_h5_layer = True
+        try:
+            project = QgsProject.instance()
+            vel_layer = None
+            norm_h5 = os.path.normcase(os.path.abspath(h5_path))
+            for lyr in project.mapLayers().values():
+                try:
+                    prop = lyr.customProperty("insar_explorer/h5_velocity_source", "")
+                    if prop and os.path.normcase(os.path.abspath(str(prop))) == norm_h5:
+                        vel_layer = lyr
+                        break
+                except Exception:
+                    continue
+
+            field_label = "Velocity (cum)" if target_field == "cum" else target_field
+            h5_display = h5_layer_utils.format_h5_display_name(h5_path) or os.path.basename(h5_path)
+            layer_title = f"{h5_display} [{field_label}]"
+            if vel_layer is None or not vel_layer.isValid():
+                vel_layer = QgsRasterLayer(tif_path, layer_title, "gdal")
+                if not vel_layer.isValid():
+                    self._updateH5FrameOverlay(h5_path, layer=active_layer)
+                    return None
+                vel_layer.setCustomProperty("insar_explorer/h5_velocity_source", h5_path)
+                vel_layer.setCustomProperty("insar_explorer/h5_active_field", target_field)
+                project.addMapLayer(vel_layer)
+            else:
+                try:
+                    prev_field = str(vel_layer.customProperty("insar_explorer/h5_active_field", "") or "")
+                    if prev_field != target_field or vel_layer.source() != tif_path:
+                        vel_layer.setCustomProperty("insar_explorer/h5_active_field", target_field)
+                        vel_layer.setDataSource(tif_path, layer_title, "gdal")
+                        vel_layer.dataProvider().reloadData()
+                except Exception:
+                    pass
+
+            self.iface.setActiveLayer(vel_layer)
+            self.onLayerChanged(vel_layer)
+            self.setVectorFields(
+                initialize_default_range=False,
+                preferred_field_name=target_field,
+            )
+
+            layer_id = self._layerIdentity(vel_layer)
+            if self._pending_default_range_layer_id == layer_id:
+                self._pending_default_range_layer_id = None
+                self._setDefaultRangeInitializationPending(False)
+
+            is_symmetric = target_field in (
+                "cum",
+                "vel",
+                "E.geo",
+                "N.geo",
+                "U.geo",
+                "vintercept",
+            )
+            vel_policy = RangePolicyDefaults(
+                range_source=RangeSource.STD_2,
+                calculation=StdCalculationMode.FAST,
+                symmetric_around_zero=is_symmetric,
+            )
+            if not self._projectMapRangePolicy(vel_policy, publish_edit=False):
+                self._initializeDefaultRangeState()
+            self._applySymbologyAndClearPending()
+            self._captureCurrentLayerMapSettingsEditingBaseline(layer_id)
+
+            if was_point and self.ui.pb_choose_point.isEnabled():
+                self.activatePointSelection(True)
+            elif was_ref_point and self.ui.pb_set_reference.isEnabled():
+                self.activateReferencePointSelection(True)
+            elif was_poly and self.ui.pb_choose_polygon.isEnabled():
+                self.activatePolygonSelection(True)
+            elif was_ref_poly and self.ui.pb_set_reference_polygon.isEnabled():
+                self.activateReferencePolygonSelection(True)
+
+            frame_geom = self._updateH5FrameOverlay(h5_path, layer=vel_layer)
+            try:
+                canvas = self.iface.mapCanvas()
+                if frame_geom is not None and not frame_geom.isEmpty():
+                    rect = QgsRectangle(frame_geom.boundingBox())
+                else:
+                    rect = QgsRectangle(vel_layer.extent())
+                if not rect.isEmpty():
+                    should_zoom = zoom_to_frame or not canvas.extent().intersects(rect)
+                    if should_zoom:
+                        rect.scale(1.08)
+                        canvas.setExtent(rect)
+                    canvas.refresh()
+            except Exception:
+                pass
+            return vel_layer
+        finally:
+            self._updating_h5_layer = False
+
+    def browseH5File(self):
+        """Open a file dialog to add one or more HDF5 time-series files (e.g. cum.h5)."""
+        initial_dir = ""
+        current_h5 = self.choose_point_click_handler.activeH5FilePath(self.iface.activeLayer())
+        if current_h5 and os.path.exists(current_h5):
+            initial_dir = os.path.dirname(current_h5)
+        else:
+            layer = self.iface.activeLayer()
+            if layer is not None:
+                try:
+                    layer_path = h5_layer_utils.unwrap_h5_or_gdal_path(layer.source())
+                    if layer_path and os.path.exists(layer_path):
+                        initial_dir = os.path.dirname(layer_path)
+                except Exception:
+                    initial_dir = ""
+        if not initial_dir:
+            initial_dir = self.last_save_path or ""
+
+        file_paths, _ = QFileDialog.getOpenFileNames(
+            self.ui,
+            "Add HDF5 Time-Series File(s) (cum.h5)",
+            initial_dir,
+            "HDF5 files (*.h5 *.hdf5 *.he5);;All files (*)",
+        )
+        if not file_paths:
+            return
+
+        valid_added = []
+        for fp in file_paths:
+            ok, message = h5_layer_utils.checkH5File(fp)
+            if not ok:
+                self.msg_signal.emit(message, STATUS_WARNING, 5000)
+                continue
+            added = self._addH5ToList(fp)
+            if added:
+                valid_added.append(added)
+
+        if not valid_added:
+            return
+
+        # Select and activate the last added H5 file
+        active_h5 = valid_added[-1]
+        self.onH5PathEdited(active_h5, zoom_to_frame=True)
+
+    def clearH5File(self):
+        """Remove the currently selected H5 file from the multi-H5 selector list."""
+        current_h5 = self.choose_point_click_handler.h5FilePath()
+        if current_h5:
+            norm_curr = os.path.normcase(os.path.abspath(current_h5))
+            self._h5_file_list = [
+                p for p in self._h5_file_list
+                if os.path.normcase(os.path.abspath(p)) != norm_curr
+            ]
+
+        if self._h5_file_list:
+            next_h5 = self._h5_file_list[-1]
+            self.onH5PathEdited(next_h5, zoom_to_frame=False)
+            return
+
+        self.choose_point_click_handler.setH5FilePath("")
+        layer = self.iface.activeLayer()
+        self._syncH5PanelList("")
+        self._updateH5FrameOverlay("", layer=layer)
+        self.setVectorFields(initialize_default_range=False)
+        self._projectTimeSeriesSelectionCapability(layer)
+        self.msg_signal.emit("H5 file list cleared.", STATUS_INFO, 3000)
+
+    def onH5PathEdited(self, file_path: str, *, zoom_to_frame: bool = False):
+        """Activate a selected or newly added H5 file path."""
+        cleaned = (file_path or "").strip()
+        if not cleaned:
+            self.clearH5File()
+            return
+
+        ok, message = h5_layer_utils.checkH5File(cleaned)
+        if not ok:
+            self.msg_signal.emit(message, STATUS_WARNING, 5000)
+            self._syncH5PanelList(
+                self.choose_point_click_handler.h5FilePath()
+                or self.choose_point_click_handler.activeH5FilePath(self.iface.activeLayer())
+            )
+            return
+
+        abs_path = self._addH5ToList(cleaned)
+        previous_target = self.choose_point_click_handler.target_session.current()
+        self.choose_point_click_handler.setH5FilePath(abs_path)
+        self._saveH5Settings(abs_path)
+        self._syncH5PanelList(abs_path)
+
+        active_field = (
+            getattr(
+                self.choose_point_click_handler.raster_layer.h5_reader,
+                "selected_field_name",
+                None,
+            )
+            or "cum"
+        )
+        vel_layer = self._ensureH5VelocityLayerAndFrame(
+            abs_path,
+            field_name=active_field,
+            only_if_no_local_layer=False,
+            zoom_to_frame=zoom_to_frame,
+        )
+        layer = vel_layer or self.iface.activeLayer()
+        capability = self._projectTimeSeriesSelectionCapability(layer)
+        if capability.supported and self._active_selection_state_layer_id is None:
+            self._active_selection_state_layer_id = self._layerIdentity(layer) or f"h5:{abs_path}"
+            self._syncTimeSeriesSelectionControlState()
+
+        # Ensure point selection tool is ready so the user can immediately click to plot TS
+        if (
+            capability.supported
+            and self.ui.pb_choose_point.isEnabled()
+            and not any(
+                btn.isChecked()
+                for btn in (
+                    self.ui.pb_choose_point,
+                    self.ui.pb_set_reference,
+                    self.ui.pb_choose_polygon,
+                    self.ui.pb_set_reference_polygon,
+                )
+            )
+        ):
+            self.activatePointSelection(True)
+
+        # If there was an active point target and the new H5 covers that point, re-plot TS on the selected H5
+        if (
+            previous_target is not None
+            and previous_target.selection.kind is SpatialSelectionKind.POINT
+            and previous_target.selection.map_location is not None
+            and self.choose_point_click_handler.target_session.current() is None
+        ):
+            try:
+                snap = previous_target.selection.map_location
+                pt = QgsPointXY(float(snap.x), float(snap.y))
+                reader = self.choose_point_click_handler.raster_layer.h5_reader
+                gt, _ = reader.resolve_geotransform(abs_path, layer=layer)
+                target_crs = self.choose_point_click_handler._resolveRasterTargetCrs(layer)
+                test_pt = QgsPointXY(pt)
+                if snap.crs.isValid() and target_crs.isValid() and snap.crs != target_crs:
+                    tr = QgsCoordinateTransform(snap.crs, target_crs, QgsProject.instance())
+                    test_pt = tr.transform(pt)
+                px, py = reader.coord_to_pixel(abs_path, test_pt.x(), test_pt.y(), gt)
+                if px is not None and py is not None:
+                    self.choose_point_click_handler.choosePointClickedRaster(
+                        point=pt, layer=layer, ref=False
+                    )
+            except Exception:
+                pass
+
+        summary = self.choose_point_click_handler.raster_layer.h5_reader.get_summary(abs_path)
+        display_name = h5_layer_utils.format_h5_display_name(abs_path) or os.path.basename(abs_path)
+        if summary is not None:
+            n_dates, n_y, n_x = summary
+            self.msg_signal.emit(
+                f"Active H5: {display_name} ({n_dates} dates, {n_y}x{n_x} px, {len(self._h5_file_list)} in list).",
+                STATUS_SUCCESS,
+                5000,
+            )
+        else:
+            self.msg_signal.emit(f"Active H5: {display_name}.", STATUS_SUCCESS, 4000)
 
     def connectMapSignals(self):
         if not hasattr(self, "_range_source"):
@@ -2326,7 +2854,7 @@ class GuiController(QObject):
         return f"{value:.2g}"
 
     def _handleTimeSeriesFitSuccess(self, model_id, statistics, *, seasonal=False):
-        """Report transient quality metrics for one fresh successful fit."""
+        """Report transient quality metrics and model velocity for one successful fit."""
         label = {
             "poly-1": "Linear",
             "poly-2": "Quadratic",
@@ -2338,17 +2866,36 @@ class GuiController(QObject):
             "n/a" if statistics.r_squared is None else f"{statistics.r_squared:.3f}"
         )
         seasonal_suffix = " + seasonal" if seasonal else ""
+        vel_val = getattr(statistics, "velocity", None)
+        vel_prefix = (
+            f"Vel: {vel_val:+.2f} mm/yr · "
+            if vel_val is not None and math.isfinite(vel_val)
+            else ""
+        )
         message = (
+            f"{vel_prefix}"
             f"R² {r_squared} · "
             f"RMSE {self._formatFitRmse(statistics.rmse)} mm — "
             f"{label}{seasonal_suffix} fit"
         )
         self._last_fit_statistics_message = message
-        self.msg_signal.emit(message, STATUS_INFO, 6000)
+        toolbar = getattr(self.ui, "time_series_toolbar", None)
+        if toolbar is not None and hasattr(toolbar, "setFitVelocityReadout"):
+            if vel_val is not None and math.isfinite(vel_val):
+                toolbar.setFitVelocityReadout(
+                    f"Vel: {vel_val:+.2f} mm/yr",
+                    tooltip=message,
+                )
+            else:
+                toolbar.setFitVelocityReadout("")
+        self.msg_signal.emit(message, STATUS_INFO, 8000)
 
     def _handleTimeSeriesFitFailure(self, error, *, seasonal=False):
         """Show a non-modal fitting failure message without retaining stale statistics."""
         self._last_fit_statistics_message = None
+        toolbar = getattr(self.ui, "time_series_toolbar", None)
+        if toolbar is not None and hasattr(toolbar, "setFitVelocityReadout"):
+            toolbar.setFitVelocityReadout("")
         label = {
             "exp": "Exponential",
             "log": "Logarithmic",
@@ -2409,6 +2956,25 @@ class GuiController(QObject):
         self._replica_show_in_residual_view = replica.show_in_residual
         self._syncTimeSeriesFitControls()
         self._syncTimeSeriesReplicaControls()
+        self._syncActiveFitVelocityReadout(record)
+
+    def _syncActiveFitVelocityReadout(self, record=None):
+        """Synchronize the toolbar velocity readout with the active time-series record."""
+        toolbar = getattr(self.ui, "time_series_toolbar", None)
+        if toolbar is None or not hasattr(toolbar, "setFitVelocityReadout"):
+            return
+        plotter = self.choose_point_click_handler.plot_ts
+        if record is None:
+            record = plotter.editable_time_series_record()
+        if record is None or not record.analysis.fit.enabled:
+            toolbar.setFitVelocityReadout("")
+            return
+        graphics = plotter._graphics_for_series(record)
+        vel_val = getattr(graphics, "fit_velocity", None) if graphics is not None else None
+        if vel_val is not None and math.isfinite(vel_val):
+            toolbar.setFitVelocityReadout(f"Vel: {vel_val:+.2f} mm/yr")
+        else:
+            toolbar.setFitVelocityReadout("")
 
     def _applyTimeSeriesFitState(
         self, refresh=True, *, report_statistics: bool = False,
@@ -3922,6 +4488,7 @@ class GuiController(QObject):
         toolbar.plot_export_button.setPrimaryEnabled(has_plot)
         toolbar.setRangeControlsEnabled(plotter.hasPlottedTimeSeriesData())
         self._syncTimeSeriesYAxisAssignmentControl()
+        self._syncActiveFitVelocityReadout()
 
     def discardPendingTimeSeries(self):
         """Discard only the pending preview and preserve the active reference."""
@@ -4756,6 +5323,7 @@ class GuiController(QObject):
 
     def handleUiClose(self, visible):
         if not visible:
+            self._clearH5FrameOverlay()
             self.clearTimeSeriesMapOverlays()
             self.choose_point_click_handler.clearFeatureHighlight()
             self.choose_point_click_handler.clearReferenceFeatureHighlight()
@@ -4766,6 +5334,8 @@ class GuiController(QObject):
             self.ui.pb_choose_point.setChecked(False)
             self.ui.pb_set_reference.setChecked(False)
             self.ui.pb_choose_polygon.setChecked(False)
+        else:
+            self._onDestinationCrsChangedForH5Frame()
 
     def activatePointSelection(self, status):
         self.ui.pb_set_reference.setChecked(False)

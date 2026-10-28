@@ -125,6 +125,9 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
     zoomCommittedReferenceRequested = pyqtSignal()
     committedActionStateRefreshRequested = pyqtSignal()
     indicatorSettingsRequested = pyqtSignal()
+    browseH5Requested = pyqtSignal()
+    clearH5Requested = pyqtSignal()
+    h5PathEdited = pyqtSignal(str)
 
     ICON_SIZE = 18
     BUTTON_SIZE = 26
@@ -222,6 +225,43 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout(self.content)
         layout.setContentsMargins(SPACE_LG, SPACE_SM, SPACE_LG, SPACE_LG)
         layout.setSpacing(SPACE_SM)
+
+        self.h5_label = self._secondary_label("H5 files (cum.h5)", "label_h5_file")
+        layout.addWidget(self.h5_label)
+
+        h5_row = QtWidgets.QHBoxLayout()
+        h5_row.setContentsMargins(0, 0, 0, 0)
+        h5_row.setSpacing(SPACE_XS)
+
+        self.cb_h5_files = QtWidgets.QComboBox(self)
+        self.cb_h5_files.setObjectName("cb_h5_files")
+        self.cb_h5_files.setSizePolicy(SIZE_POLICY_EXPANDING, SIZE_POLICY_FIXED)
+        self.cb_h5_files.setToolTip("Select active HDF5 time-series file (e.g. cum.h5)")
+        self.cb_h5_files.currentIndexChanged.connect(self._on_h5_combo_index_changed)
+        h5_row.addWidget(self.cb_h5_files, 1)
+
+        self.pb_browse_h5 = QtWidgets.QPushButton("+", self)
+        self.pb_browse_h5.setObjectName("pb_browse_h5")
+        self.pb_browse_h5.setToolTip("Add HDF5 time-series file(s) (cum.h5)")
+        self.pb_browse_h5.setFixedSize(self.BUTTON_SIZE, self.BUTTON_SIZE)
+        self.pb_browse_h5.clicked.connect(self.browseH5Requested.emit)
+        h5_row.addWidget(self.pb_browse_h5)
+
+        self.pb_clear_h5 = QtWidgets.QPushButton("×", self)
+        self.pb_clear_h5.setObjectName("pb_clear_h5")
+        self.pb_clear_h5.setToolTip("Remove selected HDF5 file from list")
+        self.pb_clear_h5.setFixedSize(self.BUTTON_SIZE, self.BUTTON_SIZE)
+        self.pb_clear_h5.clicked.connect(self.clearH5Requested.emit)
+        h5_row.addWidget(self.pb_clear_h5)
+
+        layout.addLayout(h5_row)
+        self._h5_paths_list = []
+        self.set_h5_files([], "")
+
+        self.h5_selection_separator = self._separator(
+            vertical=False, object_name="h5_selection_separator"
+        )
+        layout.addWidget(self.h5_selection_separator)
 
         header_grid = QtWidgets.QGridLayout()
         header_grid.setObjectName("time_series_selection_header_layout")
@@ -747,6 +787,89 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
         """Toggle shell presentation without changing Selection state."""
         self.set_collapsed(not self._collapsed)
 
+    def _on_h5_combo_index_changed(self, index: int):
+        """Emit the newly selected H5 file path when the user changes the combo selection."""
+        if index < 0:
+            return
+        path = self.cb_h5_files.itemData(index)
+        path_str = str(path or "").strip()
+        if path_str:
+            self.cb_h5_files.setToolTip(f"Active HDF5: {path_str}")
+            self.h5PathEdited.emit(path_str)
+
+    def h5_files(self) -> list:
+        """Return all H5 file paths currently in the selector menu."""
+        return list(self._h5_paths_list)
+
+    def active_h5_path(self) -> str:
+        """Return the currently selected H5 file path."""
+        idx = self.cb_h5_files.currentIndex()
+        if idx < 0:
+            return ""
+        return str(self.cb_h5_files.itemData(idx) or "").strip()
+
+    def set_h5_files(self, file_paths, active_path: str = ""):
+        """Populate the H5 selector dropdown with multiple H5 files and select active_path."""
+        import os
+        from ...layer_utils.h5_layer import format_h5_display_name
+
+        normalized_list = []
+        seen = set()
+        for raw in file_paths or ():
+            p = (raw or "").strip()
+            if not p:
+                continue
+            abs_p = os.path.abspath(p)
+            key = os.path.normcase(abs_p)
+            if key not in seen:
+                seen.add(key)
+                normalized_list.append(abs_p)
+
+        active_clean = (active_path or "").strip()
+        if active_clean:
+            abs_active = os.path.abspath(active_clean)
+            active_key = os.path.normcase(abs_active)
+            if active_key not in seen:
+                seen.add(active_key)
+                normalized_list.append(abs_active)
+        else:
+            active_key = ""
+
+        self._h5_paths_list = normalized_list
+        was_blocked = self.cb_h5_files.blockSignals(True)
+        try:
+            self.cb_h5_files.clear()
+            if not normalized_list:
+                self.cb_h5_files.addItem("Select cum.h5...", "")
+                self.cb_h5_files.setEnabled(False)
+                self.pb_clear_h5.setEnabled(False)
+                self.cb_h5_files.setToolTip("Add an HDF5 time-series file (cum.h5) with '+'")
+                return
+
+            self.cb_h5_files.setEnabled(True)
+            self.pb_clear_h5.setEnabled(True)
+            target_idx = 0
+            for idx, p in enumerate(normalized_list):
+                label = format_h5_display_name(p)
+                self.cb_h5_files.addItem(label, p)
+                self.cb_h5_files.setItemData(idx, p, 3)  # Qt.ToolTipRole == 3
+                if active_key and os.path.normcase(p) == active_key:
+                    target_idx = idx
+
+            self.cb_h5_files.setCurrentIndex(target_idx)
+            selected_p = normalized_list[target_idx]
+            self.cb_h5_files.setToolTip(f"Active HDF5: {selected_p}")
+        finally:
+            self.cb_h5_files.blockSignals(was_blocked)
+
+    def set_h5_path(self, file_path: str):
+        """Select (and add if needed) an H5 file path without losing existing items."""
+        path_text = (file_path or "").strip()
+        if not path_text:
+            self.set_h5_files(self._h5_paths_list, "")
+            return
+        self.set_h5_files(self._h5_paths_list, path_text)
+
     def set_collapsed(self, collapsed):
         """Project expanded/collapsed shell presentation only."""
         self._collapsed = bool(collapsed)
@@ -815,6 +938,7 @@ class TimeSeriesPointPanel(QtWidgets.QWidget):
 
         source_palette = self.palette()
         for label, emphasis in (
+            (self.h5_label, self.SUBGROUP_TEXT_EMPHASIS),
             (self.target_label, self.SUBGROUP_TEXT_EMPHASIS),
             (self.reference_label, self.SUBGROUP_TEXT_EMPHASIS),
             (self.pending_section_label, self.SUBGROUP_TEXT_EMPHASIS),

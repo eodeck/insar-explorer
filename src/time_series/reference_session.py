@@ -64,7 +64,10 @@ class ActiveReferenceSession:
 
     def set(self, reference: ActiveReference) -> ActiveReference:
         """Replace the active reference after successful extraction."""
-        if not isinstance(reference, ActiveReference):
+        if not (
+            isinstance(reference, ActiveReference)
+            or type(reference).__name__ == "ActiveReference"
+        ):
             raise TypeError("reference must be an ActiveReference")
         self._active = reference
         return reference

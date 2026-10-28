@@ -1665,9 +1665,14 @@ class PlotTs():
             for i in range(series.plot_multiple_values.shape[1]):
                 main_y_data.append(series.plot_multiple_values[:, i])
 
+        plot_y = np.asarray(series.plot_values, dtype=float)
+        finite_plot_mask = np.isfinite(plot_y)
+        plot_x = x[finite_plot_mask] if not np.all(finite_plot_mask) else x
+        plot_y_finite = plot_y[finite_plot_mask] if not np.all(finite_plot_mask) else series.plot_values
+
         if marker_size > 0 and marker_alpha > 0:
             items.scatter = pg.ScatterPlotItem(
-                x=x, y=series.plot_values, symbol=self._symbol(marker),
+                x=plot_x, y=plot_y_finite, symbol=self._symbol(marker),
                 size=marker_size,
                 pen=self._seriesMarkerPen(marker, marker_color, marker_alpha),
                 brush=self._brush(marker_color, marker_alpha),
@@ -1679,8 +1684,8 @@ class PlotTs():
 
         if line_style and line_width > 0 and line_alpha > 0:
             items.line = pg.PlotDataItem(
-                x,
-                series.plot_values,
+                plot_x,
+                plot_y_finite,
                 pen=self._pen(line_color, line_width, line_alpha, line_style),
                 antialias=_INTERACTIVE_ANTIALIAS,
             )
@@ -1784,12 +1789,12 @@ class PlotTs():
         fit_seasonal = fit_config.seasonal
         fit_model = fit_config.model
         try:
-            model_values, model_x, model_y = (
-                FittingModels(series.dates, series.plot_values, model=fit_model).fit(
-                    seasonal=fit_seasonal
-                )
+            fitter = FittingModels(series.dates, series.plot_values, model=fit_model)
+            model_values, model_x, model_y = fitter.fit(
+                seasonal=fit_seasonal
             )
         except ModelFitError as error:
+            graphics.fit_velocity = None
             if self.fit_failure_callback is not None:
                 self.fit_failure_callback(error, seasonal=fit_seasonal)
             return None, None
@@ -1807,9 +1812,12 @@ class PlotTs():
         finite_mask = np.isfinite(observed_values) & np.isfinite(fitted_values)
         try:
             statistics = calculateFitStatistics(
-                observed_values[finite_mask], fitted_values[finite_mask]
+                observed_values[finite_mask],
+                fitted_values[finite_mask],
+                velocity=fitter.last_velocity,
             )
         except ValueError:
+            graphics.fit_velocity = None
             error = ModelFitError(
                 fit_model,
                 f"{fit_model} fit returned invalid statistics.",
@@ -1818,6 +1826,8 @@ class PlotTs():
             if self.fit_failure_callback is not None:
                 self.fit_failure_callback(error, seasonal=fit_seasonal)
             return None, None
+
+        graphics.fit_velocity = statistics.velocity
 
         residuals_values = observed_values - fitted_values
         self.plotResiduals(
@@ -1935,11 +1945,15 @@ class PlotTs():
             parms.update(residual_style.asParams())
 
             x = self._datesToX(series.dates)
+            res_y = np.asarray(residuals_values, dtype=float)
+            finite_res_mask = np.isfinite(res_y)
+            res_x = x[finite_res_mask] if not np.all(finite_res_mask) else x
+            res_y_finite = res_y[finite_res_mask] if not np.all(finite_res_mask) else residuals_values
             marker_size = marker_size or 0
             if marker_size > 0 and marker_alpha > 0:
                 items.residual_scatter = pg.ScatterPlotItem(
-                    x=x,
-                    y=residuals_values,
+                    x=res_x,
+                    y=res_y_finite,
                     symbol=self._symbol(marker),
                     size=marker_size,
                     pen=self._seriesMarkerPen(marker, marker_color, marker_alpha),
@@ -1949,8 +1963,8 @@ class PlotTs():
                 transaction.add_item(residual_view, items.residual_scatter)
             if line_style and line_width > 0 and line_alpha > 0:
                 items.residual_line = pg.PlotDataItem(
-                    x,
-                    residuals_values,
+                    res_x,
+                    res_y_finite,
                     pen=self._pen(line_color, line_width, line_alpha, line_style),
                     antialias=_INTERACTIVE_ANTIALIAS,
                 )
@@ -2166,8 +2180,13 @@ class PlotTs():
                     related_label + " ensemble",
                 ))
             if record.presentation.legend.include_fit and graphics.fit_plot is not None:
+                fit_vel = getattr(graphics, "fit_velocity", None)
+                if fit_vel is not None and np.isfinite(fit_vel):
+                    fit_label_text = f"{related_label} fit ({fit_vel:+.2f} mm/yr)"
+                else:
+                    fit_label_text = related_label + " fit"
                 main_entries.append((
-                    graphics.fit_plot, related_label + " fit",
+                    graphics.fit_plot, fit_label_text,
                 ))
             replica_up = self._first_graphics_item(*(graphics.replicate_up or ()))
             replica_down = self._first_graphics_item(*(graphics.replicate_dn or ()))

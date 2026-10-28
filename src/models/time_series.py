@@ -60,7 +60,7 @@ class PointAttributeSnapshot:
     @classmethod
     def from_mapping(cls, values: Optional[Mapping[str, Any]]) -> "PointAttributeSnapshot":
         """Copy field values without retaining a live QGIS feature or layer."""
-        if isinstance(values, cls):
+        if isinstance(values, cls) or type(values).__name__ == "PointAttributeSnapshot":
             return cls(tuple((name, deepcopy(value)) for name, value in values.values))
         if not values:
             return cls()
@@ -150,7 +150,7 @@ class SpatialSelection:
         """Convert an existing point/polygon selection object into typed state."""
         if value is None:
             return None
-        if isinstance(value, cls):
+        if isinstance(value, cls) or type(value).__name__ == "SpatialSelection":
             return value
         kind = SpatialSelectionKind.POLYGON if hasattr(value, "geom") else SpatialSelectionKind.POINT
         return cls(value=value, kind=kind)
@@ -369,6 +369,7 @@ class TimeSeriesGraphics:
     main_y_data: List[Any] = field(default_factory=list)
     residual_y_data: List[Any] = field(default_factory=list)
     item_owners: dict[int, Any] = field(default_factory=dict)
+    fit_velocity: Optional[float] = None
 
 
 @dataclass(frozen=True)
@@ -389,11 +390,11 @@ class TimeSeriesRecord:
         """Normalize compatibility selection values while preserving immutable ownership."""
         object.__setattr__(self, "target", SpatialSelection.from_legacy(self.target))
         object.__setattr__(self, "reference", SpatialSelection.from_legacy(self.reference))
-        if not isinstance(self.target_attributes, PointAttributeSnapshot):
+        if not (isinstance(self.target_attributes, PointAttributeSnapshot) or type(self.target_attributes).__name__ == "PointAttributeSnapshot"):
             object.__setattr__(
                 self, "target_attributes", PointAttributeSnapshot.from_mapping(self.target_attributes)
             )
-        if not isinstance(self.reference_attributes, PointAttributeSnapshot):
+        if not (isinstance(self.reference_attributes, PointAttributeSnapshot) or type(self.reference_attributes).__name__ == "PointAttributeSnapshot"):
             object.__setattr__(
                 self, "reference_attributes", PointAttributeSnapshot.from_mapping(self.reference_attributes)
             )
@@ -523,18 +524,21 @@ def buildTimeSeriesData(
     if prepared_ref.shape[0] not in (1, date_count):
         raise ValueError("ref_values row count must be 1 or match dates length")
 
-    reference_mean = np.mean(prepared_ref, axis=1, keepdims=True)
-    values_minus_reference = prepared_ts - reference_mean
-    if prepared_ts.shape[1] > 1:
-        min_plot_values = _readonlyArray(np.min(values_minus_reference, axis=1), dtype=float)
-        max_plot_values = _readonlyArray(np.max(values_minus_reference, axis=1), dtype=float)
-        plot_multiple_values = _readonlyArray(values_minus_reference, dtype=float, ndmin=2)
-    else:
-        min_plot_values = None
-        max_plot_values = None
-        plot_multiple_values = None
+    import warnings
+    with warnings.catch_warnings(), np.errstate(invalid="ignore"):
+        warnings.simplefilter("ignore", category=RuntimeWarning)
+        reference_mean = np.nanmean(prepared_ref, axis=1, keepdims=True)
+        values_minus_reference = prepared_ts - reference_mean
+        if prepared_ts.shape[1] > 1:
+            min_plot_values = _readonlyArray(np.nanmin(values_minus_reference, axis=1), dtype=float)
+            max_plot_values = _readonlyArray(np.nanmax(values_minus_reference, axis=1), dtype=float)
+            plot_multiple_values = _readonlyArray(values_minus_reference, dtype=float, ndmin=2)
+        else:
+            min_plot_values = None
+            max_plot_values = None
+            plot_multiple_values = None
 
-    plot_values = _readonlyArray(np.mean(prepared_ts, axis=1) - np.mean(prepared_ref, axis=1), dtype=float)
+        plot_values = _readonlyArray(np.nanmean(prepared_ts, axis=1) - np.nanmean(prepared_ref, axis=1), dtype=float)
     return TimeSeriesData(
         dates=sorted_dates,
         ts_values=prepared_ts,

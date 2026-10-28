@@ -62,7 +62,7 @@ class InsarExplorer:
         )
 
         # initialize locale
-        locale = QSettings().value('locale/userLocale')[0:2]
+        locale = (QSettings().value('locale/userLocale') or 'en')[0:2]
         locale_path = os.path.join(
             self.plugin_dir,
             'i18n',
@@ -267,6 +267,9 @@ class InsarExplorer:
             self.iface.addDockWidget(BOTTOM_DOCK_WIDGET_AREA, self.dockwidget)
             self.dockwidget.show()
             if self.gui_controller is None:
+                self.time_series_services = create_time_series_services(
+                    self.plugin_dir, diagnostic=self.report_time_series_diagnostic
+                )
                 ensure_time_series_services(self)
                 self.gui_controller = GuiController(self)
         else:  # this will reload the widget when button clicked again

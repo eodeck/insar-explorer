@@ -2,6 +2,7 @@ import os
 import re
 from osgeo import gdal
 from ..qt_compat import VECTOR_LAYER
+from . import h5_layer as h5_layer_utils
 
 
 def checkGrdLayer(layer):
@@ -38,20 +39,39 @@ def checkGrdLayer(layer):
         dataset = None
 
     if dataset is None:
+        unwrapped = h5_layer_utils.unwrap_h5_or_gdal_path(file_path)
+        if unwrapped and os.path.isfile(unwrapped):
+            try:
+                dataset = gdal.Open(unwrapped)
+            except RuntimeError:
+                dataset = None
+
+    if dataset is None:
         message = 'Invalid Layer: Unable to open the file with GDAL.'
         return False, message
 
     driver = dataset.GetDriver().ShortName
-    if driver in ['netCDF', 'GMT']:  # for GMTSAR and MintPy files converted to grd
+    if driver in ['netCDF', 'GMT', 'GTiff', 'HDF5', 'VRT']:
         return True, ""
     else:
-        message = 'Invalid Layer: The file is not a GMT grd file.'
+        message = 'Invalid Layer: The file is not a GMT grd or GeoTIFF file.'
         return False, message
 
 
-def checkGrdTimeseries(layer):
-    """ check layer is a valid vector with velocity """
+def checkGrdTimeseries(layer, h5_file_path=None):
+    """ check layer is a valid raster with time-series data (.h5 or .grd) """
     message = ""
+    if h5_file_path:
+        h5_ok, _ = h5_layer_utils.checkH5File(h5_file_path)
+        if h5_ok:
+            if layer is None:
+                return True, ""
+            try:
+                if layer.type() != VECTOR_LAYER:
+                    return True, ""
+            except (AttributeError, RuntimeError):
+                return True, ""
+
     status, message = checkGrdLayer(layer)
     if status is False:
         return status, message
@@ -136,34 +156,23 @@ def _unwrap_netcdf_path(uri: str) -> str:
     if not isinstance(uri, str):
         return uri
 
-    prefix = 'NETCDF:'
-    if not uri.startswith(prefix):
-        return uri
+    for prefix in ('NETCDF:', 'HDF5:'):
+        if uri.upper().startswith(prefix):
+            remainder = uri[len(prefix):]
+            if remainder.startswith('"'):
+                end = remainder.find('"', 1)
+                if end != -1:
+                    return remainder[1:end]
+                remainder = remainder[1:]
 
-    # remainder after the NETCDF: prefix
-    remainder = uri[len(prefix):]
+            last_colon = remainder.rfind(':')
+            if last_colon == -1:
+                return remainder
 
-    # Quoted form: NETCDF:"/path/to/file.nc":var
-    if remainder.startswith('"'):
-        # find the closing quote after the opening one
-        end = remainder.find('"', 1)
-        if end != -1:
-            return remainder[1:end]
-        # malformed quoted string: drop the leading quote and proceed with remainder
-        remainder = remainder[1:]
+            last_slash = max(remainder.rfind('/'), remainder.rfind('\\'))
+            if last_colon > last_slash:
+                return remainder[:last_colon]
 
-    # Now remainder is unquoted, e.g. /path/to/file.nc:var or C:/path/to/file.nc:var
-    # If there's no colon, it's just a path
-    last_colon = remainder.rfind(':')
-    if last_colon == -1:
-        return remainder
+            return remainder
 
-    # Decide if the last colon separates a subdataset/variable (e.g. /file.nc:var)
-    # or is part of the path (e.g. Windows drive 'C:/...'). If the last colon occurs
-    # after the last path separator, it's likely a separator for a subdataset/variable.
-    last_slash = max(remainder.rfind('/'), remainder.rfind('\\'))
-    if last_colon > last_slash:
-        return remainder[:last_colon]
-
-    # Otherwise the colon is part of the path (e.g. drive letter). Return whole remainder
-    return remainder
+    return uri

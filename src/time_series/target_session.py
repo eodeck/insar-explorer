@@ -32,7 +32,10 @@ class CanonicalTargetSnapshot:
     ):
         """Normalize extracted target input into a renderer-independent snapshot."""
         normalized_selection = SpatialSelection.from_legacy(selection)
-        if not isinstance(source, TimeSeriesSource):
+        if not (
+            isinstance(source, TimeSeriesSource)
+            or type(source).__name__ == "TimeSeriesSource"
+        ):
             raise TypeError("active target source must be a TimeSeriesSource")
         if normalized_selection is None:
             raise ValueError("active target requires a spatial selection")
@@ -73,7 +76,10 @@ class ActiveTargetSession:
 
     def set(self, target):
         """Replace the active target after successful extraction/rendering."""
-        if not isinstance(target, CanonicalTargetSnapshot):
+        if not (
+            isinstance(target, CanonicalTargetSnapshot)
+            or type(target).__name__ == "CanonicalTargetSnapshot"
+        ):
             raise TypeError("target must be a CanonicalTargetSnapshot")
         self._active = target
         return target

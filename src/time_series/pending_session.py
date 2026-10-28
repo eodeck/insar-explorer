@@ -25,7 +25,10 @@ class PendingTimeSeriesSession:
 
     def set(self, record: TimeSeriesRecord) -> None:
         """Store one complete pending record."""
-        if not isinstance(record, TimeSeriesRecord):
+        if not (
+            isinstance(record, TimeSeriesRecord)
+            or type(record).__name__ == "TimeSeriesRecord"
+        ):
             raise TypeError("record must be a TimeSeriesRecord")
         self._record = record
 

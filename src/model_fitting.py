@@ -13,10 +13,11 @@ class FitStatistics:
     observation_count: int
     r_squared: Optional[float]
     rmse: float
+    velocity: Optional[float] = None
 
 
-def calculateFitStatistics(y_observed, y_fitted):
-    """Return R-squared and RMSE for matching finite observation values."""
+def calculateFitStatistics(y_observed, y_fitted, *, velocity=None):
+    """Return R-squared, RMSE, and optional fitted velocity (mm/yr)."""
     observed = np.asarray(y_observed, dtype=np.float64)
     fitted = np.asarray(y_fitted, dtype=np.float64)
 
@@ -47,10 +48,20 @@ def calculateFitStatistics(y_observed, y_fitted):
         if not np.isfinite(r_squared):
             raise ValueError("Fit statistics produced a non-finite R-squared value.")
 
+    vel_val = None
+    if velocity is not None:
+        try:
+            v = float(velocity)
+            if np.isfinite(v):
+                vel_val = v
+        except (TypeError, ValueError):
+            vel_val = None
+
     return FitStatistics(
         observation_count=int(observed.size),
         r_squared=r_squared,
         rmse=rmse,
+        velocity=vel_val,
     )
 
 
@@ -253,6 +264,7 @@ class FittingModels:
 
         self.model = model
         self.ordinal_dates = self.datesToOrdinal()
+        self.last_velocity = None
 
     def datesToOrdinal(self):
         return np.array([x.toordinal() for x in self.x])
@@ -304,6 +316,20 @@ class FittingModels:
             model_x_linspace_norm = normalize(model_x_linspace, ref=x[mask])
         model_y = fit_model(model_x_linspace_norm, *popt)
         fit_y = fit_model(x_norm, *popt)
+
+        self.last_velocity = None
+        try:
+            if model == "poly-1":
+                x_span_days = float(x[mask].max() - x[mask].min())
+                if x_span_days > 0:
+                    self.last_velocity = float((popt[1] / x_span_days) * 365.25)
+            else:
+                finite_sec = mask & np.isfinite(fit_y)
+                if np.count_nonzero(finite_sec) >= 2 and np.ptp(x[finite_sec]) > 0:
+                    slope_per_day = np.polyfit(x[finite_sec], fit_y[finite_sec], 1)[0]
+                    self.last_velocity = float(slope_per_day * 365.25)
+        except Exception:
+            self.last_velocity = None
 
         if seasonal:
             residual = y - fit_y
